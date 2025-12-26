@@ -6,16 +6,17 @@ use async_trait::async_trait;
 use aws_config::BehaviorVersion;
 use aws_sdk_bedrockruntime::error::SdkError;
 use aws_sdk_bedrockruntime::types::{
-    ContentBlock as BedrockContentBlock, ConversationRole, Message as BedrockMessage,
-    SystemContentBlock, ToolResultBlock, ToolResultContentBlock, ToolUseBlock,
+    ContentBlock as BedrockContentBlock, ContentBlockDelta, ContentBlockStart as BedrockContentBlockStart,
+    ConverseStreamOutput, ConversationRole, Message as BedrockMessage, SystemContentBlock,
+    ToolResultBlock, ToolResultContentBlock, ToolUseBlock,
 };
 use aws_sdk_bedrockruntime::Client;
 use aws_smithy_types::Document;
 use futures::Stream;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use super::traits::{
-    ChatRequest, ChatResponse, LlmBackend, ModelInfo, StopReason, StreamEvent, Usage,
+    ChatRequest, ChatResponse, ContentDelta, LlmBackend, ModelInfo, StopReason, StreamEvent, Usage,
 };
 use crate::error::BackendError;
 use crate::types::{ContentBlock, Message, Role, ToolResultContent};
@@ -345,13 +346,98 @@ impl LlmBackend for BedrockBackend {
 
     async fn send_message_stream(
         &self,
-        _request: &ChatRequest,
+        request: &ChatRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, BackendError>> + Send>>, BackendError>
     {
-        // TODO: Implement streaming using ConverseStream
-        Err(BackendError::InvalidResponse(
-            "Streaming not yet implemented for Bedrock backend".to_string(),
-        ))
+        info!(
+            "Streaming message to Bedrock, model: {}, region: {}",
+            request.model, self.region
+        );
+        debug!("Message count: {}", request.messages.len());
+
+        let messages = Self::convert_messages(&request.messages)?;
+
+        let mut converse_builder = self
+            .client
+            .converse_stream()
+            .model_id(&request.model)
+            .set_messages(Some(messages));
+
+        // Add system prompt if provided and not empty
+        if let Some(system_prompt) = &request.system_prompt {
+            if !system_prompt.is_empty() {
+                converse_builder =
+                    converse_builder.system(SystemContentBlock::Text(system_prompt.clone()));
+            }
+        }
+
+        // Set inference configuration
+        let mut inference_config = aws_sdk_bedrockruntime::types::InferenceConfiguration::builder()
+            .max_tokens(request.max_tokens as i32);
+
+        if let Some(temp) = request.temperature {
+            inference_config = inference_config.temperature(temp);
+        }
+
+        converse_builder = converse_builder.inference_config(inference_config.build());
+
+        // Send the streaming request and get the event stream
+        let aws_response = converse_builder.send().await.map_err(|e| {
+            // Use the same detailed error handling as non-streaming
+            let err_str = format!("{:?}", e);
+
+            if err_str.contains("ExpiredTokenException") || err_str.contains("expired") {
+                BackendError::Authentication(
+                    "AWS credentials expired. Run 'aws sso login' or refresh your credentials.".to_string()
+                )
+            } else if err_str.contains("AccessDeniedException") || err_str.contains("AccessDenied") {
+                BackendError::Authentication(format!(
+                    "Access denied. Ensure you have bedrock:InvokeModel permission for model '{}' in region '{}'.",
+                    request.model, self.region
+                ))
+            } else if err_str.contains("ResourceNotFoundException") {
+                BackendError::ModelNotAvailable(format!(
+                    "Model '{}' not found in region '{}'. Check the model ID and ensure it's enabled in your AWS account.",
+                    request.model, self.region
+                ))
+            } else if err_str.contains("ThrottlingException") {
+                BackendError::RateLimited { retry_after_secs: Some(60) }
+            } else {
+                BackendError::AwsSdk(format!("{}", e))
+            }
+        })?;
+
+        // Get the event stream from the response
+        let mut aws_stream = aws_response.stream;
+
+        // Convert AWS stream events to our StreamEvent type
+        let stream = async_stream::stream! {
+            loop {
+                match aws_stream.recv().await {
+                    Ok(Some(output)) => {
+                        match Self::convert_stream_output(output) {
+                            Ok(Some(event)) => yield Ok(event),
+                            Ok(None) => {}, // Skip this event
+                            Err(e) => {
+                                yield Err(e);
+                                break;
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        // Stream ended normally
+                        break;
+                    }
+                    Err(e) => {
+                        warn!("Bedrock stream error: {}", e);
+                        yield Err(BackendError::AwsSdk(format!("Stream error: {}", e)));
+                        break;
+                    }
+                }
+            }
+        };
+
+        Ok(Box::pin(stream))
     }
 
     fn name(&self) -> &'static str {
@@ -364,6 +450,95 @@ impl LlmBackend for BedrockBackend {
 }
 
 impl BedrockBackend {
+    /// Convert AWS ConverseStreamOutput to our StreamEvent type
+    /// Returns Ok(Some(event)) for events to emit, Ok(None) for events to skip
+    fn convert_stream_output(
+        output: ConverseStreamOutput,
+    ) -> Result<Option<StreamEvent>, BackendError> {
+        match output {
+            ConverseStreamOutput::ContentBlockStart(event) => {
+                let index = event.content_block_index() as usize;
+                let start = event.start().ok_or_else(|| {
+                    BackendError::InvalidResponse("ContentBlockStart missing start field".to_string())
+                })?;
+
+                let block = match start {
+                    BedrockContentBlockStart::ToolUse(tool_use) => {
+                        ContentBlock::ToolUse {
+                            id: tool_use.tool_use_id().to_string(),
+                            name: tool_use.name().to_string(),
+                            input: serde_json::Value::Object(serde_json::Map::new()), // Will be filled in by deltas
+                        }
+                    }
+                    _ => {
+                        // Text blocks don't have a start event in Bedrock, only deltas
+                        // Start with empty text
+                        ContentBlock::Text { text: String::new() }
+                    }
+                };
+
+                Ok(Some(StreamEvent::ContentBlockStart { index, block }))
+            }
+            ConverseStreamOutput::ContentBlockDelta(event) => {
+                let index = event.content_block_index() as usize;
+                let delta = event.delta().ok_or_else(|| {
+                    BackendError::InvalidResponse("ContentBlockDelta missing delta field".to_string())
+                })?;
+
+                let content_delta = match delta {
+                    ContentBlockDelta::Text(text) => {
+                        ContentDelta::Text { text: text.to_string() }
+                    }
+                    ContentBlockDelta::ToolUse(tool_use) => {
+                        ContentDelta::ToolInput {
+                            partial_json: tool_use.input().to_string(),
+                        }
+                    }
+                    _ => {
+                        warn!("Unknown ContentBlockDelta type");
+                        return Ok(None);
+                    }
+                };
+
+                Ok(Some(StreamEvent::ContentBlockDelta { index, delta: content_delta }))
+            }
+            ConverseStreamOutput::ContentBlockStop(event) => {
+                let index = event.content_block_index() as usize;
+                Ok(Some(StreamEvent::ContentBlockStop { index }))
+            }
+            ConverseStreamOutput::MessageStart(_) => {
+                // Message start doesn't have useful info for us
+                Ok(None)
+            }
+            ConverseStreamOutput::MessageStop(event) => {
+                let stop_reason = match event.stop_reason() {
+                    aws_sdk_bedrockruntime::types::StopReason::EndTurn => StopReason::EndTurn,
+                    aws_sdk_bedrockruntime::types::StopReason::ToolUse => StopReason::ToolUse,
+                    aws_sdk_bedrockruntime::types::StopReason::MaxTokens => StopReason::MaxTokens,
+                    aws_sdk_bedrockruntime::types::StopReason::StopSequence => StopReason::StopSequence,
+                    _ => StopReason::EndTurn,
+                };
+                Ok(Some(StreamEvent::MessageStop { stop_reason }))
+            }
+            ConverseStreamOutput::Metadata(metadata) => {
+                // Extract usage information
+                if let Some(usage) = metadata.usage() {
+                    Ok(Some(StreamEvent::Usage(Usage {
+                        input_tokens: usage.input_tokens() as i64,
+                        output_tokens: usage.output_tokens() as i64,
+                    })))
+                } else {
+                    Ok(None)
+                }
+            }
+            _ => {
+                // Unknown event type, skip
+                warn!("Unknown ConverseStreamOutput variant");
+                Ok(None)
+            }
+        }
+    }
+
     /// Get available Claude models on Bedrock
     pub fn get_models() -> Vec<ModelInfo> {
         vec![

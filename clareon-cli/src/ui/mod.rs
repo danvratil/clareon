@@ -9,7 +9,86 @@ use ratatui::{
 };
 
 use crate::app::{App, ViewMode};
-use clareon_core::types::Role;
+use clareon_core::types::{ContentBlock, Role};
+
+/// Helper to extract text from content blocks
+fn extract_text_from_blocks(blocks: &[ContentBlock]) -> String {
+    blocks
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Wrap a line of text to fit within a maximum width
+/// Returns multiple lines if wrapping is needed
+fn wrap_line(text: &str, max_width: usize) -> Vec<String> {
+    if max_width == 0 {
+        return vec![text.to_string()];
+    }
+
+    let mut lines = Vec::new();
+    let mut current_line = String::new();
+    let mut current_width = 0;
+
+    for word in text.split_whitespace() {
+        let word_len = word.chars().count();
+
+        // If adding this word would exceed the width
+        if current_width + word_len + (if current_width > 0 { 1 } else { 0 }) > max_width {
+            // If the word itself is longer than max_width, split it
+            if word_len > max_width {
+                // Finish current line if any
+                if !current_line.is_empty() {
+                    lines.push(current_line.clone());
+                    current_line.clear();
+                    current_width = 0;
+                }
+
+                // Split the long word across multiple lines
+                let chars: Vec<char> = word.chars().collect();
+                for chunk in chars.chunks(max_width) {
+                    lines.push(chunk.iter().collect());
+                }
+                continue;
+            }
+
+            // Start a new line with this word
+            if !current_line.is_empty() {
+                lines.push(current_line.clone());
+                current_line = word.to_string();
+                current_width = word_len;
+            } else {
+                // This shouldn't happen, but just in case
+                current_line = word.to_string();
+                current_width = word_len;
+            }
+        } else {
+            // Add word to current line
+            if !current_line.is_empty() {
+                current_line.push(' ');
+                current_width += 1;
+            }
+            current_line.push_str(word);
+            current_width += word_len;
+        }
+    }
+
+    // Add the last line if any
+    if !current_line.is_empty() {
+        lines.push(current_line);
+    }
+
+    // If no lines were created, return at least one empty line
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+
+    lines
+}
 
 /// Render the UI based on current app state
 pub fn render(frame: &mut Frame, app: &App) {
@@ -52,8 +131,14 @@ fn render_chat(frame: &mut Frame, app: &App) {
     render_messages(frame, app, chunks[1]);
 
     // Input area
+    let input_title = if app.waiting {
+        " Streaming... (Esc to cancel) "
+    } else {
+        " Message (Enter to send) "
+    };
+
     let input_block = Block::default()
-        .title(" Message (Enter to send) ")
+        .title(input_title)
         .borders(Borders::ALL)
         .border_style(if app.waiting {
             Style::default().fg(Color::Yellow)
@@ -62,7 +147,7 @@ fn render_chat(frame: &mut Frame, app: &App) {
         });
 
     let input_text = if app.waiting {
-        "Waiting for response..."
+        "Streaming response..."
     } else {
         &app.input
     };
@@ -97,35 +182,105 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
+    // Calculate available width for text (account for prefix like "You: " and indentation)
+    let prefix_width = 8; // "Claude: " or "You: " + 1 space
+    let available_width = inner_area.width.saturating_sub(prefix_width) as usize;
+
     // Build message items
-    let items: Vec<ListItem> = app
+    let mut items: Vec<ListItem> = app
         .messages
         .iter()
-        .map(|msg| {
+        .flat_map(|msg| {
             let (prefix, style) = match msg.role {
                 Role::User => ("You: ", Style::default().fg(Color::Cyan)),
                 Role::Assistant => ("Claude: ", Style::default().fg(Color::Green)),
             };
 
             let text = msg.text().unwrap_or("[no text content]");
-            let lines: Vec<Line> = text
-                .lines()
-                .enumerate()
-                .map(|(i, line)| {
-                    if i == 0 {
-                        Line::from(vec![
-                            Span::styled(prefix, style.add_modifier(Modifier::BOLD)),
-                            Span::raw(line),
-                        ])
-                    } else {
-                        Line::from(format!("       {}", line))
-                    }
-                })
-                .collect();
+            let mut all_lines: Vec<Line> = Vec::new();
+            let mut is_first_line = true;
 
-            ListItem::new(Text::from(lines))
+            for original_line in text.lines() {
+                // Wrap each line to fit the available width
+                let wrapped_lines = wrap_line(original_line, available_width.max(20));
+
+                for wrapped in wrapped_lines {
+                    if is_first_line {
+                        all_lines.push(Line::from(vec![
+                            Span::styled(prefix, style.add_modifier(Modifier::BOLD)),
+                            Span::raw(wrapped),
+                        ]));
+                        is_first_line = false;
+                    } else {
+                        all_lines.push(Line::from(format!("       {}", wrapped)));
+                    }
+                }
+            }
+
+            // Return as a single ListItem per message
+            vec![ListItem::new(Text::from(all_lines))]
         })
         .collect();
+
+    // Append streaming message if present
+    if let Some(partial) = &app.streaming_message {
+        let text = extract_text_from_blocks(&partial.content);
+
+        if !text.is_empty() {
+            let mut all_lines: Vec<Line> = Vec::new();
+            let mut is_first_line = true;
+
+            for original_line in text.lines() {
+                // Wrap each line to fit the available width
+                let wrapped_lines = wrap_line(original_line, available_width.max(20));
+
+                for wrapped in wrapped_lines {
+                    if is_first_line {
+                        all_lines.push(Line::from(vec![
+                            Span::styled(
+                                "Claude: ",
+                                Style::default()
+                                    .fg(Color::Green)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                            Span::raw(wrapped),
+                        ]));
+                        is_first_line = false;
+                    } else {
+                        all_lines.push(Line::from(format!("       {}", wrapped)));
+                    }
+                }
+            }
+
+            // Add blinking cursor to last line
+            if let Some(last_line) = all_lines.last_mut() {
+                last_line.spans.push(Span::styled(
+                    " ▊",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::SLOW_BLINK),
+                ));
+            }
+
+            items.push(ListItem::new(Text::from(all_lines)));
+        } else {
+            // Show "thinking" indicator if no content yet
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled(
+                    "Claude: ",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "thinking...",
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
+                ),
+            ])));
+        }
+    }
 
     let list = List::new(items);
     frame.render_widget(list, inner_area);

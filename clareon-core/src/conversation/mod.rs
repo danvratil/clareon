@@ -6,5 +6,5 @@
 mod manager;
 mod title;
 
-pub use manager::ConversationManager;
+pub use manager::{ConversationManager, StreamUpdate};
 pub use title::TitleGenerator;

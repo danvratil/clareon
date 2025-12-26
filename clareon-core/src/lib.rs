@@ -14,6 +14,6 @@ pub use backend::{
     AnthropicBackend, BedrockBackend, ChatRequest, ChatResponse, LlmBackend, StopReason,
 };
 pub use config::{Config, SecretStore};
-pub use conversation::ConversationManager;
+pub use conversation::{ConversationManager, StreamUpdate};
 pub use error::{Error, Result};
 pub use storage::Storage;

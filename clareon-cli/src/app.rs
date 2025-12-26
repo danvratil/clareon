@@ -2,9 +2,13 @@
 
 use std::sync::Arc;
 
+use futures::StreamExt;
+use tokio::sync::mpsc;
+
 use clareon_core::{
-    types::{Conversation, ConversationSummary, Message, SearchResult},
-    BedrockBackend, Config, ConversationManager, LlmBackend, Storage,
+    backend::Usage,
+    types::{ContentBlock, Conversation, ConversationSummary, Message, SearchResult},
+    BedrockBackend, Config, ConversationManager, LlmBackend, Storage, StreamUpdate,
 };
 
 /// Current view mode
@@ -20,10 +24,22 @@ pub enum ViewMode {
     Help,
 }
 
+/// Partial message being streamed
+#[derive(Debug, Clone)]
+pub struct PartialMessage {
+    /// Content accumulated so far
+    pub content: Vec<ContentBlock>,
+    /// Token usage
+    pub usage: Usage,
+}
+
+/// Result type for streaming updates
+pub type StreamResult = Result<StreamUpdate, anyhow::Error>;
+
 /// Application state
 pub struct App {
-    /// Conversation manager
-    pub manager: ConversationManager,
+    /// Conversation manager (wrapped in Arc for cloning into background tasks)
+    pub manager: Arc<ConversationManager>,
 
     /// Current view mode
     pub view_mode: ViewMode,
@@ -60,6 +76,15 @@ pub struct App {
 
     /// Configuration
     pub config: Config,
+
+    /// Streaming message in progress (if any)
+    pub streaming_message: Option<PartialMessage>,
+
+    /// Channel receiver for streaming updates
+    pub stream_rx: Option<mpsc::UnboundedReceiver<StreamResult>>,
+
+    /// Flag to reload messages after streaming completes
+    pub needs_reload: bool,
 }
 
 /// Options for creating the app
@@ -111,7 +136,7 @@ impl App {
         let manager = ConversationManager::with_single_backend(storage, backend, config.clone());
 
         Ok(Self {
-            manager,
+            manager: Arc::new(manager),
             view_mode: ViewMode::Chat,
             conversation: None,
             messages: Vec::new(),
@@ -124,6 +149,9 @@ impl App {
             status: None,
             waiting: false,
             config,
+            streaming_message: None,
+            stream_rx: None,
+            needs_reload: false,
         })
     }
 
@@ -150,7 +178,7 @@ impl App {
         Ok(())
     }
 
-    /// Send a message
+    /// Send a message with streaming
     pub async fn send_message(&mut self) -> anyhow::Result<()> {
         if self.input.trim().is_empty() {
             return Ok(());
@@ -163,31 +191,44 @@ impl App {
 
         let user_input = self.input.clone();
         self.input.clear();
+
+        // Add user message to UI immediately
+        let conv_id = self.conversation.as_ref().unwrap().id;
+        let user_message = clareon_core::types::Message::user(conv_id, &user_input);
+        self.messages.push(user_message);
+        self.scroll_to_bottom();
+
         self.waiting = true;
-        self.status = Some("Sending...".to_string());
+        self.streaming_message = Some(PartialMessage {
+            content: Vec::new(),
+            usage: Usage::default(),
+        });
 
-        // Get mutable reference to conversation
-        let conv = self.conversation.as_mut().unwrap();
+        // Create channel for streaming updates
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.stream_rx = Some(rx);
 
-        // Send message
-        match self.manager.send_message(conv, &user_input).await {
-            Ok(response) => {
-                // Reload messages
-                self.messages = self.manager.get_messages(conv.id).await?;
-                self.status = Some(format!(
-                    "Tokens: {} in / {} out",
-                    response.usage.input_tokens, response.usage.output_tokens
-                ));
+        // Clone for background task
+        let mut conv = self.conversation.clone().unwrap();
+        let manager = Arc::clone(&self.manager);
 
-                // Scroll to bottom
-                self.scroll_to_bottom();
+        // Spawn background task to handle streaming
+        tokio::spawn(async move {
+            match manager.send_message_stream(&mut conv, &user_input).await {
+                Ok(mut stream) => {
+                    while let Some(update) = stream.next().await {
+                        if tx.send(update.map_err(Into::into)).is_err() {
+                            // Receiver dropped - user cancelled or quit
+                            break;
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(e.into()));
+                }
             }
-            Err(e) => {
-                self.status = Some(format!("Error: {}", e));
-            }
-        }
+        });
 
-        self.waiting = false;
         Ok(())
     }
 

@@ -196,6 +196,18 @@ async fn run_main_loop(
     app: &mut App,
 ) -> Result<()> {
     while app.running {
+        // Poll for streaming updates FIRST
+        events::poll_stream_updates(app)?;
+
+        // Reload messages if streaming just completed
+        if app.needs_reload {
+            if let Some(conv) = &app.conversation {
+                app.messages = app.manager.get_messages(conv.id).await?;
+                app.scroll_to_bottom();
+            }
+            app.needs_reload = false;
+        }
+
         // Render
         terminal.draw(|f| ui::render(f, app))?;
 

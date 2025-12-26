@@ -3,10 +3,11 @@
 use std::pin::Pin;
 
 use async_trait::async_trait;
-use futures::Stream;
+use eventsource_stream::Eventsource;
+use futures::{Stream, StreamExt};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use super::traits::{
     ChatRequest, ChatResponse, ContentDelta, LlmBackend, ModelInfo, StopReason, StreamEvent, Usage,
@@ -141,6 +142,66 @@ impl AnthropicBackend {
 
         (message, stop_reason, usage)
     }
+
+    /// Convert Anthropic stream event to our StreamEvent type
+    /// Returns Ok(Some(event)) for events to emit, Ok(None) for events to skip
+    fn convert_stream_event(
+        event: AnthropicStreamEvent,
+    ) -> Result<Option<StreamEvent>, BackendError> {
+        match event {
+            AnthropicStreamEvent::MessageStart { message } => {
+                // Emit initial usage
+                Ok(Some(StreamEvent::Usage(Usage {
+                    input_tokens: message.usage.input_tokens,
+                    output_tokens: message.usage.output_tokens,
+                })))
+            }
+            AnthropicStreamEvent::ContentBlockStart { index, content_block } => {
+                let block = match content_block {
+                    ContentBlockStart::Text { text } => ContentBlock::Text { text },
+                    ContentBlockStart::ToolUse { id, name, input } => {
+                        ContentBlock::ToolUse { id, name, input }
+                    }
+                };
+                Ok(Some(StreamEvent::ContentBlockStart { index, block }))
+            }
+            AnthropicStreamEvent::ContentBlockDelta { index, delta } => {
+                let content_delta = match delta {
+                    Delta::TextDelta { text } => ContentDelta::Text { text },
+                    Delta::InputJsonDelta { partial_json } => {
+                        ContentDelta::ToolInput { partial_json }
+                    }
+                };
+                Ok(Some(StreamEvent::ContentBlockDelta {
+                    index,
+                    delta: content_delta,
+                }))
+            }
+            AnthropicStreamEvent::ContentBlockStop { index } => {
+                Ok(Some(StreamEvent::ContentBlockStop { index }))
+            }
+            AnthropicStreamEvent::MessageDelta { delta, .. } => {
+                // If there's a stop reason, emit MessageStop
+                if let Some(reason_str) = delta.stop_reason {
+                    let stop_reason = match reason_str.as_str() {
+                        "end_turn" => StopReason::EndTurn,
+                        "tool_use" => StopReason::ToolUse,
+                        "max_tokens" => StopReason::MaxTokens,
+                        "stop_sequence" => StopReason::StopSequence,
+                        _ => StopReason::EndTurn,
+                    };
+                    Ok(Some(StreamEvent::MessageStop { stop_reason }))
+                } else {
+                    // No stop reason yet, skip this event (just a usage update)
+                    Ok(None)
+                }
+            }
+            AnthropicStreamEvent::MessageStop {} | AnthropicStreamEvent::Ping {} => {
+                // These don't map to our events - skip them
+                Ok(None)
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -205,13 +266,88 @@ impl LlmBackend for AnthropicBackend {
 
     async fn send_message_stream(
         &self,
-        _request: &ChatRequest,
+        request: &ChatRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, BackendError>> + Send>>, BackendError>
     {
-        // TODO: Implement streaming
-        Err(BackendError::InvalidResponse(
-            "Streaming not yet implemented for Anthropic backend".to_string(),
-        ))
+        info!("Streaming message to Anthropic API, model: {}", request.model);
+        debug!("Message count: {}", request.messages.len());
+
+        let api_request = AnthropicRequest {
+            model: request.model.clone(),
+            max_tokens: request.max_tokens,
+            system: request.system_prompt.clone(),
+            messages: Self::convert_messages(&request.messages),
+            temperature: request.temperature,
+            stream: Some(true),
+        };
+
+        // Send the request
+        let response = self
+            .client
+            .post(&self.base_url)
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", ANTHROPIC_VERSION)
+            .header("content-type", "application/json")
+            .json(&api_request)
+            .send()
+            .await?;
+
+        // Check status before starting to stream
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+
+            return match status.as_u16() {
+                401 => Err(BackendError::Authentication(error_text)),
+                429 => Err(BackendError::RateLimited {
+                    retry_after_secs: None,
+                }),
+                500..=599 => Err(BackendError::ServiceUnavailable),
+                _ => Err(BackendError::Api {
+                    status: status.as_u16(),
+                    message: error_text,
+                }),
+            };
+        }
+
+        // Create SSE event stream
+        let event_stream = response.bytes_stream().eventsource();
+
+        // Convert SSE events to our StreamEvent type
+        let stream = event_stream
+            .map(|result| {
+                match result {
+                    Ok(event) => {
+                        // Skip empty data
+                        if event.data.is_empty() {
+                            return Ok(None);
+                        }
+
+                        // Parse the JSON event
+                        let anthropic_event: AnthropicStreamEvent = serde_json::from_str(&event.data)
+                            .map_err(|e| {
+                                warn!("Failed to parse SSE event: {}", e);
+                                BackendError::InvalidResponse(format!("Invalid JSON in SSE event: {}", e))
+                            })?;
+
+                        // Convert to our StreamEvent (returns Option)
+                        Self::convert_stream_event(anthropic_event)
+                    }
+                    Err(e) => {
+                        warn!("SSE stream error: {}", e);
+                        Err(BackendError::InvalidResponse(format!("SSE stream error: {}", e)))
+                    }
+                }
+            })
+            .filter_map(|result| async move {
+                match result {
+                    Ok(Some(event)) => Some(Ok(event)),
+                    Ok(None) => None,  // Skip None events
+                    Err(e) => Some(Err(e)),
+                }
+            });
+
+        Ok(Box::pin(stream))
     }
 
     fn name(&self) -> &'static str {
@@ -283,6 +419,75 @@ struct AnthropicResponse {
 #[derive(Debug, Deserialize)]
 struct AnthropicUsage {
     input_tokens: i64,
+    output_tokens: i64,
+}
+
+// Streaming event types
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+enum AnthropicStreamEvent {
+    #[serde(rename = "message_start")]
+    MessageStart { message: MessageStart },
+    #[serde(rename = "content_block_start")]
+    ContentBlockStart {
+        index: usize,
+        content_block: ContentBlockStart,
+    },
+    #[serde(rename = "content_block_delta")]
+    ContentBlockDelta { index: usize, delta: Delta },
+    #[serde(rename = "content_block_stop")]
+    ContentBlockStop { index: usize },
+    #[serde(rename = "message_delta")]
+    MessageDelta {
+        delta: MessageDeltaContent,
+        usage: DeltaUsage,
+    },
+    #[serde(rename = "message_stop")]
+    MessageStop {},
+    #[serde(rename = "ping")]
+    Ping {},
+}
+
+#[derive(Debug, Deserialize)]
+struct MessageStart {
+    id: String,
+    #[serde(rename = "type")]
+    type_: String,
+    role: String,
+    model: String,
+    usage: AnthropicUsage,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+enum ContentBlockStart {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "tool_use")]
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+enum Delta {
+    #[serde(rename = "text_delta")]
+    TextDelta { text: String },
+    #[serde(rename = "input_json_delta")]
+    InputJsonDelta { partial_json: String },
+}
+
+#[derive(Debug, Deserialize)]
+struct MessageDeltaContent {
+    stop_reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeltaUsage {
     output_tokens: i64,
 }
 

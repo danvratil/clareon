@@ -1,21 +1,39 @@
 //! Conversation manager - orchestrates chat interactions
 
+use std::pin::Pin;
 use std::sync::Arc;
 
+use futures::{Stream, StreamExt};
 use tracing::{debug, info};
 
 use super::title::TitleGenerator;
-use crate::backend::{ChatRequest, ChatResponse, LlmBackend, StopReason};
+use crate::backend::{ChatRequest, ChatResponse, ContentDelta, LlmBackend, StopReason, StreamEvent, Usage};
 use crate::config::Config;
 use crate::error::Result;
 use crate::storage::Storage;
-use crate::types::{Conversation, ConversationSummary, Message, SearchResult};
+use crate::types::{ContentBlock, Conversation, ConversationSummary, Message, SearchResult};
+
+/// Update from streaming message containing both the event and accumulated state
+#[derive(Debug, Clone)]
+pub struct StreamUpdate {
+    /// The raw event from the backend
+    pub event: StreamEvent,
+
+    /// Accumulated content blocks so far
+    pub partial_content: Vec<ContentBlock>,
+
+    /// Stop reason (if message has ended)
+    pub stop_reason: Option<StopReason>,
+
+    /// Accumulated usage information
+    pub usage: Usage,
+}
 
 /// Manages conversations, orchestrating storage, LLM backends, and title generation
 pub struct ConversationManager {
-    storage: Storage,
+    storage: Arc<Storage>,
     backend: Arc<dyn LlmBackend>,
-    title_generator: TitleGenerator,
+    title_generator: Arc<TitleGenerator>,
     config: Config,
 }
 
@@ -31,9 +49,9 @@ impl ConversationManager {
             TitleGenerator::new(title_backend, config.models.title_generation.clone());
 
         Self {
-            storage,
+            storage: Arc::new(storage),
             backend,
-            title_generator,
+            title_generator: Arc::new(title_generator),
             config,
         }
     }
@@ -127,6 +145,157 @@ impl ConversationManager {
         }
 
         Ok(response)
+    }
+
+    /// Send a user message and stream the assistant's response
+    ///
+    /// This handles the full chat turn with streaming:
+    /// 1. Store the user message
+    /// 2. Stream from the LLM backend
+    /// 3. Accumulate and forward streaming events
+    /// 4. Store the complete assistant response when done
+    /// 5. Generate title after first exchange (if needed)
+    pub async fn send_message_stream(
+        &self,
+        conversation: &mut Conversation,
+        user_input: &str,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamUpdate>> + Send>>> {
+        // Create and store user message
+        let user_message = Message::user(conversation.id, user_input);
+        let user_msg_id = self.storage.add_message(&user_message).await?;
+        debug!("Stored user message: {}", user_msg_id);
+
+        // Get conversation history
+        let messages = self.storage.get_messages(conversation.id).await?;
+
+        // Build the request
+        let system_prompt = self.get_effective_system_prompt(conversation);
+        let request = ChatRequest::new(messages, &conversation.model)
+            .with_system_prompt(system_prompt)
+            .with_max_tokens(4096);
+
+        // Start backend stream
+        info!("Streaming request to {} backend", self.backend.name());
+        let backend_stream = self.backend.send_message_stream(&request).await?;
+
+        // Set up state accumulation
+        let conv_id = conversation.id;
+        let storage = self.storage.clone();
+        let model = conversation.model.clone();
+        let user_input_clone = user_input.to_string();
+        let title_generator = self.title_generator.clone();
+        let mut conv_for_title = conversation.clone();
+
+        // Create stream that accumulates state and stores message at the end
+        let stream = async_stream::stream! {
+            let mut content_blocks: Vec<ContentBlock> = Vec::new();
+            let mut stop_reason: Option<StopReason> = None;
+            let mut usage = Usage::default();
+
+            // Process backend stream events
+            let mut backend_stream = Box::pin(backend_stream);
+            while let Some(result) = backend_stream.next().await {
+                match result {
+                    Ok(event) => {
+                        // Update accumulated state based on event
+                        match &event {
+                            StreamEvent::ContentBlockStart { index, block } => {
+                                // Ensure we have enough slots
+                                while content_blocks.len() <= *index {
+                                    content_blocks.push(ContentBlock::Text { text: String::new() });
+                                }
+                                content_blocks[*index] = block.clone();
+                            }
+                            StreamEvent::ContentBlockDelta { index, delta } => {
+                                // Ensure we have a block at this index (Bedrock doesn't send
+                                // ContentBlockStart for text blocks)
+                                while content_blocks.len() <= *index {
+                                    content_blocks.push(ContentBlock::Text { text: String::new() });
+                                }
+                                if let Some(block) = content_blocks.get_mut(*index) {
+                                    Self::apply_delta(block, delta);
+                                }
+                            }
+                            StreamEvent::MessageStop { stop_reason: sr } => {
+                                stop_reason = Some(*sr);
+                            }
+                            StreamEvent::Usage(u) => {
+                                usage = *u;
+                            }
+                            _ => {}
+                        }
+
+                        // Forward the event with accumulated state
+                        yield Ok(StreamUpdate {
+                            event,
+                            partial_content: content_blocks.clone(),
+                            stop_reason,
+                            usage,
+                        });
+                    }
+                    Err(e) => {
+                        yield Err(e.into());
+                        return; // End stream on error
+                    }
+                }
+            }
+
+            // Stream complete - store the final message
+            let message = Message::assistant(
+                conv_id,
+                content_blocks,
+                &model,
+                usage.input_tokens,
+                usage.output_tokens,
+            );
+
+            if let Err(e) = storage.add_message(&message).await {
+                yield Err(e);
+                return;
+            }
+
+            // Update conversation timestamp
+            conv_for_title.touch();
+            if let Err(e) = storage.update_conversation(&conv_for_title).await {
+                yield Err(e);
+                return;
+            }
+
+            // Generate title if needed (don't block on this)
+            if conv_for_title.title.is_none() && stop_reason == Some(StopReason::EndTurn) {
+                let assistant_text = message.text().unwrap_or("");
+                if let Ok(title) = title_generator.generate_title(&user_input_clone, assistant_text).await {
+                    info!("Generated title: {}", title);
+                    conv_for_title.set_title(&title);
+                    let _ = storage.update_conversation(&conv_for_title).await;
+                }
+            }
+        };
+
+        Ok(Box::pin(stream))
+    }
+
+    /// Apply a content delta to a content block
+    fn apply_delta(block: &mut ContentBlock, delta: &ContentDelta) {
+        match (block, delta) {
+            (ContentBlock::Text { text }, ContentDelta::Text { text: delta_text }) => {
+                text.push_str(delta_text);
+            }
+            (ContentBlock::ToolUse { input, .. }, ContentDelta::ToolInput { partial_json }) => {
+                // For tool input, we need to accumulate the JSON string
+                // It will be parsed later when the block is complete
+                if let serde_json::Value::String(current) = input {
+                    current.push_str(partial_json);
+                } else {
+                    // Initialize as string if not already
+                    *input = serde_json::Value::String(partial_json.clone());
+                }
+            }
+            _ => {
+                // Mismatched types - shouldn't happen
+                debug!("Mismatched content block and delta types");
+            }
+        }
     }
 
     /// Continue a conversation after tool use

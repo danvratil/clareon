@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use tokio::sync::mpsc::error::TryRecvError;
 
 use crate::app::{App, ViewMode};
 
@@ -22,11 +23,88 @@ pub async fn handle_events(app: &mut App) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Poll for streaming updates and update app state
+pub fn poll_stream_updates(app: &mut App) -> anyhow::Result<()> {
+    if let Some(rx) = &mut app.stream_rx {
+        // Non-blocking check for updates
+        loop {
+            match rx.try_recv() {
+                Ok(Ok(update)) => {
+                    // Update partial message
+                    if let Some(partial) = &mut app.streaming_message {
+                        partial.content = update.partial_content;
+                        partial.usage = update.usage;
+                    }
+
+                    // Update status with token counts
+                    app.status = Some(format!(
+                        "Streaming... {} in / {} out",
+                        update.usage.input_tokens, update.usage.output_tokens
+                    ));
+                }
+                Ok(Err(e)) => {
+                    // Stream error
+                    app.status = Some(format!("Error: {}", e));
+                    app.streaming_message = None;
+                    app.stream_rx = None;
+                    app.waiting = false;
+                    break;
+                }
+                Err(TryRecvError::Empty) => {
+                    // No more updates right now
+                    break;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    // Stream complete
+                    app.streaming_message = None;
+                    app.stream_rx = None;
+                    app.waiting = false;
+                    app.needs_reload = true;
+                    app.status = None; // Clear the streaming status
+                    break;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Handle keyboard input
 async fn handle_key_event(app: &mut App, key: KeyEvent) -> anyhow::Result<()> {
-    // Don't process input while waiting for response
+    // Allow cancellation and scrolling during streaming
     if app.waiting {
-        return Ok(());
+        match (key.code, key.modifiers) {
+            // Cancel streaming with Esc
+            (KeyCode::Esc, _) => {
+                app.streaming_message = None;
+                app.stream_rx = None; // Drop receiver = cancel task
+                app.waiting = false;
+                app.status = Some("Cancelled".to_string());
+                return Ok(());
+            }
+            // Allow Ctrl+C to cancel (not quit during streaming)
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                app.streaming_message = None;
+                app.stream_rx = None;
+                app.waiting = false;
+                app.status = Some("Cancelled".to_string());
+                return Ok(());
+            }
+            // Allow scrolling during streaming
+            (KeyCode::Up, _) | (KeyCode::PageUp, _) => {
+                app.scroll_up(3);
+                return Ok(());
+            }
+            (KeyCode::Down, _) | (KeyCode::PageDown, _) => {
+                app.scroll_down(3);
+                return Ok(());
+            }
+            _ => {
+                // Ignore other keys while streaming
+                return Ok(());
+            }
+        }
     }
 
     match app.view_mode {
