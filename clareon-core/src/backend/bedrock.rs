@@ -214,10 +214,12 @@ impl LlmBackend for BedrockBackend {
             .model_id(&request.model)
             .set_messages(Some(messages));
 
-        // Add system prompt if provided
+        // Add system prompt if provided and not empty
         if let Some(system_prompt) = &request.system_prompt {
-            converse_builder =
-                converse_builder.system(SystemContentBlock::Text(system_prompt.clone()));
+            if !system_prompt.is_empty() {
+                converse_builder =
+                    converse_builder.system(SystemContentBlock::Text(system_prompt.clone()));
+            }
         }
 
         // Set inference configuration
