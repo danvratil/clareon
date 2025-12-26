@@ -254,10 +254,7 @@ impl Config {
                 Self::default_system_prompt().to_string()
             }
         } else {
-            self.system_prompt
-                .custom_prompt
-                .clone()
-                .unwrap_or_default()
+            self.system_prompt.custom_prompt.clone().unwrap_or_default()
         };
 
         // Append custom instructions if present

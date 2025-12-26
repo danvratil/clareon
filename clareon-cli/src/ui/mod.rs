@@ -73,7 +73,10 @@ fn render_chat(frame: &mut Frame, app: &App) {
     frame.render_widget(input, chunks[2]);
 
     // Status bar
-    let status_text = app.status.as_deref().unwrap_or("? for help | Ctrl+N new | Ctrl+O open | Ctrl+Q quit");
+    let status_text = app
+        .status
+        .as_deref()
+        .unwrap_or("? for help | Ctrl+N new | Ctrl+O open | Ctrl+Q quit");
     let status = Paragraph::new(status_text).style(Style::default().fg(Color::DarkGray));
     frame.render_widget(status, chunks[3]);
 }
@@ -139,8 +142,8 @@ fn render_conversation_list(frame: &mut Frame, app: &App) {
     frame.render_widget(block, frame.area());
 
     if app.conversations.is_empty() {
-        let placeholder = Paragraph::new("No conversations yet")
-            .style(Style::default().fg(Color::DarkGray));
+        let placeholder =
+            Paragraph::new("No conversations yet").style(Style::default().fg(Color::DarkGray));
         frame.render_widget(placeholder, inner_area);
         return;
     }
@@ -188,8 +191,8 @@ fn render_search_results(frame: &mut Frame, app: &App) {
     frame.render_widget(block, frame.area());
 
     if app.search_results.is_empty() {
-        let placeholder = Paragraph::new("No results found")
-            .style(Style::default().fg(Color::DarkGray));
+        let placeholder =
+            Paragraph::new("No results found").style(Style::default().fg(Color::DarkGray));
         frame.render_widget(placeholder, inner_area);
         return;
     }
@@ -200,10 +203,7 @@ fn render_search_results(frame: &mut Frame, app: &App) {
         .enumerate()
         .take(9)
         .map(|(i, result)| {
-            let title = result
-                .conversation_title
-                .as_deref()
-                .unwrap_or("Untitled");
+            let title = result.conversation_title.as_deref().unwrap_or("Untitled");
             let lines = vec![
                 Line::from(vec![
                     Span::styled(
@@ -214,10 +214,7 @@ fn render_search_results(frame: &mut Frame, app: &App) {
                     ),
                     Span::styled(title, Style::default().add_modifier(Modifier::BOLD)),
                 ]),
-                Line::from(vec![
-                    Span::raw("    "),
-                    Span::raw(&result.snippet),
-                ]),
+                Line::from(vec![Span::raw("    "), Span::raw(&result.snippet)]),
             ];
             ListItem::new(Text::from(lines))
         })

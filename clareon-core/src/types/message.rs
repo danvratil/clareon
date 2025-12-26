@@ -116,10 +116,7 @@ impl Message {
 
     /// Extract text content from content blocks for FTS indexing
     fn extract_text(content: &[ContentBlock]) -> Option<String> {
-        let texts: Vec<&str> = content
-            .iter()
-            .filter_map(|block| block.as_text())
-            .collect();
+        let texts: Vec<&str> = content.iter().filter_map(|block| block.as_text()).collect();
 
         if texts.is_empty() {
             None
@@ -151,7 +148,10 @@ mod tests {
     #[test]
     fn test_role_serialization() {
         assert_eq!(serde_json::to_string(&Role::User).unwrap(), "\"user\"");
-        assert_eq!(serde_json::to_string(&Role::Assistant).unwrap(), "\"assistant\"");
+        assert_eq!(
+            serde_json::to_string(&Role::Assistant).unwrap(),
+            "\"assistant\""
+        );
     }
 
     #[test]

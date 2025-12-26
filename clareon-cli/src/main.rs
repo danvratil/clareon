@@ -49,7 +49,7 @@ fn init_file_logging() -> Result<tracing_appender::non_blocking::WorkerGuard> {
         .with(
             tracing_subscriber::fmt::layer()
                 .with_writer(non_blocking)
-                .with_ansi(false)
+                .with_ansi(false),
         )
         .init();
 

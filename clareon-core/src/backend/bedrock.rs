@@ -4,12 +4,12 @@ use std::pin::Pin;
 
 use async_trait::async_trait;
 use aws_config::BehaviorVersion;
+use aws_sdk_bedrockruntime::error::SdkError;
 use aws_sdk_bedrockruntime::types::{
     ContentBlock as BedrockContentBlock, ConversationRole, Message as BedrockMessage,
     SystemContentBlock, ToolResultBlock, ToolResultContentBlock, ToolUseBlock,
 };
 use aws_sdk_bedrockruntime::Client;
-use aws_sdk_bedrockruntime::error::SdkError;
 use aws_smithy_types::Document;
 use futures::Stream;
 use tracing::{debug, info};
@@ -101,11 +101,9 @@ impl BedrockBackend {
             Document::Number(n) => match n {
                 aws_smithy_types::Number::PosInt(i) => serde_json::json!(*i),
                 aws_smithy_types::Number::NegInt(i) => serde_json::json!(*i),
-                aws_smithy_types::Number::Float(f) => {
-                    serde_json::Number::from_f64(*f)
-                        .map(serde_json::Value::Number)
-                        .unwrap_or(serde_json::Value::Null)
-                }
+                aws_smithy_types::Number::Float(f) => serde_json::Number::from_f64(*f)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or(serde_json::Value::Null),
             },
             Document::String(s) => serde_json::Value::String(s.clone()),
             Document::Array(arr) => {
@@ -134,16 +132,14 @@ impl BedrockBackend {
                     .iter()
                     .map(|block| match block {
                         ContentBlock::Text { text } => BedrockContentBlock::Text(text.clone()),
-                        ContentBlock::ToolUse { id, name, input } => {
-                            BedrockContentBlock::ToolUse(
-                                ToolUseBlock::builder()
-                                    .tool_use_id(id)
-                                    .name(name)
-                                    .input(Self::json_to_document(input))
-                                    .build()
-                                    .expect("Failed to build ToolUseBlock"),
-                            )
-                        }
+                        ContentBlock::ToolUse { id, name, input } => BedrockContentBlock::ToolUse(
+                            ToolUseBlock::builder()
+                                .tool_use_id(id)
+                                .name(name)
+                                .input(Self::json_to_document(input))
+                                .build()
+                                .expect("Failed to build ToolUseBlock"),
+                        ),
                         ContentBlock::ToolResult {
                             tool_use_id,
                             content,
@@ -163,9 +159,8 @@ impl BedrockBackend {
                                 .set_content(Some(result_content));
 
                             if is_error.unwrap_or(false) {
-                                builder = builder.status(
-                                    aws_sdk_bedrockruntime::types::ToolResultStatus::Error,
-                                );
+                                builder = builder
+                                    .status(aws_sdk_bedrockruntime::types::ToolResultStatus::Error);
                             }
 
                             BedrockContentBlock::ToolResult(
@@ -239,9 +234,8 @@ impl LlmBackend for BedrockBackend {
         }
 
         // Set inference configuration
-        let mut inference_config =
-            aws_sdk_bedrockruntime::types::InferenceConfiguration::builder()
-                .max_tokens(request.max_tokens as i32);
+        let mut inference_config = aws_sdk_bedrockruntime::types::InferenceConfiguration::builder()
+            .max_tokens(request.max_tokens as i32);
 
         if let Some(temp) = request.temperature {
             inference_config = inference_config.temperature(temp);

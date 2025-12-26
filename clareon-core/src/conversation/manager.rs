@@ -27,7 +27,8 @@ impl ConversationManager {
         title_backend: Arc<dyn LlmBackend>,
         config: Config,
     ) -> Self {
-        let title_generator = TitleGenerator::new(title_backend, config.models.title_generation.clone());
+        let title_generator =
+            TitleGenerator::new(title_backend, config.models.title_generation.clone());
 
         Self {
             storage,
@@ -182,7 +183,11 @@ impl ConversationManager {
     }
 
     /// Rename a conversation
-    pub async fn rename_conversation(&self, conversation: &mut Conversation, title: &str) -> Result<()> {
+    pub async fn rename_conversation(
+        &self,
+        conversation: &mut Conversation,
+        title: &str,
+    ) -> Result<()> {
         conversation.set_title(title);
         self.storage.update_conversation(conversation).await
     }
@@ -207,10 +212,11 @@ impl ConversationManager {
             });
 
         // Apply custom instructions
-        let instructions = conversation
+        let instructions = conversation.custom_instructions.as_ref().or(self
+            .config
+            .system_prompt
             .custom_instructions
-            .as_ref()
-            .or(self.config.system_prompt.custom_instructions.as_ref());
+            .as_ref());
 
         if let Some(inst) = instructions {
             format!("{}\n\n{}", base_prompt, inst)

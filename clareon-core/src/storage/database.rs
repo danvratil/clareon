@@ -232,7 +232,9 @@ impl Storage {
         .fetch_all(&self.pool)
         .await?;
 
-        rows.into_iter().map(|row| self.row_to_message(row)).collect()
+        rows.into_iter()
+            .map(|row| self.row_to_message(row))
+            .collect()
     }
 
     /// Delete a message

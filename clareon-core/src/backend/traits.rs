@@ -149,23 +149,13 @@ pub struct ToolDefinition {
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
     /// Start of a content block
-    ContentBlockStart {
-        index: usize,
-        block: ContentBlock,
-    },
+    ContentBlockStart { index: usize, block: ContentBlock },
     /// Delta update to a content block
-    ContentBlockDelta {
-        index: usize,
-        delta: ContentDelta,
-    },
+    ContentBlockDelta { index: usize, delta: ContentDelta },
     /// End of a content block
-    ContentBlockStop {
-        index: usize,
-    },
+    ContentBlockStop { index: usize },
     /// End of the message
-    MessageStop {
-        stop_reason: StopReason,
-    },
+    MessageStop { stop_reason: StopReason },
     /// Usage information (usually sent at the end)
     Usage(Usage),
 }

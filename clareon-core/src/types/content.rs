@@ -10,9 +10,7 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentBlock {
     /// Plain text content
-    Text {
-        text: String,
-    },
+    Text { text: String },
 
     /// A request from the assistant to use a tool
     ToolUse {
@@ -46,7 +44,11 @@ impl ContentBlock {
     }
 
     /// Create a new tool use content block
-    pub fn tool_use(id: impl Into<String>, name: impl Into<String>, input: serde_json::Value) -> Self {
+    pub fn tool_use(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        input: serde_json::Value,
+    ) -> Self {
         Self::ToolUse {
             id: id.into(),
             name: name.into(),
@@ -55,7 +57,11 @@ impl ContentBlock {
     }
 
     /// Create a new tool result content block
-    pub fn tool_result(tool_use_id: impl Into<String>, content: Vec<ToolResultContent>, is_error: bool) -> Self {
+    pub fn tool_result(
+        tool_use_id: impl Into<String>,
+        content: Vec<ToolResultContent>,
+        is_error: bool,
+    ) -> Self {
         Self::ToolResult {
             tool_use_id: tool_use_id.into(),
             content,
@@ -87,9 +93,7 @@ impl ContentBlock {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ToolResultContent {
     /// Text result from tool execution
-    Text {
-        text: String,
-    },
+    Text { text: String },
     // Future variants:
     // Image { ... }
 }

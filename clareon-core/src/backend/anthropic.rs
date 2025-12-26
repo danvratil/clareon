@@ -188,7 +188,11 @@ impl LlmBackend for AnthropicBackend {
         let api_response: AnthropicResponse = response.json().await?;
 
         // Get conversation_id from the first message (they should all have the same one)
-        let conversation_id = request.messages.first().map(|m| m.conversation_id).unwrap_or(0);
+        let conversation_id = request
+            .messages
+            .first()
+            .map(|m| m.conversation_id)
+            .unwrap_or(0);
 
         let (message, stop_reason, usage) = Self::convert_response(api_response, conversation_id);
 

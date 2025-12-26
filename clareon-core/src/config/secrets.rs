@@ -47,10 +47,7 @@ impl SecretStore {
         }
 
         // Create attributes for the secret
-        let attributes = vec![
-            ("application", "clareon"),
-            ("key", key),
-        ];
+        let attributes = vec![("application", "clareon"), ("key", key)];
 
         // Create or update the secret
         collection
@@ -86,10 +83,7 @@ impl SecretStore {
         }
 
         // Search for the secret
-        let attributes = vec![
-            ("application", "clareon"),
-            ("key", key),
-        ];
+        let attributes = vec![("application", "clareon"), ("key", key)];
 
         let items = collection
             .search_items(attributes.into_iter().collect())
@@ -127,10 +121,7 @@ impl SecretStore {
         }
 
         // Search for the secret
-        let attributes = vec![
-            ("application", "clareon"),
-            ("key", key),
-        ];
+        let attributes = vec![("application", "clareon"), ("key", key)];
 
         let items = collection
             .search_items(attributes.into_iter().collect())

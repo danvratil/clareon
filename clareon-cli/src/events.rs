@@ -43,7 +43,8 @@ async fn handle_key_event(app: &mut App, key: KeyEvent) -> anyhow::Result<()> {
 async fn handle_chat_keys(app: &mut App, key: KeyEvent) -> anyhow::Result<()> {
     match (key.code, key.modifiers) {
         // Quit
-        (KeyCode::Char('c'), KeyModifiers::CONTROL) | (KeyCode::Char('q'), KeyModifiers::CONTROL) => {
+        (KeyCode::Char('c'), KeyModifiers::CONTROL)
+        | (KeyCode::Char('q'), KeyModifiers::CONTROL) => {
             app.quit();
         }
 

@@ -10,7 +10,9 @@ pub mod error;
 pub mod storage;
 pub mod types;
 
-pub use backend::{AnthropicBackend, BedrockBackend, ChatRequest, ChatResponse, LlmBackend, StopReason};
+pub use backend::{
+    AnthropicBackend, BedrockBackend, ChatRequest, ChatResponse, LlmBackend, StopReason,
+};
 pub use config::{Config, SecretStore};
 pub use conversation::ConversationManager;
 pub use error::{Error, Result};
