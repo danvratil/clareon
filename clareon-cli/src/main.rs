@@ -8,7 +8,9 @@ mod cli;
 mod events;
 mod ui;
 
+use std::fs::File;
 use std::io;
+use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
@@ -20,9 +22,41 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, Terminal};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use app::App;
+use app::{App, AppOptions};
 use clareon_core::Config;
 use cli::Args;
+
+/// Get the log file path
+fn log_file_path() -> Result<PathBuf> {
+    let data_dir = directories::ProjectDirs::from("org", "clareon", "clareon")
+        .ok_or_else(|| anyhow::anyhow!("Could not determine data directory"))?;
+    let log_dir = data_dir.data_dir();
+    std::fs::create_dir_all(log_dir)?;
+    Ok(log_dir.join("debug.log"))
+}
+
+/// Initialize file-based logging for TUI mode
+fn init_file_logging() -> Result<tracing_appender::non_blocking::WorkerGuard> {
+    let log_path = log_file_path()?;
+
+    // Open log file (truncate on each run for now)
+    let log_file = File::create(&log_path)?;
+
+    let (non_blocking, guard) = tracing_appender::non_blocking(log_file);
+
+    tracing_subscriber::registry()
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug")))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(non_blocking)
+                .with_ansi(false)
+        )
+        .init();
+
+    tracing::info!("Logging initialized to {:?}", log_path);
+
+    Ok(guard)
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -112,6 +146,10 @@ async fn search_conversations(config: &Config, query: &str) -> Result<()> {
 
 /// Run the TUI application
 async fn run_tui(config: Config, args: Args) -> Result<()> {
+    // Initialize file-based logging for TUI mode
+    // The guard must be kept alive for the duration of the app
+    let _log_guard = init_file_logging()?;
+
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -119,8 +157,12 @@ async fn run_tui(config: Config, args: Args) -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Create app
-    let mut app = App::new(config).await?;
+    // Create app with options
+    let options = AppOptions {
+        profile: args.profile.clone(),
+        region: args.region.clone(),
+    };
+    let mut app = App::new(config, options).await?;
 
     // Resume conversation if specified
     if let Some(id) = args.resume {

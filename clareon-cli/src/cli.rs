@@ -27,6 +27,14 @@ pub struct Args {
     #[arg(long, value_name = "MODEL")]
     pub model: Option<String>,
 
+    /// AWS profile to use (for Bedrock backend)
+    #[arg(long, value_name = "PROFILE")]
+    pub profile: Option<String>,
+
+    /// AWS region to use (for Bedrock backend)
+    #[arg(long, value_name = "REGION")]
+    pub region: Option<String>,
+
     /// Initial prompt (starts conversation without TUI)
     #[arg(value_name = "PROMPT")]
     pub prompt: Option<String>,

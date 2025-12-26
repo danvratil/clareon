@@ -62,12 +62,27 @@ pub struct App {
     pub config: Config,
 }
 
+/// Options for creating the app
+pub struct AppOptions {
+    /// AWS profile to use
+    pub profile: Option<String>,
+    /// AWS region override
+    pub region: Option<String>,
+}
+
 impl App {
     /// Create a new application instance
-    pub async fn new(config: Config) -> anyhow::Result<Self> {
+    pub async fn new(config: Config, options: AppOptions) -> anyhow::Result<Self> {
         // Initialize storage
         let db_url = Config::database_url()?;
         let storage = Storage::new(&db_url).await?;
+
+        // Determine region (CLI override > config)
+        let region = options
+            .region
+            .as_ref()
+            .unwrap_or(&config.backends.bedrock.region)
+            .clone();
 
         // Initialize backend based on config
         let backend: Arc<dyn LlmBackend> = match config.default_backend.as_str() {
@@ -82,9 +97,14 @@ impl App {
                 Arc::new(clareon_core::AnthropicBackend::new(api_key))
             }
             _ => {
-                // Default to Bedrock
-                let region = &config.backends.bedrock.region;
-                Arc::new(BedrockBackend::new(region).await?)
+                // Default to Bedrock - use profile if specified
+                if let Some(profile) = &options.profile {
+                    Arc::new(BedrockBackend::with_profile(&region, profile).await?)
+                } else if let Some(profile) = &config.backends.bedrock.profile {
+                    Arc::new(BedrockBackend::with_profile(&region, profile).await?)
+                } else {
+                    Arc::new(BedrockBackend::new(&region).await?)
+                }
             }
         };
 

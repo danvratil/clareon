@@ -1,0 +1,64 @@
+warning: unused import: `ContentDelta`
+  --> clareon-core/src/backend/anthropic.rs:12:32
+   |
+12 |     ChatRequest, ChatResponse, ContentDelta, LlmBackend, ModelInfo, StopReason, StreamEvent, Usage,
+   |                                ^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: constant `ANTHROPIC_API_KEY` is never used
+  --> clareon-core/src/config/secrets.rs:16:15
+   |
+16 |     pub const ANTHROPIC_API_KEY: &str = "anthropic-api-key";
+   |               ^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: `clareon-core` (lib) generated 2 warnings (run `cargo fix --lib -p clareon-core` to apply 1 suggestion)
+warning: unused variable: `config`
+  --> clareon-cli/src/main.rs:67:29
+   |
+67 | async fn list_conversations(config: &Config) -> Result<()> {
+   |                             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_config`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `config`
+  --> clareon-cli/src/main.rs:92:31
+   |
+92 | async fn search_conversations(config: &Config, query: &str) -> Result<()> {
+   |                               ^^^^^^ help: if this is intentional, prefix it with an underscore: `_config`
+
+warning: variant `SearchResults` is never constructed
+  --> clareon-cli/src/app.rs:18:5
+   |
+12 | pub enum ViewMode {
+   |          -------- variant in this enum
+...
+18 |     SearchResults,
+   |     ^^^^^^^^^^^^^
+   |
+   = note: `ViewMode` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` on by default
+
+warning: field `config` is never read
+  --> clareon-cli/src/app.rs:62:9
+   |
+24 | pub struct App {
+   |            --- field in this struct
+...
+62 |     pub config: Config,
+   |         ^^^^^^
+
+warning: method `search` is never used
+   --> clareon-cli/src/app.rs:202:18
+    |
+ 73 | impl App {
+    | -------- method in this implementation
+...
+202 |     pub async fn search(&mut self, query: &str) -> anyhow::Result<()> {
+    |                  ^^^^^^
+
+warning: `clareon-cli` (bin "clareon") generated 5 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running `target/debug/clareon --backend bedrock --model 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0' --region eu-central-1 --profile Norton-Developer-010597010770`

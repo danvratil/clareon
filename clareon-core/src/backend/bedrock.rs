@@ -9,6 +9,7 @@ use aws_sdk_bedrockruntime::types::{
     SystemContentBlock, ToolResultBlock, ToolResultContentBlock, ToolUseBlock,
 };
 use aws_sdk_bedrockruntime::Client;
+use aws_sdk_bedrockruntime::error::SdkError;
 use aws_smithy_types::Document;
 use futures::Stream;
 use tracing::{debug, info};
@@ -203,8 +204,23 @@ impl BedrockBackend {
 #[async_trait]
 impl LlmBackend for BedrockBackend {
     async fn send_message(&self, request: &ChatRequest) -> Result<ChatResponse, BackendError> {
-        info!("Sending message to Bedrock, model: {}", request.model);
+        info!(
+            "Sending message to Bedrock, model: {}, region: {}",
+            request.model, self.region
+        );
         debug!("Message count: {}", request.messages.len());
+        debug!("Max tokens: {}", request.max_tokens);
+        if let Some(sys) = &request.system_prompt {
+            debug!("System prompt length: {} chars", sys.len());
+        }
+        for (i, msg) in request.messages.iter().enumerate() {
+            debug!(
+                "Message {}: role={:?}, content_blocks={}",
+                i,
+                msg.role,
+                msg.content.len()
+            );
+        }
 
         let messages = Self::convert_messages(&request.messages)?;
 
@@ -233,10 +249,58 @@ impl LlmBackend for BedrockBackend {
 
         converse_builder = converse_builder.inference_config(inference_config.build());
 
-        let response = converse_builder
-            .send()
-            .await
-            .map_err(|e| BackendError::AwsSdk(e.to_string()))?;
+        let response = converse_builder.send().await.map_err(|e| {
+            // Extract more detailed error information
+            let err_str = format!("{:?}", e);
+            let err_display = format!("{}", e);
+
+            // Try to get raw response body for more details
+            let raw_body = if let SdkError::ServiceError(ref service_err) = e {
+                let raw = service_err.raw();
+                let body_bytes = raw.body().bytes();
+                body_bytes.map(|b| String::from_utf8_lossy(b).to_string())
+            } else {
+                None
+            };
+
+            debug!("AWS error (display): {}", err_display);
+            debug!("AWS error (debug): {}", err_str);
+            if let Some(ref body) = raw_body {
+                debug!("AWS error (raw body): {}", body);
+            }
+
+            // Check for common error patterns
+            if err_str.contains("ExpiredTokenException") || err_str.contains("expired") {
+                BackendError::Authentication(
+                    "AWS credentials expired. Run 'aws sso login' or refresh your credentials.".to_string()
+                )
+            } else if err_str.contains("AccessDeniedException") || err_str.contains("AccessDenied") {
+                BackendError::Authentication(format!(
+                    "Access denied. Ensure you have bedrock:InvokeModel permission for model '{}' in region '{}'.",
+                    request.model, self.region
+                ))
+            } else if err_str.contains("ResourceNotFoundException") || err_str.contains("Could not resolve the foundation model") {
+                BackendError::ModelNotAvailable(format!(
+                    "Model '{}' not found in region '{}'. Check the model ID and ensure it's enabled in your AWS account.",
+                    request.model, self.region
+                ))
+            } else if err_str.contains("ThrottlingException") {
+                BackendError::RateLimited { retry_after_secs: Some(60) }
+            } else if err_str.contains("ValidationException") {
+                let body_info = raw_body.as_ref().map(|b| format!("\n\nRaw response: {}", b)).unwrap_or_default();
+                BackendError::InvalidResponse(format!(
+                    "Validation error for model '{}' in region '{}': {}{}",
+                    request.model, self.region, e, body_info
+                ))
+            } else if err_str.contains("No credentials") || err_str.contains("failed to load credentials") {
+                BackendError::Authentication(
+                    "No AWS credentials found. Configure credentials via 'aws configure', environment variables, or SSO.".to_string()
+                )
+            } else {
+                // Include full debug output for unknown errors
+                BackendError::AwsSdk(format!("{}\n\nFull error: {:?}", e, e))
+            }
+        })?;
 
         // Extract stop reason
         let stop_reason = match response.stop_reason() {
