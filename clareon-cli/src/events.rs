@@ -65,8 +65,8 @@ async fn handle_chat_keys(app: &mut App, key: KeyEvent) -> anyhow::Result<()> {
             app.load_conversation_list().await?;
         }
 
-        // Show help
-        (KeyCode::Char('?'), _) | (KeyCode::F(1), _) => {
+        // Show help (Ctrl+H or F1)
+        (KeyCode::Char('h'), KeyModifiers::CONTROL) | (KeyCode::F(1), _) => {
             app.view_mode = ViewMode::Help;
         }
 

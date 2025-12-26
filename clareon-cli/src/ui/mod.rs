@@ -76,7 +76,7 @@ fn render_chat(frame: &mut Frame, app: &App) {
     let status_text = app
         .status
         .as_deref()
-        .unwrap_or("? for help | Ctrl+N new | Ctrl+O open | Ctrl+Q quit");
+        .unwrap_or("Ctrl+H help | Ctrl+N new | Ctrl+O open | Ctrl+Q quit");
     let status = Paragraph::new(status_text).style(Style::default().fg(Color::DarkGray));
     frame.render_widget(status, chunks[3]);
 }
@@ -246,7 +246,7 @@ fn render_help_popup(frame: &mut Frame) {
         Line::from("  Ctrl+U     Clear input"),
         Line::from("  Ctrl+W     Delete word"),
         Line::from("  Up/Down    Scroll messages"),
-        Line::from("  ?/F1       Show this help"),
+        Line::from("  Ctrl+H/F1  Show this help"),
         Line::from(""),
         Line::from(Span::styled(
             "Press Esc or Enter to close",
