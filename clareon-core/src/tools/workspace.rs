@@ -20,17 +20,23 @@ use super::ToolError;
 #[derive(Debug, Clone)]
 pub struct PersistentWorkspace {
     conversation_id: i64,
-    root_path: PathBuf,           // ~/.cache/clareon/conversations/<id>/
-    workspace_path: PathBuf,      // ~/.cache/clareon/conversations/<id>/workspace/
-    input_path: PathBuf,          // ~/.cache/clareon/conversations/<id>/input/
-    output_path: PathBuf,         // ~/.cache/clareon/conversations/<id>/output/
-    pip_cache_path: PathBuf,      // ~/.cache/clareon/shared/pip/
+    root_path: PathBuf,      // ~/.cache/clareon/conversations/<id>/
+    workspace_path: PathBuf, // ~/.cache/clareon/conversations/<id>/workspace/
+    input_path: PathBuf,     // ~/.cache/clareon/conversations/<id>/input/
+    output_path: PathBuf,    // ~/.cache/clareon/conversations/<id>/output/
+    pip_cache_path: PathBuf, // ~/.cache/clareon/shared/pip/
 }
 
 impl PersistentWorkspace {
     /// Create a new persistent workspace for a conversation
-    pub fn new(conversation_id: i64, cache_root: &Path, shared_pip: &Path) -> std::result::Result<Self, ToolError> {
-        let root_path = cache_root.join("conversations").join(conversation_id.to_string());
+    pub fn new(
+        conversation_id: i64,
+        cache_root: &Path,
+        shared_pip: &Path,
+    ) -> std::result::Result<Self, ToolError> {
+        let root_path = cache_root
+            .join("conversations")
+            .join(conversation_id.to_string());
         let workspace_path = root_path.join("workspace");
         let input_path = root_path.join("input");
         let output_path = root_path.join("output");
@@ -98,7 +104,10 @@ impl PersistentWorkspace {
     }
 
     /// Extract user files from database to input directory
-    pub async fn populate_input_files(&self, files: &[UserFile]) -> std::result::Result<(), ToolError> {
+    pub async fn populate_input_files(
+        &self,
+        files: &[UserFile],
+    ) -> std::result::Result<(), ToolError> {
         for file in files {
             let file_path = self.input_path.join(&file.filename);
 
@@ -270,13 +279,20 @@ impl WorkspaceManager {
     }
 
     /// Get or create workspace for a conversation
-    pub async fn get_workspace(&self, conversation_id: i64) -> std::result::Result<Arc<PersistentWorkspace>, ToolError> {
+    pub async fn get_workspace(
+        &self,
+        conversation_id: i64,
+    ) -> std::result::Result<Arc<PersistentWorkspace>, ToolError> {
         // Check cache first
         {
             let workspaces = self.workspaces.read().await;
             if let Some(workspace) = workspaces.get(&conversation_id) {
                 // Update last access time
-                if let Err(e) = self.storage.update_workspace_last_access(conversation_id).await {
+                if let Err(e) = self
+                    .storage
+                    .update_workspace_last_access(conversation_id)
+                    .await
+                {
                     warn!("Failed to update workspace last access: {}", e);
                 }
                 return Ok(workspace.clone());
@@ -296,7 +312,10 @@ impl WorkspaceManager {
     }
 
     /// Cleanup workspaces older than N days
-    pub async fn cleanup_old_workspaces(&self, days: u64) -> std::result::Result<Vec<i64>, ToolError> {
+    pub async fn cleanup_old_workspaces(
+        &self,
+        days: u64,
+    ) -> std::result::Result<Vec<i64>, ToolError> {
         use chrono::Utc;
 
         let cutoff_timestamp = Utc::now().timestamp() - (days * 86400) as i64;
@@ -313,14 +332,14 @@ impl WorkspaceManager {
             let workspace_path = Path::new(&metadata.workspace_path);
 
             // Delete directory if it exists
-            if workspace_path.exists() {
-                if let Err(e) = fs::remove_dir_all(workspace_path).await {
-                    warn!(
-                        "Failed to delete workspace directory for conversation {}: {}",
-                        metadata.conversation_id, e
-                    );
-                    continue;
-                }
+            if workspace_path.exists()
+                && let Err(e) = fs::remove_dir_all(workspace_path).await
+            {
+                warn!(
+                    "Failed to delete workspace directory for conversation {}: {}",
+                    metadata.conversation_id, e
+                );
+                continue;
             }
 
             // Delete database record
@@ -382,10 +401,7 @@ impl WorkspaceManager {
 
             // Store metadata in database
             self.storage
-                .create_workspace_metadata(
-                    conversation_id,
-                    ws.root().to_string_lossy().as_ref(),
-                )
+                .create_workspace_metadata(conversation_id, ws.root().to_string_lossy().as_ref())
                 .await
                 .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
@@ -394,7 +410,11 @@ impl WorkspaceManager {
         };
 
         // Update last access time
-        if let Err(e) = self.storage.update_workspace_last_access(conversation_id).await {
+        if let Err(e) = self
+            .storage
+            .update_workspace_last_access(conversation_id)
+            .await
+        {
             warn!("Failed to update workspace last access: {}", e);
         }
 

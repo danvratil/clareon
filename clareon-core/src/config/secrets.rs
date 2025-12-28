@@ -15,6 +15,7 @@ pub struct SecretStore {
 }
 
 /// Anthropic API key
+#[allow(dead_code)]
 pub const ANTHROPIC_API_KEY: &str = "anthropic-api-key";
 
 impl SecretStore {

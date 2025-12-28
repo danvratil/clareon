@@ -2,14 +2,16 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
-use serde_json::Value;
 use tracing::{debug, info, warn};
 
 use crate::types::{ContentBlock, ToolResultContent};
 
-use super::{ArtifactManager, ExecutionContext, ToolRegistry, Sandbox, ToolResult, WorkspaceManager};
+use super::{
+    ArtifactManager, ExecutionContext, Sandbox, ToolRegistry, ToolResult, WorkspaceManager,
+};
 
 /// High-level tool executor that coordinates sandbox and tools
 pub struct ToolExecutor {
@@ -67,13 +69,19 @@ impl ToolExecutor {
         let result = match tool.execute(input, context).await {
             Ok(r) => {
                 if r.success {
-                    info!("Tool {} (id: {}) executed successfully", tool_name, tool_use_id);
+                    info!(
+                        "Tool {} (id: {}) executed successfully",
+                        tool_name, tool_use_id
+                    );
                     debug!("Tool use {} output: {}", tool_use_id, r.output);
                 } else {
-                    warn!("Tool {} (id: {}) execution failed: {}", tool_name, tool_use_id, r.output);
+                    warn!(
+                        "Tool {} (id: {}) execution failed: {}",
+                        tool_name, tool_use_id, r.output
+                    );
                 }
                 r
-            },
+            }
             Err(e) => {
                 warn!("Tool execution failed: {}", e);
                 ToolResult::error(e.to_string())
@@ -96,11 +104,13 @@ impl ToolExecutor {
         message_id: i64,
     ) -> Result<Vec<ContentBlock>, super::ToolError> {
         // 1. Get workspace
-        let workspace = self.workspace_manager.get_workspace(conversation_id).await?;
+        let workspace = self
+            .workspace_manager
+            .get_workspace(conversation_id)
+            .await?;
 
         // 2. Scan output directory BEFORE execution (get baseline hashes)
-        let before_hashes =
-            ArtifactManager::scan_output_directory(workspace.output()).await?;
+        let before_hashes = ArtifactManager::scan_output_directory(workspace.output()).await?;
 
         // 3. Build execution context
         let context = ExecutionContext {
@@ -121,9 +131,7 @@ impl ToolExecutor {
             let input = input.clone();
 
             tasks.push(tokio::spawn(async move {
-                executor
-                    .execute_tool_use(&id, &name, &input, &ctx)
-                    .await
+                executor.execute_tool_use(&id, &name, &input, &ctx).await
             }));
         }
 

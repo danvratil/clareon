@@ -194,7 +194,7 @@ pub struct ToolsConfig {
     /// Sandbox mode
     #[serde(default)]
     pub sandbox_mode: SandboxModeConfig,
-    
+
     /// Default timeout for tool execution (seconds)
     #[serde(default = "default_tool_timeout")]
     pub default_timeout: u64,

@@ -4,7 +4,7 @@
 
 //! SQLite database operations
 
-use sqlx::{sqlite::SqlitePoolOptions, Pool, Row, Sqlite};
+use sqlx::{Pool, Row, Sqlite, sqlite::SqlitePoolOptions};
 use tracing::{debug, info, warn};
 
 use crate::error::{Error, Result};

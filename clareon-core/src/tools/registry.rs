@@ -34,7 +34,10 @@ impl ToolRegistry {
 
     /// Generate tool definitions for LLM API
     pub fn tool_definitions(&self) -> Vec<ToolDefinition> {
-        self.tools.values().map(|tool| tool.to_definition()).collect()
+        self.tools
+            .values()
+            .map(|tool| tool.to_definition())
+            .collect()
     }
 
     /// Check if a tool exists

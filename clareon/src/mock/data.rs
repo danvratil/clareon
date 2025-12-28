@@ -16,7 +16,7 @@ pub struct MockConversation {
 #[derive(Debug, Clone)]
 pub struct MockMessage {
     pub id: i64,
-    pub role: String,  // "user" or "assistant"
+    pub role: String, // "user" or "assistant"
     pub text_content: String,
     pub created_at: i64,
 }
@@ -29,56 +29,56 @@ pub fn mock_conversations() -> Vec<MockConversation> {
         MockConversation {
             id: 1,
             title: "Rust async patterns".to_string(),
-            updated_at: now - 3600,      // 1 hour ago
+            updated_at: now - 3600, // 1 hour ago
             model: "claude-sonnet-4".to_string(),
             message_count: 12,
         },
         MockConversation {
             id: 2,
             title: "QML layout design".to_string(),
-            updated_at: now - 7200,      // 2 hours ago
+            updated_at: now - 7200, // 2 hours ago
             model: "claude-sonnet-4".to_string(),
             message_count: 8,
         },
         MockConversation {
             id: 3,
             title: "Debugging SQLite queries".to_string(),
-            updated_at: now - 86400,     // 1 day ago
+            updated_at: now - 86400, // 1 day ago
             model: "claude-sonnet-4".to_string(),
             message_count: 15,
         },
         MockConversation {
             id: 4,
             title: "Kirigami components overview".to_string(),
-            updated_at: now - 172800,    // 2 days ago
+            updated_at: now - 172800, // 2 days ago
             model: "claude-sonnet-4".to_string(),
             message_count: 6,
         },
         MockConversation {
             id: 5,
             title: "Git workflow best practices".to_string(),
-            updated_at: now - 259200,    // 3 days ago
+            updated_at: now - 259200, // 3 days ago
             model: "claude-haiku".to_string(),
             message_count: 10,
         },
         MockConversation {
             id: 6,
             title: "Linux desktop integration".to_string(),
-            updated_at: now - 432000,    // 5 days ago
+            updated_at: now - 432000, // 5 days ago
             model: "claude-sonnet-4".to_string(),
             message_count: 20,
         },
         MockConversation {
             id: 7,
             title: "Error handling in Rust".to_string(),
-            updated_at: now - 604800,    // 1 week ago
+            updated_at: now - 604800, // 1 week ago
             model: "claude-sonnet-4".to_string(),
             message_count: 14,
         },
         MockConversation {
             id: 8,
             title: "CSS grid vs flexbox".to_string(),
-            updated_at: now - 1209600,   // 2 weeks ago
+            updated_at: now - 1209600, // 2 weeks ago
             model: "claude-haiku".to_string(),
             message_count: 7,
         },

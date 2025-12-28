@@ -5,8 +5,8 @@
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
 
 pub mod app_controller;
-pub mod models;
 pub mod mock;
+pub mod models;
 
 fn main() {
     // Initialize the Qt application

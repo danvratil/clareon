@@ -21,10 +21,10 @@ use clap::Parser;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use ratatui::{Terminal, backend::CrosstermBackend};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use app::{App, AppOptions};
 use clareon_core::Config;
@@ -52,10 +52,7 @@ fn init_file_logging(config: &Config) -> Result<tracing_appender::non_blocking::
     let default_filter = config.logging.build_filter_directive();
 
     tracing_subscriber::registry()
-        .with(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new(&default_filter))
-        )
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&default_filter)))
         .with(
             tracing_subscriber::fmt::layer()
                 .with_writer(non_blocking)
@@ -109,7 +106,7 @@ async fn main() -> Result<()> {
 }
 
 /// List conversations and exit
-async fn list_conversations(config: &Config) -> Result<()> {
+async fn list_conversations(_config: &Config) -> Result<()> {
     let db_url = Config::database_url()?;
     let storage = clareon_core::Storage::new(&db_url).await?;
 
@@ -134,7 +131,7 @@ async fn list_conversations(config: &Config) -> Result<()> {
 }
 
 /// Search conversations and exit
-async fn search_conversations(config: &Config, query: &str) -> Result<()> {
+async fn search_conversations(_config: &Config, query: &str) -> Result<()> {
     let db_url = Config::database_url()?;
     let storage = clareon_core::Storage::new(&db_url).await?;
 

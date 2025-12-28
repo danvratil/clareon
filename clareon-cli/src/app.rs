@@ -12,11 +12,12 @@ use tokio::sync::mpsc;
 use ratatui::widgets::ListState;
 
 use clareon_core::{
+    ArtifactManager, BedrockBackend, BubblewrapSandbox, Config, ConversationManager, LlmBackend,
+    NoneSandbox, Sandbox, SandboxMode, SandboxModeConfig, Storage, StreamUpdate, ToolExecutor,
+    ToolRegistry, WorkspaceManager,
     backend::Usage,
-    register_builtin_tools, ArtifactManager, BubblewrapSandbox, NoneSandbox, Sandbox,
-    SandboxMode, SandboxModeConfig, ToolExecutor, ToolRegistry, WorkspaceManager,
+    register_builtin_tools,
     types::{ContentBlock, Conversation, ConversationSummary, Message, SearchResult},
-    BedrockBackend, Config, ConversationManager, LlmBackend, Storage, StreamUpdate,
 };
 
 /// Current view mode
@@ -27,6 +28,7 @@ pub enum ViewMode {
     /// Conversation list
     ConversationList,
     /// Search results
+    #[allow(dead_code)]
     SearchResults,
     /// Help screen
     Help,
@@ -137,20 +139,19 @@ impl App {
             }
             _ => {
                 // Default to Bedrock - use profile if specified
-                let profile = options.profile.clone()
+                let profile = options
+                    .profile
+                    .clone()
                     .or_else(|| config.backends.bedrock.profile.clone());
                 let enable_caching = config.backends.bedrock.enable_prompt_caching;
 
-                Arc::new(BedrockBackend::new_with_config(
-                    &region,
-                    profile,
-                    enable_caching
-                ).await?)
+                Arc::new(BedrockBackend::new_with_config(&region, profile, enable_caching).await?)
             }
         };
 
         // Initialize tool executor if tools are enabled
-        let mut manager = ConversationManager::with_single_backend(storage, backend, config.clone());
+        let mut manager =
+            ConversationManager::with_single_backend(storage, backend, config.clone());
 
         if config.tools.enabled {
             // Get cache root directory
@@ -160,10 +161,8 @@ impl App {
             let storage_arc = manager.storage();
 
             // Create workspace manager
-            let workspace_manager = Arc::new(WorkspaceManager::new(
-                cache_root,
-                storage_arc.clone(),
-            ));
+            let workspace_manager =
+                Arc::new(WorkspaceManager::new(cache_root, storage_arc.clone()));
 
             // Ensure shared directories exist
             workspace_manager.ensure_shared_directories().await?;
@@ -178,12 +177,8 @@ impl App {
             // Create sandbox based on config
             let sandbox: Arc<dyn Sandbox> = match config.tools.sandbox_mode {
                 SandboxModeConfig::None => Arc::new(NoneSandbox),
-                SandboxModeConfig::Basic => {
-                    Arc::new(BubblewrapSandbox::new(SandboxMode::Basic))
-                }
-                SandboxModeConfig::Strict => {
-                    Arc::new(BubblewrapSandbox::new(SandboxMode::Strict))
-                }
+                SandboxModeConfig::Basic => Arc::new(BubblewrapSandbox::new(SandboxMode::Basic)),
+                SandboxModeConfig::Strict => Arc::new(BubblewrapSandbox::new(SandboxMode::Strict)),
             };
 
             // Create tool executor with workspace and artifact managers
@@ -281,7 +276,10 @@ impl App {
             self.stream_rx = Some(rx);
 
             tokio::spawn(async move {
-                match manager.send_message_with_tools(&mut conv, &user_input).await {
+                match manager
+                    .send_message_with_tools(&mut conv, &user_input)
+                    .await
+                {
                     Ok(response) => {
                         // Send the final response as a stream update
                         let update = StreamUpdate {
@@ -343,6 +341,7 @@ impl App {
     }
 
     /// Search conversations
+    #[allow(dead_code)]
     pub async fn search(&mut self, query: &str) -> anyhow::Result<()> {
         self.search_query = query.to_string();
         self.search_results = self.manager.search(query).await?;
@@ -360,7 +359,12 @@ impl App {
     /// Scroll messages down
     pub fn scroll_down(&mut self, amount: usize) {
         // Calculate total items (messages + streaming message if present)
-        let total_items = self.messages.len() + if self.streaming_message.is_some() { 1 } else { 0 };
+        let total_items = self.messages.len()
+            + if self.streaming_message.is_some() {
+                1
+            } else {
+                0
+            };
 
         if total_items == 0 {
             return;
@@ -373,9 +377,15 @@ impl App {
 
     /// Scroll to the bottom of messages
     pub fn scroll_to_bottom(&mut self) {
-        let total_items = self.messages.len() + if self.streaming_message.is_some() { 1 } else { 0 };
+        let total_items = self.messages.len()
+            + if self.streaming_message.is_some() {
+                1
+            } else {
+                0
+            };
         if total_items > 0 {
-            self.message_list_state.select(Some(total_items.saturating_sub(1)));
+            self.message_list_state
+                .select(Some(total_items.saturating_sub(1)));
         }
     }
 
@@ -400,8 +410,16 @@ impl App {
         self.conversation_usage = Usage {
             input_tokens: total_input,
             output_tokens: total_output,
-            cache_read_input_tokens: if total_cache_read > 0 { Some(total_cache_read) } else { None },
-            cache_write_input_tokens: if total_cache_write > 0 { Some(total_cache_write) } else { None },
+            cache_read_input_tokens: if total_cache_read > 0 {
+                Some(total_cache_read)
+            } else {
+                None
+            },
+            cache_write_input_tokens: if total_cache_write > 0 {
+                Some(total_cache_write)
+            } else {
+                None
+            },
         };
     }
 

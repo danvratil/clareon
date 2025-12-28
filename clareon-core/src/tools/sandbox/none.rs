@@ -22,9 +22,18 @@ impl NoneSandbox {
 
         // Replace sandbox paths with host paths (longest paths first to avoid conflicts)
         let replacements = vec![
-            ("/mnt/user-data/uploads", context.workspace.input().to_string_lossy().to_string()),
-            ("/mnt/user-data/outputs", context.workspace.output().to_string_lossy().to_string()),
-            ("/home/claude", context.workspace.workspace().to_string_lossy().to_string()),
+            (
+                "/mnt/user-data/uploads",
+                context.workspace.input().to_string_lossy().to_string(),
+            ),
+            (
+                "/mnt/user-data/outputs",
+                context.workspace.output().to_string_lossy().to_string(),
+            ),
+            (
+                "/home/claude",
+                context.workspace.workspace().to_string_lossy().to_string(),
+            ),
         ];
 
         for (sandbox_path, host_path) in replacements {
@@ -36,7 +45,8 @@ impl NoneSandbox {
 
     /// Map command arguments, replacing sandbox paths with host paths
     fn map_command(&self, command: &[String], context: &ExecutionContext) -> Vec<String> {
-        command.iter()
+        command
+            .iter()
             .map(|arg| self.map_paths_in_string(arg, context))
             .collect()
     }
@@ -82,10 +92,13 @@ impl Sandbox for NoneSandbox {
             .spawn()
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
-        if let Some(data) = stdin && let Some(mut child_stdin) = child.stdin.take() {
-            child_stdin.write_all(data).await.map_err(|e| {
-                ToolError::ExecutionFailed(format!("Failed to write stdin: {}", e))
-            })?;
+        if let Some(data) = stdin
+            && let Some(mut child_stdin) = child.stdin.take()
+        {
+            child_stdin
+                .write_all(data)
+                .await
+                .map_err(|e| ToolError::ExecutionFailed(format!("Failed to write stdin: {}", e)))?;
         }
 
         let output = tokio::time::timeout(timeout, child.wait_with_output())

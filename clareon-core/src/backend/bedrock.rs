@@ -8,14 +8,14 @@ use std::pin::Pin;
 
 use async_trait::async_trait;
 use aws_config::BehaviorVersion;
+use aws_sdk_bedrockruntime::Client;
 use aws_sdk_bedrockruntime::error::SdkError;
 use aws_sdk_bedrockruntime::types::{
     CachePointBlock, CachePointType, ContentBlock as BedrockContentBlock, ContentBlockDelta,
-    ContentBlockStart as BedrockContentBlockStart, ConverseStreamOutput, ConversationRole,
+    ContentBlockStart as BedrockContentBlockStart, ConversationRole, ConverseStreamOutput,
     Message as BedrockMessage, SystemContentBlock, Tool as BedrockTool, ToolConfiguration,
     ToolInputSchema, ToolResultBlock, ToolResultContentBlock, ToolUseBlock,
 };
-use aws_sdk_bedrockruntime::Client;
 use aws_smithy_types::Document;
 use futures::Stream;
 use tracing::{debug, info, warn};
@@ -553,7 +553,9 @@ impl BedrockBackend {
             ConverseStreamOutput::ContentBlockStart(event) => {
                 let index = event.content_block_index() as usize;
                 let start = event.start().ok_or_else(|| {
-                    BackendError::InvalidResponse("ContentBlockStart missing start field".to_string())
+                    BackendError::InvalidResponse(
+                        "ContentBlockStart missing start field".to_string(),
+                    )
                 })?;
 
                 let block = match start {
@@ -567,7 +569,9 @@ impl BedrockBackend {
                     _ => {
                         // Text blocks don't have a start event in Bedrock, only deltas
                         // Start with empty text
-                        ContentBlock::Text { text: String::new() }
+                        ContentBlock::Text {
+                            text: String::new(),
+                        }
                     }
                 };
 
@@ -576,25 +580,28 @@ impl BedrockBackend {
             ConverseStreamOutput::ContentBlockDelta(event) => {
                 let index = event.content_block_index() as usize;
                 let delta = event.delta().ok_or_else(|| {
-                    BackendError::InvalidResponse("ContentBlockDelta missing delta field".to_string())
+                    BackendError::InvalidResponse(
+                        "ContentBlockDelta missing delta field".to_string(),
+                    )
                 })?;
 
                 let content_delta = match delta {
-                    ContentBlockDelta::Text(text) => {
-                        ContentDelta::Text { text: text.to_string() }
-                    }
-                    ContentBlockDelta::ToolUse(tool_use) => {
-                        ContentDelta::ToolInput {
-                            partial_json: tool_use.input().to_string(),
-                        }
-                    }
+                    ContentBlockDelta::Text(text) => ContentDelta::Text {
+                        text: text.to_string(),
+                    },
+                    ContentBlockDelta::ToolUse(tool_use) => ContentDelta::ToolInput {
+                        partial_json: tool_use.input().to_string(),
+                    },
                     _ => {
                         warn!("Unknown ContentBlockDelta type");
                         return Ok(None);
                     }
                 };
 
-                Ok(Some(StreamEvent::ContentBlockDelta { index, delta: content_delta }))
+                Ok(Some(StreamEvent::ContentBlockDelta {
+                    index,
+                    delta: content_delta,
+                }))
             }
             ConverseStreamOutput::ContentBlockStop(event) => {
                 let index = event.content_block_index() as usize;
@@ -609,7 +616,9 @@ impl BedrockBackend {
                     aws_sdk_bedrockruntime::types::StopReason::EndTurn => StopReason::EndTurn,
                     aws_sdk_bedrockruntime::types::StopReason::ToolUse => StopReason::ToolUse,
                     aws_sdk_bedrockruntime::types::StopReason::MaxTokens => StopReason::MaxTokens,
-                    aws_sdk_bedrockruntime::types::StopReason::StopSequence => StopReason::StopSequence,
+                    aws_sdk_bedrockruntime::types::StopReason::StopSequence => {
+                        StopReason::StopSequence
+                    }
                     _ => StopReason::EndTurn,
                 };
                 Ok(Some(StreamEvent::MessageStop { stop_reason }))
@@ -693,7 +702,7 @@ mod tests {
             client: Client::from_conf(
                 aws_sdk_bedrockruntime::Config::builder()
                     .behavior_version(aws_config::BehaviorVersion::latest())
-                    .build()
+                    .build(),
             ),
             region: "us-east-1".to_string(),
             enable_prompt_caching: true,
@@ -714,7 +723,7 @@ mod tests {
             client: Client::from_conf(
                 aws_sdk_bedrockruntime::Config::builder()
                     .behavior_version(aws_config::BehaviorVersion::latest())
-                    .build()
+                    .build(),
             ),
             region: "us-east-1".to_string(),
             enable_prompt_caching: false,
@@ -734,7 +743,7 @@ mod tests {
             client: Client::from_conf(
                 aws_sdk_bedrockruntime::Config::builder()
                     .behavior_version(aws_config::BehaviorVersion::latest())
-                    .build()
+                    .build(),
             ),
             region: "us-east-1".to_string(),
             enable_prompt_caching: true,

@@ -55,19 +55,19 @@ impl Tool for ListDirectoryTool {
             // Map /home/claude/* to host workspace path
             context.workspace.workspace().join(
                 path.strip_prefix(context.sandbox.workspace())
-                    .map_err(|e| ToolError::InvalidInput(e.to_string()))?
+                    .map_err(|e| ToolError::InvalidInput(e.to_string()))?,
             )
         } else if path.starts_with(context.sandbox.input_dir()) {
             // Map /mnt/user-data/uploads/* to host input path
             context.workspace.input().join(
                 path.strip_prefix(context.sandbox.input_dir())
-                    .map_err(|e| ToolError::InvalidInput(e.to_string()))?
+                    .map_err(|e| ToolError::InvalidInput(e.to_string()))?,
             )
         } else if path.starts_with(context.sandbox.output_dir()) {
             // Map /mnt/user-data/outputs/* to host output path
             context.workspace.output().join(
                 path.strip_prefix(context.sandbox.output_dir())
-                    .map_err(|e| ToolError::InvalidInput(e.to_string()))?
+                    .map_err(|e| ToolError::InvalidInput(e.to_string()))?,
             )
         } else {
             return Ok(ToolResult::error(format!(
@@ -218,8 +218,12 @@ mod tests {
         // Create subdirectory with files
         let subdir = context.workspace.workspace().join("mydir");
         fs::create_dir(&subdir).await.unwrap();
-        fs::write(subdir.join("file1.txt"), b"content1").await.unwrap();
-        fs::write(subdir.join("file2.txt"), b"content2").await.unwrap();
+        fs::write(subdir.join("file1.txt"), b"content1")
+            .await
+            .unwrap();
+        fs::write(subdir.join("file2.txt"), b"content2")
+            .await
+            .unwrap();
 
         // List using sandbox path
         let tool = ListDirectoryTool;

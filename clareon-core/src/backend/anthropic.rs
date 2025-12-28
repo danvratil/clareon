@@ -164,7 +164,10 @@ impl AnthropicBackend {
                     cache_write_input_tokens: message.usage.cache_creation_input_tokens,
                 })))
             }
-            AnthropicStreamEvent::ContentBlockStart { index, content_block } => {
+            AnthropicStreamEvent::ContentBlockStart {
+                index,
+                content_block,
+            } => {
                 let block = match content_block {
                     ContentBlockStart::Text { text } => ContentBlock::Text { text },
                     ContentBlockStart::ToolUse { id, name, input } => {
@@ -226,11 +229,15 @@ impl LlmBackend for AnthropicBackend {
             messages: Self::convert_messages(&request.messages),
             temperature: request.temperature,
             stream: Some(false),
-            tools: request.tools.iter().map(|t| AnthropicTool {
-                name: t.name.clone(),
-                description: t.description.clone(),
-                input_schema: t.input_schema.clone(),
-            }).collect(),
+            tools: request
+                .tools
+                .iter()
+                .map(|t| AnthropicTool {
+                    name: t.name.clone(),
+                    description: t.description.clone(),
+                    input_schema: t.input_schema.clone(),
+                })
+                .collect(),
         };
 
         let response = self
@@ -283,7 +290,10 @@ impl LlmBackend for AnthropicBackend {
         request: &ChatRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, BackendError>> + Send>>, BackendError>
     {
-        info!("Streaming message to Anthropic API, model: {}", request.model);
+        info!(
+            "Streaming message to Anthropic API, model: {}",
+            request.model
+        );
         debug!("Message count: {}", request.messages.len());
         debug!("Tools count: {}", request.tools.len());
 
@@ -294,11 +304,15 @@ impl LlmBackend for AnthropicBackend {
             messages: Self::convert_messages(&request.messages),
             temperature: request.temperature,
             stream: Some(true),
-            tools: request.tools.iter().map(|t| AnthropicTool {
-                name: t.name.clone(),
-                description: t.description.clone(),
-                input_schema: t.input_schema.clone(),
-            }).collect(),
+            tools: request
+                .tools
+                .iter()
+                .map(|t| AnthropicTool {
+                    name: t.name.clone(),
+                    description: t.description.clone(),
+                    input_schema: t.input_schema.clone(),
+                })
+                .collect(),
         };
 
         // Send the request
@@ -344,10 +358,13 @@ impl LlmBackend for AnthropicBackend {
                         }
 
                         // Parse the JSON event
-                        let anthropic_event: AnthropicStreamEvent = serde_json::from_str(&event.data)
-                            .map_err(|e| {
+                        let anthropic_event: AnthropicStreamEvent =
+                            serde_json::from_str(&event.data).map_err(|e| {
                                 warn!("Failed to parse SSE event: {}", e);
-                                BackendError::InvalidResponse(format!("Invalid JSON in SSE event: {}", e))
+                                BackendError::InvalidResponse(format!(
+                                    "Invalid JSON in SSE event: {}",
+                                    e
+                                ))
                             })?;
 
                         // Convert to our StreamEvent (returns Option)
@@ -355,14 +372,17 @@ impl LlmBackend for AnthropicBackend {
                     }
                     Err(e) => {
                         warn!("SSE stream error: {}", e);
-                        Err(BackendError::InvalidResponse(format!("SSE stream error: {}", e)))
+                        Err(BackendError::InvalidResponse(format!(
+                            "SSE stream error: {}",
+                            e
+                        )))
                     }
                 }
             })
             .filter_map(|result| async move {
                 match result {
                     Ok(Some(event)) => Some(Ok(event)),
-                    Ok(None) => None,  // Skip None events
+                    Ok(None) => None, // Skip None events
                     Err(e) => Some(Err(e)),
                 }
             });
@@ -476,6 +496,7 @@ enum AnthropicStreamEvent {
     #[serde(rename = "message_delta")]
     MessageDelta {
         delta: MessageDeltaContent,
+        #[allow(dead_code)]
         usage: DeltaUsage,
     },
     #[serde(rename = "message_stop")]
@@ -486,10 +507,14 @@ enum AnthropicStreamEvent {
 
 #[derive(Debug, Deserialize)]
 struct MessageStart {
+    #[allow(dead_code)]
     id: String,
     #[serde(rename = "type")]
+    #[allow(dead_code)]
     type_: String,
+    #[allow(dead_code)]
     role: String,
+    #[allow(dead_code)]
     model: String,
     usage: AnthropicUsage,
 }
@@ -523,6 +548,7 @@ struct MessageDeltaContent {
 
 #[derive(Debug, Deserialize)]
 struct DeltaUsage {
+    #[allow(dead_code)]
     output_tokens: i64,
 }
 

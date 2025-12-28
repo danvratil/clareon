@@ -119,11 +119,13 @@ impl app_controller::AppController {
         let query_text = query.to_string();
 
         if query_text.trim().is_empty() {
-            self.as_mut().set_view_mode(cxx_qt_lib::QString::from("chat"));
+            self.as_mut()
+                .set_view_mode(cxx_qt_lib::QString::from("chat"));
             return;
         }
 
-        self.as_mut().set_view_mode(cxx_qt_lib::QString::from("search"));
+        self.as_mut()
+            .set_view_mode(cxx_qt_lib::QString::from("search"));
         self.as_mut().set_status_message(cxx_qt_lib::QString::from(
             format!("Searching for '{}'...", query_text).as_str(),
         ));

@@ -12,7 +12,9 @@ use futures::{Stream, StreamExt};
 use tracing::{debug, info};
 
 use super::title::TitleGenerator;
-use crate::backend::{ChatRequest, ChatResponse, ContentDelta, LlmBackend, StopReason, StreamEvent, Usage};
+use crate::backend::{
+    ChatRequest, ChatResponse, ContentDelta, LlmBackend, StopReason, StreamEvent, Usage,
+};
 use crate::config::Config;
 use crate::error::Result;
 use crate::storage::Storage;
@@ -89,10 +91,10 @@ impl ConversationManager {
         let mut conversation = Conversation::new(&self.config.default_model);
 
         // Apply custom system prompt if configured
-        if !self.config.system_prompt.use_default {
-            if let Some(custom) = &self.config.system_prompt.custom_prompt {
-                conversation.system_prompt = Some(custom.clone());
-            }
+        if !self.config.system_prompt.use_default
+            && let Some(custom) = &self.config.system_prompt.custom_prompt
+        {
+            conversation.system_prompt = Some(custom.clone());
         }
 
         // Apply custom instructions
@@ -394,12 +396,18 @@ impl ConversationManager {
                 .with_max_tokens(4096);
 
             // Add tool definitions if tools are enabled
-            if let Some(executor) = &self.tool_executor && self.config.tools.enabled {
+            if let Some(executor) = &self.tool_executor
+                && self.config.tools.enabled
+            {
                 request.tools = executor.registry.tool_definitions();
             }
 
             // Send to backend
-            info!("Sending request to {} backend (iteration {})", self.backend.name(), iteration);
+            info!(
+                "Sending request to {} backend (iteration {})",
+                self.backend.name(),
+                iteration
+            );
             let response = self.backend.send_message(&request).await?;
 
             // Store assistant response
@@ -426,7 +434,12 @@ impl ConversationManager {
                     if let Some(executor) = &self.tool_executor {
                         info!("Tool use requested, executing tools");
                         let tool_results = self
-                            .execute_tools(&response.message, executor, conversation.id, assistant_msg_id)
+                            .execute_tools(
+                                &response.message,
+                                executor,
+                                conversation.id,
+                                assistant_msg_id,
+                            )
                             .await?;
 
                         // Store tool results as user message
@@ -521,20 +534,17 @@ impl ConversationManager {
     /// Get effective system prompt for a conversation
     fn get_effective_system_prompt(&self, conversation: &Conversation) -> String {
         // Use conversation-specific system prompt if set
-        let base_prompt = conversation
-            .system_prompt
-            .as_deref()
-            .unwrap_or_else(|| {
-                if self.config.system_prompt.use_default {
-                    Config::default_system_prompt()
-                } else {
-                    self.config
-                        .system_prompt
-                        .custom_prompt
-                        .as_deref()
-                        .unwrap_or("")
-                }
-            });
+        let base_prompt = conversation.system_prompt.as_deref().unwrap_or_else(|| {
+            if self.config.system_prompt.use_default {
+                Config::default_system_prompt()
+            } else {
+                self.config
+                    .system_prompt
+                    .custom_prompt
+                    .as_deref()
+                    .unwrap_or("")
+            }
+        });
 
         // Apply custom instructions
         let instructions = conversation.custom_instructions.as_ref().or(self

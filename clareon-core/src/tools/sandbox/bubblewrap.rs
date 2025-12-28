@@ -72,11 +72,7 @@ impl BubblewrapSandbox {
         }
 
         // Mount root as read-only
-        args.extend_from_slice(&[
-            "--ro-bind".to_string(),
-            "/".to_string(),
-            "/".to_string(),
-        ]);
+        args.extend_from_slice(&["--ro-bind".to_string(), "/".to_string(), "/".to_string()]);
 
         // Create writable /tmp
         args.extend_from_slice(&["--tmpfs".to_string(), "/tmp".to_string()]);
@@ -87,27 +83,16 @@ impl BubblewrapSandbox {
         // Mount workspace to /home/claude (RW)
         args.extend_from_slice(&[
             "--bind".to_string(),
-            context
-                .workspace
-                .workspace()
-                .to_string_lossy()
-                .to_string(),
+            context.workspace.workspace().to_string_lossy().to_string(),
             "/home/claude".to_string(),
         ]);
 
         // Mount shared pip cache to /home/claude/.local (RW)
         // Need to create the directory first
-        args.extend_from_slice(&[
-            "--dir".to_string(),
-            "/home/claude/.local".to_string(),
-        ]);
+        args.extend_from_slice(&["--dir".to_string(), "/home/claude/.local".to_string()]);
         args.extend_from_slice(&[
             "--bind".to_string(),
-            context
-                .workspace
-                .pip_cache()
-                .to_string_lossy()
-                .to_string(),
+            context.workspace.pip_cache().to_string_lossy().to_string(),
             "/home/claude/.local".to_string(),
         ]);
 
@@ -123,10 +108,7 @@ impl BubblewrapSandbox {
                 "/mnt/user-data/uploads".to_string(),
             ]);
         } else {
-            args.extend_from_slice(&[
-                "--dir".to_string(),
-                "/mnt/user-data/uploads".to_string(),
-            ]);
+            args.extend_from_slice(&["--dir".to_string(), "/mnt/user-data/uploads".to_string()]);
         }
 
         // Mount output directory to /mnt/user-data/outputs (RW)
@@ -159,21 +141,14 @@ impl BubblewrapSandbox {
         }
 
         // Set working directory to /home/claude
-        args.extend_from_slice(&[
-            "--chdir".to_string(),
-            "/home/claude".to_string(),
-        ]);
+        args.extend_from_slice(&["--chdir".to_string(), "/home/claude".to_string()]);
 
         // Clear environment and set only what's needed
         args.push("--clearenv".to_string());
 
         // Set essential env vars
         for (key, value) in &context.env_vars {
-            args.extend_from_slice(&[
-                "--setenv".to_string(),
-                key.clone(),
-                value.clone(),
-            ]);
+            args.extend_from_slice(&["--setenv".to_string(), key.clone(), value.clone()]);
         }
 
         // Add HOME, PATH, USER
@@ -236,10 +211,13 @@ impl Sandbox for BubblewrapSandbox {
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to spawn bwrap: {}", e)))?;
 
         // Write stdin if provided
-        if let Some(data) = stdin && let Some(mut child_stdin) = child.stdin.take() {
-            child_stdin.write_all(data).await.map_err(|e| {
-                ToolError::ExecutionFailed(format!("Failed to write stdin: {}", e))
-            })?;
+        if let Some(data) = stdin
+            && let Some(mut child_stdin) = child.stdin.take()
+        {
+            child_stdin
+                .write_all(data)
+                .await
+                .map_err(|e| ToolError::ExecutionFailed(format!("Failed to write stdin: {}", e)))?;
         }
 
         // Wait with timeout
@@ -305,10 +283,7 @@ mod tests {
         // This test verifies that BubblewrapSandbox::check_available()
         // correctly detects if bwrap is installed
         let available = BubblewrapSandbox::check_available();
-        assert!(
-            available,
-            "bubblewrap not found - install it to run tests"
-        );
+        assert!(available, "bubblewrap not found - install it to run tests");
     }
 
     #[tokio::test]
@@ -535,8 +510,8 @@ mod tests {
         // Should either be blocked or show an empty tmpfs mount
         assert!(
             output.contains("BLOCKED")
-            || output.contains("No such file")
-            || output.trim().is_empty(),
+                || output.contains("No such file")
+                || output.trim().is_empty(),
             "~/.ssh should be blocked, got: {}",
             output
         );
@@ -646,7 +621,10 @@ mod tests {
         // 1. Verify it's readable
         let result = sandbox
             .execute(
-                &["cat".to_string(), "/mnt/user-data/uploads/input.txt".to_string()],
+                &[
+                    "cat".to_string(),
+                    "/mnt/user-data/uploads/input.txt".to_string(),
+                ],
                 &context,
                 None,
                 Duration::from_secs(5),
@@ -664,7 +642,8 @@ mod tests {
                 &[
                     "sh".to_string(),
                     "-c".to_string(),
-                    "echo 'fail' > /mnt/user-data/uploads/input.txt 2>&1 || echo READONLY".to_string(),
+                    "echo 'fail' > /mnt/user-data/uploads/input.txt 2>&1 || echo READONLY"
+                        .to_string(),
                 ],
                 &context,
                 None,
@@ -726,12 +705,7 @@ mod tests {
         let (context, _temp_dir) = create_test_context().await;
 
         let result = sandbox
-            .execute(
-                &["env".to_string()],
-                &context,
-                None,
-                Duration::from_secs(5),
-            )
+            .execute(&["env".to_string()], &context, None, Duration::from_secs(5))
             .await
             .expect("Failed to execute env");
 
@@ -762,8 +736,12 @@ mod tests {
         require_bubblewrap(&sandbox);
 
         let (mut context, _temp_dir) = create_test_context().await;
-        context.env_vars.insert("FOO".to_string(), "bar".to_string());
-        context.env_vars.insert("TEST_VAR".to_string(), "test_value".to_string());
+        context
+            .env_vars
+            .insert("FOO".to_string(), "bar".to_string());
+        context
+            .env_vars
+            .insert("TEST_VAR".to_string(), "test_value".to_string());
 
         let result = sandbox
             .execute(
@@ -877,12 +855,7 @@ mod tests {
         let (context, _temp_dir) = create_test_context().await;
 
         let result = sandbox
-            .execute(
-                &["pwd".to_string()],
-                &context,
-                None,
-                Duration::from_secs(5),
-            )
+            .execute(&["pwd".to_string()], &context, None, Duration::from_secs(5))
             .await
             .expect("Failed to execute pwd");
 

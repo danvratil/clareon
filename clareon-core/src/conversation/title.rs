@@ -63,7 +63,7 @@ impl TitleGenerator {
         let title = response
             .message
             .text()
-            .map(|t| clean_title(t))
+            .map(clean_title)
             .ok_or_else(|| BackendError::InvalidResponse("No title in response".to_string()))?;
 
         Ok(title)

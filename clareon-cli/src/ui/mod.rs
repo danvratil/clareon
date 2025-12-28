@@ -5,11 +5,11 @@
 //! UI components for ratatui
 
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
-    Frame,
 };
 
 use crate::app::{App, ViewMode};
@@ -30,14 +30,14 @@ fn format_content_blocks(blocks: &[ContentBlock]) -> String {
                 )
             }
             ContentBlock::ToolResult {
-                tool_use_id,
+                tool_use_id: _,
                 content,
                 is_error,
             } => {
                 let result_text = content
                     .iter()
-                    .filter_map(|c| match c {
-                        ToolResultContent::Text { text } => Some(text.as_str()),
+                    .map(|c| match c {
+                        ToolResultContent::Text { text } => text.as_str(),
                     })
                     .collect::<Vec<_>>()
                     .join("\n");
@@ -208,15 +208,15 @@ fn format_status_bar(app: &App) -> String {
     if let Some(usage) = &app.last_usage {
         // Build cache info string
         let mut cache_parts = Vec::new();
-        if let Some(cached) = usage.cache_read_input_tokens {
-            if cached > 0 {
-                cache_parts.push(format!("⚡{}", format_number(cached)));
-            }
+        if let Some(cached) = usage.cache_read_input_tokens
+            && cached > 0
+        {
+            cache_parts.push(format!("⚡{}", format_number(cached)));
         }
-        if let Some(written) = usage.cache_write_input_tokens {
-            if written > 0 {
-                cache_parts.push(format!("✍{}", format_number(written)));
-            }
+        if let Some(written) = usage.cache_write_input_tokens
+            && written > 0
+        {
+            cache_parts.push(format!("✍{}", format_number(written)));
         }
 
         let cache_info = if !cache_parts.is_empty() {

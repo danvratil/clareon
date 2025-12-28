@@ -202,7 +202,9 @@ mod tests {
         // Create file in subdirectory
         let subdir = context.workspace.workspace().join("subdir");
         fs::create_dir(&subdir).await.unwrap();
-        fs::write(subdir.join("nested.txt"), b"Nested content").await.unwrap();
+        fs::write(subdir.join("nested.txt"), b"Nested content")
+            .await
+            .unwrap();
 
         // Read using sandbox path
         let tool = ReadFileTool;
@@ -240,7 +242,9 @@ mod tests {
         // Create a file larger than MAX_SIZE (100KB)
         let large_content = "X".repeat(150_000);
         let test_file = context.workspace.workspace().join("large.txt");
-        fs::write(&test_file, large_content.as_bytes()).await.unwrap();
+        fs::write(&test_file, large_content.as_bytes())
+            .await
+            .unwrap();
 
         let tool = ReadFileTool;
         let input = json!({

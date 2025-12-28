@@ -2,23 +2,21 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-mod traits;
-mod registry;
-mod executor;
-mod sandbox;
-mod builtin;
-mod workspace;
 mod artifacts;
+mod builtin;
+mod executor;
+mod registry;
+mod sandbox;
+mod traits;
+mod workspace;
 
-pub use traits::{
-    Tool, Sandbox, ExecutionContext, ToolResult, SandboxResult,
-};
-pub use registry::ToolRegistry;
-pub use executor::ToolExecutor;
-pub use sandbox::{BubblewrapSandbox, NoneSandbox, SandboxMode};
-pub use builtin::{register_builtin_tools, ReadFileTool, WriteFileTool, ListDirectoryTool};
-pub use workspace::{PersistentWorkspace, WorkspaceManager};
 pub use artifacts::ArtifactManager;
+pub use builtin::{ListDirectoryTool, ReadFileTool, WriteFileTool, register_builtin_tools};
+pub use executor::ToolExecutor;
+pub use registry::ToolRegistry;
+pub use sandbox::{BubblewrapSandbox, NoneSandbox, SandboxMode};
+pub use traits::{ExecutionContext, Sandbox, SandboxResult, Tool, ToolResult};
+pub use workspace::{PersistentWorkspace, WorkspaceManager};
 
 use std::time::Duration;
 use thiserror::Error;
@@ -37,7 +35,9 @@ pub enum ToolError {
     #[error("Timeout after {0:?}")]
     Timeout(Duration),
 
-    #[error("Sandbox not available: {0}\n\nTo install bubblewrap:\n  - Ubuntu/Debian: sudo apt install bubblewrap\n  - Fedora: sudo dnf install bubblewrap\n  - Arch: sudo pacman -S bubblewrap")]
+    #[error(
+        "Sandbox not available: {0}\n\nTo install bubblewrap:\n  - Ubuntu/Debian: sudo apt install bubblewrap\n  - Fedora: sudo dnf install bubblewrap\n  - Arch: sudo pacman -S bubblewrap"
+    )]
     SandboxNotAvailable(String),
 
     #[error("Workspace creation failed: {0}")]

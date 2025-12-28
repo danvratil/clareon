@@ -56,9 +56,7 @@ pub fn poll_stream_updates(app: &mut App) -> anyhow::Result<()> {
 
                     app.status = Some(format!(
                         "Streaming... ↓{}{} ↑{}",
-                        update.usage.input_tokens,
-                        cache_info,
-                        update.usage.output_tokens
+                        update.usage.input_tokens, cache_info, update.usage.output_tokens
                     ));
                 }
                 Ok(Err(e)) => {

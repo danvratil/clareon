@@ -15,9 +15,9 @@ pub struct UserFile {
     pub filename: String,
     pub mime_type: String,
     pub size_bytes: i64,
-    #[serde(skip)]  // Don't serialize content by default (can be large)
+    #[serde(skip)] // Don't serialize content by default (can be large)
     pub content: Vec<u8>,
-    pub content_hash: String,  // SHA-256
+    pub content_hash: String, // SHA-256
     pub created_at: i64,
 }
 
@@ -27,12 +27,12 @@ pub struct Artifact {
     pub id: i64,
     pub conversation_id: i64,
     pub message_id: i64,
-    pub filename: String,       // Relative path in output/
+    pub filename: String, // Relative path in output/
     pub mime_type: Option<String>,
     pub size_bytes: i64,
-    #[serde(skip)]  // Don't serialize content by default (can be large)
+    #[serde(skip)] // Don't serialize content by default (can be large)
     pub content: Vec<u8>,
-    pub content_hash: String,  // SHA-256
+    pub content_hash: String, // SHA-256
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -44,6 +44,6 @@ pub struct WorkspaceMetadata {
     pub workspace_path: String,
     pub created_at: i64,
     pub last_accessed_at: i64,
-    pub installed_packages: Option<String>,  // JSON array
+    pub installed_packages: Option<String>, // JSON array
     pub disk_usage_bytes: i64,
 }

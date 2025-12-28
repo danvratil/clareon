@@ -83,7 +83,7 @@ mod ffi {
     }
 }
 
-use crate::mock::data::{mock_messages, MockMessage, mock_conversations, MockConversation};
+use crate::mock::data::{MockConversation, MockMessage, mock_conversations, mock_messages};
 use cxx_qt::CxxQtType;
 use std::pin::Pin;
 
@@ -152,7 +152,8 @@ impl ffi::MessageListModel {
         let row = self.messages.len() as i32;
 
         unsafe {
-            self.as_mut().begin_insert_rows(&cxx_qt_lib::QModelIndex::default(), row, row);
+            self.as_mut()
+                .begin_insert_rows(&cxx_qt_lib::QModelIndex::default(), row, row);
         }
         self.as_mut().rust_mut().messages.push(new_message);
         unsafe {
