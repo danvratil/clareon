@@ -1,3 +1,7 @@
+// SPDX-FileContributor: Daniel Vrátil <me@dvratil.cz>
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Workspace-related types for file management and artifact tracking
 
 use serde::{Deserialize, Serialize};

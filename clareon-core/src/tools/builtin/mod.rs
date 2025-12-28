@@ -1,3 +1,7 @@
+// SPDX-FileContributor: Daniel Vrátil <me@dvratil.cz>
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 mod read_file;
 mod write_file;
 mod list_directory;

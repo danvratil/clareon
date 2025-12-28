@@ -1,3 +1,7 @@
+// SPDX-FileContributor: Daniel Vrátil <me@dvratil.cz>
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Event handling for the TUI
 
 use std::time::Duration;

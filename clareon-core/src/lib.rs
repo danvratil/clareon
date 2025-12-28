@@ -1,3 +1,7 @@
+// SPDX-FileContributor: Daniel Vrátil <me@dvratil.cz>
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Clareon Core Library
 //!
 //! This crate provides the core functionality for the Clareon Claude assistant,

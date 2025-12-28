@@ -1,3 +1,7 @@
+// SPDX-FileContributor: Daniel Vrátil <me@dvratil.cz>
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Secure secret storage using the system keyring
 
 use secret_service::{EncryptionType, SecretService};

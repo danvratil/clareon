@@ -1,3 +1,7 @@
+// SPDX-FileContributor: Daniel Vrátil <me@dvratil.cz>
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 -- Migration 002: Persistent Workspaces
 -- Add support for user file uploads, artifact management, and persistent workspaces
 

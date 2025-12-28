@@ -1,3 +1,7 @@
+// SPDX-FileContributor: Daniel Vrátil <me@dvratil.cz>
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Clareon CLI - TUI client for Claude
 //!
 //! A terminal-based chat interface for interacting with Claude

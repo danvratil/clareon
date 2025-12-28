@@ -1,3 +1,7 @@
+// SPDX-FileContributor: Daniel Vrátil <me@dvratil.cz>
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use cxx_qt_build::{CxxQtBuilder, QmlModule};
 
 fn main() {
