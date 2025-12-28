@@ -1,5 +1,6 @@
 //! Configuration settings
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use directories::ProjectDirs;
@@ -38,6 +39,10 @@ pub struct Config {
     /// Tool execution configuration
     #[serde(default)]
     pub tools: ToolsConfig,
+
+    /// Logging configuration
+    #[serde(default)]
+    pub logging: LoggingConfig,
 }
 
 fn default_backend() -> String {
@@ -247,6 +252,66 @@ impl Default for ToolsConfig {
     }
 }
 
+/// Logging configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoggingConfig {
+    /// Global log level (default for all modules)
+    #[serde(default = "default_log_level")]
+    pub global: String,
+
+    /// Per-module/crate log level overrides
+    #[serde(default = "default_module_levels")]
+    pub modules: HashMap<String, String>,
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
+}
+
+fn default_module_levels() -> HashMap<String, String> {
+    let mut levels = HashMap::new();
+    // Default overrides for verbose crates
+    levels.insert("clareon".to_string(), "debug".to_string());
+    levels.insert("clareon_core".to_string(), "debug".to_string());
+    levels.insert("clareon_cli".to_string(), "debug".to_string());
+    levels.insert("aws_sdk".to_string(), "warn".to_string());
+    levels.insert("aws_smithy".to_string(), "warn".to_string());
+    levels.insert("aws_config".to_string(), "warn".to_string());
+    levels.insert("sqlx".to_string(), "warn".to_string());
+    levels.insert("hyper".to_string(), "warn".to_string());
+    levels.insert("h2".to_string(), "warn".to_string());
+    levels
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            global: default_log_level(),
+            modules: default_module_levels(),
+        }
+    }
+}
+
+impl LoggingConfig {
+    /// Build an EnvFilter directive string from this configuration
+    ///
+    /// Returns a directive string like: "clareon=debug,aws_sdk=warn,info"
+    /// suitable for passing to EnvFilter::new()
+    pub fn build_filter_directive(&self) -> String {
+        let mut parts = Vec::new();
+
+        // Add module-specific directives
+        for (module, level) in &self.modules {
+            parts.push(format!("{}={}", module, level));
+        }
+
+        // Add global level at the end (acts as default)
+        parts.push(self.global.clone());
+
+        parts.join(",")
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -257,6 +322,7 @@ impl Default for Config {
             system_prompt: SystemPromptConfig::default(),
             models: ModelsConfig::default(),
             tools: ToolsConfig::default(),
+            logging: LoggingConfig::default(),
         }
     }
 }
@@ -410,5 +476,60 @@ mod tests {
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.default_backend, "anthropic");
         assert!(config.ui.streaming); // Should use default
+    }
+
+    #[test]
+    fn test_logging_config_default() {
+        let logging = LoggingConfig::default();
+        assert_eq!(logging.global, "info");
+        assert_eq!(logging.modules.get("clareon"), Some(&"debug".to_string()));
+        assert_eq!(logging.modules.get("aws_sdk"), Some(&"warn".to_string()));
+    }
+
+    #[test]
+    fn test_logging_filter_directive() {
+        let logging = LoggingConfig::default();
+        let directive = logging.build_filter_directive();
+
+        // Should contain module directives
+        assert!(directive.contains("clareon=debug"));
+        assert!(directive.contains("aws_sdk=warn"));
+        assert!(directive.contains("sqlx=warn"));
+
+        // Should end with global level
+        assert!(directive.ends_with("info"));
+    }
+
+    #[test]
+    fn test_logging_config_custom() {
+        let mut modules = HashMap::new();
+        modules.insert("my_crate".to_string(), "trace".to_string());
+        modules.insert("other_crate".to_string(), "error".to_string());
+
+        let logging = LoggingConfig {
+            global: "warn".to_string(),
+            modules,
+        };
+
+        let directive = logging.build_filter_directive();
+        assert!(directive.contains("my_crate=trace"));
+        assert!(directive.contains("other_crate=error"));
+        assert!(directive.ends_with("warn"));
+    }
+
+    #[test]
+    fn test_logging_config_serialization() {
+        let json = r#"{
+            "global": "debug",
+            "modules": {
+                "my_app": "trace",
+                "aws_sdk": "warn"
+            }
+        }"#;
+
+        let logging: LoggingConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(logging.global, "debug");
+        assert_eq!(logging.modules.get("my_app"), Some(&"trace".to_string()));
+        assert_eq!(logging.modules.get("aws_sdk"), Some(&"warn".to_string()));
     }
 }

@@ -36,7 +36,7 @@ fn log_file_path() -> Result<PathBuf> {
 }
 
 /// Initialize file-based logging for TUI mode
-fn init_file_logging() -> Result<tracing_appender::non_blocking::WorkerGuard> {
+fn init_file_logging(config: &Config) -> Result<tracing_appender::non_blocking::WorkerGuard> {
     let log_path = log_file_path()?;
 
     // Open log file (truncate on each run for now)
@@ -44,8 +44,14 @@ fn init_file_logging() -> Result<tracing_appender::non_blocking::WorkerGuard> {
 
     let (non_blocking, guard) = tracing_appender::non_blocking(log_file);
 
+    // Build filter directive from config
+    let default_filter = config.logging.build_filter_directive();
+
     tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug")))
+        .with(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new(&default_filter))
+        )
         .with(
             tracing_subscriber::fmt::layer()
                 .with_writer(non_blocking)
@@ -54,6 +60,7 @@ fn init_file_logging() -> Result<tracing_appender::non_blocking::WorkerGuard> {
         .init();
 
     tracing::info!("Logging initialized to {:?}", log_path);
+    tracing::debug!("Log filter: {}", default_filter);
 
     Ok(guard)
 }
@@ -148,7 +155,7 @@ async fn search_conversations(config: &Config, query: &str) -> Result<()> {
 async fn run_tui(config: Config, args: Args) -> Result<()> {
     // Initialize file-based logging for TUI mode
     // The guard must be kept alive for the duration of the app
-    let _log_guard = init_file_logging()?;
+    let _log_guard = init_file_logging(&config)?;
 
     // Setup terminal
     enable_raw_mode()?;
