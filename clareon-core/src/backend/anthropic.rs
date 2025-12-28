@@ -130,8 +130,8 @@ impl AnthropicBackend {
         let usage = Usage {
             input_tokens: response.usage.input_tokens,
             output_tokens: response.usage.output_tokens,
-            cache_read_input_tokens: None,
-            cache_write_input_tokens: None,
+            cache_read_input_tokens: response.usage.cache_read_input_tokens,
+            cache_write_input_tokens: response.usage.cache_creation_input_tokens,
         };
 
         let message = Message::assistant(
@@ -156,8 +156,8 @@ impl AnthropicBackend {
                 Ok(Some(StreamEvent::Usage(Usage {
                     input_tokens: message.usage.input_tokens,
                     output_tokens: message.usage.output_tokens,
-                    cache_read_input_tokens: None,
-                    cache_write_input_tokens: None,
+                    cache_read_input_tokens: message.usage.cache_read_input_tokens,
+                    cache_write_input_tokens: message.usage.cache_creation_input_tokens,
                 })))
             }
             AnthropicStreamEvent::ContentBlockStart { index, content_block } => {
@@ -445,6 +445,12 @@ struct AnthropicResponse {
 struct AnthropicUsage {
     input_tokens: i64,
     output_tokens: i64,
+    /// Tokens read from cache (prompt caching)
+    #[serde(default)]
+    cache_read_input_tokens: Option<i64>,
+    /// Tokens written to cache (prompt caching)
+    #[serde(default)]
+    cache_creation_input_tokens: Option<i64>,
 }
 
 // Streaming event types

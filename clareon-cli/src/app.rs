@@ -89,6 +89,12 @@ pub struct App {
 
     /// Flag to reload messages after streaming completes
     pub needs_reload: bool,
+
+    /// Last message usage (for status bar display)
+    pub last_usage: Option<Usage>,
+
+    /// Cumulative conversation usage
+    pub conversation_usage: Usage,
 }
 
 /// Options for creating the app
@@ -205,6 +211,8 @@ impl App {
             streaming_message: None,
             stream_rx: None,
             needs_reload: false,
+            last_usage: None,
+            conversation_usage: Usage::default(),
         })
     }
 
@@ -214,6 +222,8 @@ impl App {
         self.conversation = Some(conv);
         self.messages.clear();
         self.message_list_state = ListState::default();
+        self.last_usage = None;
+        self.conversation_usage = Usage::default();
         self.status = Some("New conversation started".to_string());
         Ok(())
     }
@@ -226,6 +236,7 @@ impl App {
         self.conversation = Some(conv);
         self.messages = messages;
         self.message_list_state = ListState::default();
+        self.calculate_conversation_usage();
         self.status = Some(format!("Loaded conversation {}", id));
 
         Ok(())
@@ -275,12 +286,7 @@ impl App {
                             },
                             partial_content: response.message.content.clone(),
                             stop_reason: Some(response.stop_reason),
-                            usage: Usage {
-                                input_tokens: response.message.input_tokens.unwrap_or(0),
-                                output_tokens: response.message.output_tokens.unwrap_or(0),
-                                cache_read_input_tokens: None,
-                                cache_write_input_tokens: None,
-                            },
+                            usage: response.usage,
                         };
                         let _ = tx.send(Ok(update));
                     }
@@ -367,6 +373,32 @@ impl App {
         if total_items > 0 {
             self.message_list_state.select(Some(total_items.saturating_sub(1)));
         }
+    }
+
+    /// Calculate cumulative usage from all messages in the conversation
+    pub fn calculate_conversation_usage(&mut self) {
+        let mut total_input = 0i64;
+        let mut total_output = 0i64;
+        let total_cache_read = 0i64;
+        let total_cache_write = 0i64;
+
+        for message in &self.messages {
+            if let Some(tokens) = message.input_tokens {
+                total_input += tokens;
+            }
+            if let Some(tokens) = message.output_tokens {
+                total_output += tokens;
+            }
+        }
+
+        // Note: Cache metrics aren't currently stored in the database,
+        // so we can only show the last message's cache metrics
+        self.conversation_usage = Usage {
+            input_tokens: total_input,
+            output_tokens: total_output,
+            cache_read_input_tokens: if total_cache_read > 0 { Some(total_cache_read) } else { None },
+            cache_write_input_tokens: if total_cache_write > 0 { Some(total_cache_write) } else { None },
+        };
     }
 
     /// Quit the application

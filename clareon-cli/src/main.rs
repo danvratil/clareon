@@ -211,6 +211,7 @@ async fn run_main_loop(
             if let Some(conv) = &app.conversation {
                 app.messages = app.manager.get_messages(conv.id).await?;
                 app.scroll_to_bottom();
+                app.calculate_conversation_usage();
             }
             app.needs_reload = false;
         }

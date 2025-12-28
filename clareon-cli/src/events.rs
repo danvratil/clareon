@@ -36,10 +36,25 @@ pub fn poll_stream_updates(app: &mut App) -> anyhow::Result<()> {
                         partial.usage = update.usage;
                     }
 
+                    // Store last usage for status bar display
+                    app.last_usage = Some(update.usage);
+
                     // Update status with token counts
+                    let cache_info = if let Some(cached) = update.usage.cache_read_input_tokens {
+                        if cached > 0 {
+                            format!(" (⚡{} cached)", cached)
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    };
+
                     app.status = Some(format!(
-                        "Streaming... {} in / {} out",
-                        update.usage.input_tokens, update.usage.output_tokens
+                        "Streaming... ↓{}{} ↑{}",
+                        update.usage.input_tokens,
+                        cache_info,
+                        update.usage.output_tokens
                     ));
                 }
                 Ok(Err(e)) => {

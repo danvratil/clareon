@@ -378,11 +378,24 @@ impl LlmBackend for BedrockBackend {
         // Extract usage including cache metrics
         let usage = response
             .usage()
-            .map(|u| Usage {
-                input_tokens: u.input_tokens() as i64,
-                output_tokens: u.output_tokens() as i64,
-                cache_read_input_tokens: u.cache_read_input_tokens().map(|v| v as i64),
-                cache_write_input_tokens: u.cache_write_input_tokens().map(|v| v as i64),
+            .map(|u| {
+                let cache_read = u.cache_read_input_tokens().map(|v| v as i64);
+                let cache_write = u.cache_write_input_tokens().map(|v| v as i64);
+
+                debug!(
+                    "Usage: input={}, output={}, cache_read={:?}, cache_write={:?}",
+                    u.input_tokens(),
+                    u.output_tokens(),
+                    cache_read,
+                    cache_write
+                );
+
+                Usage {
+                    input_tokens: u.input_tokens() as i64,
+                    output_tokens: u.output_tokens() as i64,
+                    cache_read_input_tokens: cache_read,
+                    cache_write_input_tokens: cache_write,
+                }
             })
             .unwrap_or_default();
 
@@ -600,11 +613,22 @@ impl BedrockBackend {
             ConverseStreamOutput::Metadata(metadata) => {
                 // Extract usage information including cache metrics
                 if let Some(usage) = metadata.usage() {
+                    let cache_read = usage.cache_read_input_tokens().map(|v| v as i64);
+                    let cache_write = usage.cache_write_input_tokens().map(|v| v as i64);
+
+                    debug!(
+                        "Stream Usage: input={}, output={}, cache_read={:?}, cache_write={:?}",
+                        usage.input_tokens(),
+                        usage.output_tokens(),
+                        cache_read,
+                        cache_write
+                    );
+
                     Ok(Some(StreamEvent::Usage(Usage {
                         input_tokens: usage.input_tokens() as i64,
                         output_tokens: usage.output_tokens() as i64,
-                        cache_read_input_tokens: usage.cache_read_input_tokens().map(|v| v as i64),
-                        cache_write_input_tokens: usage.cache_write_input_tokens().map(|v| v as i64),
+                        cache_read_input_tokens: cache_read,
+                        cache_write_input_tokens: cache_write,
                     })))
                 } else {
                     Ok(None)
