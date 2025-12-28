@@ -119,6 +119,10 @@ pub struct Usage {
     pub input_tokens: i64,
     /// Tokens in the output (response)
     pub output_tokens: i64,
+    /// Input tokens read from cache (for prompt caching)
+    pub cache_read_input_tokens: Option<i64>,
+    /// Input tokens written to cache (for prompt caching)
+    pub cache_write_input_tokens: Option<i64>,
 }
 
 /// Information about an available model

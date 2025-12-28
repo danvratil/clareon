@@ -26,22 +26,13 @@ use crate::types::{ContentBlock, Message, Role, ToolResultContent};
 pub struct BedrockBackend {
     client: Client,
     region: String,
+    enable_prompt_caching: bool,
 }
 
 impl BedrockBackend {
     /// Create a new Bedrock backend using the default credential chain
     pub async fn new(region: impl Into<String>) -> Result<Self, BackendError> {
-        let region = region.into();
-        info!("Initializing Bedrock backend in region: {}", region);
-
-        let config = aws_config::defaults(BehaviorVersion::latest())
-            .region(aws_config::Region::new(region.clone()))
-            .load()
-            .await;
-
-        let client = Client::new(&config);
-
-        Ok(Self { client, region })
+        Self::new_with_config(region, None, true).await
     }
 
     /// Create a new Bedrock backend with a specific AWS profile
@@ -49,22 +40,36 @@ impl BedrockBackend {
         region: impl Into<String>,
         profile: impl Into<String>,
     ) -> Result<Self, BackendError> {
+        Self::new_with_config(region, Some(profile.into()), true).await
+    }
+
+    /// Create a new Bedrock backend with full configuration
+    pub async fn new_with_config(
+        region: impl Into<String>,
+        profile: Option<String>,
+        enable_prompt_caching: bool,
+    ) -> Result<Self, BackendError> {
         let region = region.into();
-        let profile = profile.into();
         info!(
-            "Initializing Bedrock backend in region: {} with profile: {}",
-            region, profile
+            "Initializing Bedrock backend in region: {} (caching: {})",
+            region, enable_prompt_caching
         );
 
-        let config = aws_config::defaults(BehaviorVersion::latest())
-            .region(aws_config::Region::new(region.clone()))
-            .profile_name(&profile)
-            .load()
-            .await;
+        let mut config_loader = aws_config::defaults(BehaviorVersion::latest())
+            .region(aws_config::Region::new(region.clone()));
 
+        if let Some(prof) = &profile {
+            config_loader = config_loader.profile_name(prof);
+        }
+
+        let config = config_loader.load().await;
         let client = Client::new(&config);
 
-        Ok(Self { client, region })
+        Ok(Self {
+            client,
+            region,
+            enable_prompt_caching,
+        })
     }
 
     /// Convert serde_json::Value to AWS Document
@@ -227,6 +232,31 @@ impl BedrockBackend {
         )
     }
 
+    /// Build system content blocks with optional cache point
+    ///
+    /// If caching is enabled and the system prompt is non-empty, this returns:
+    /// [SystemContentBlock::Text(prompt), SystemContentBlock::CachePoint(default)]
+    ///
+    /// This tells Bedrock to cache the system prompt for 5 minutes, reducing costs
+    /// and latency on subsequent calls within the TTL window.
+    fn build_system_blocks(&self, system_prompt: &str) -> Vec<SystemContentBlock> {
+        if system_prompt.is_empty() {
+            return Vec::new();
+        }
+
+        let mut blocks = vec![SystemContentBlock::Text(system_prompt.to_string())];
+
+        if self.enable_prompt_caching {
+            // Add cache point after system prompt
+            let cache_point = CachePointBlock::builder()
+                .r#type(CachePointType::Default)
+                .build()
+                .expect("Failed to build CachePointBlock");
+            blocks.push(SystemContentBlock::CachePoint(cache_point));
+        }
+
+        blocks
+    }
 }
 
 #[async_trait]
@@ -260,11 +290,11 @@ impl LlmBackend for BedrockBackend {
             .model_id(&request.model)
             .set_messages(Some(messages));
 
-        // Add system prompt if provided and not empty
+        // Add system prompt with optional cache point
         if let Some(system_prompt) = &request.system_prompt {
-            if !system_prompt.is_empty() {
-                converse_builder =
-                    converse_builder.system(SystemContentBlock::Text(system_prompt.clone()));
+            let system_blocks = self.build_system_blocks(system_prompt);
+            for block in system_blocks {
+                converse_builder = converse_builder.system(block);
             }
         }
 
@@ -345,12 +375,14 @@ impl LlmBackend for BedrockBackend {
             _ => StopReason::EndTurn,
         };
 
-        // Extract usage
+        // Extract usage including cache metrics
         let usage = response
             .usage()
             .map(|u| Usage {
                 input_tokens: u.input_tokens() as i64,
                 output_tokens: u.output_tokens() as i64,
+                cache_read_input_tokens: u.cache_read_input_tokens().map(|v| v as i64),
+                cache_write_input_tokens: u.cache_write_input_tokens().map(|v| v as i64),
             })
             .unwrap_or_default();
 
@@ -403,11 +435,11 @@ impl LlmBackend for BedrockBackend {
             .model_id(&request.model)
             .set_messages(Some(messages));
 
-        // Add system prompt if provided and not empty
+        // Add system prompt with optional cache point
         if let Some(system_prompt) = &request.system_prompt {
-            if !system_prompt.is_empty() {
-                converse_builder =
-                    converse_builder.system(SystemContentBlock::Text(system_prompt.clone()));
+            let system_blocks = self.build_system_blocks(system_prompt);
+            for block in system_blocks {
+                converse_builder = converse_builder.system(block);
             }
         }
 
@@ -566,11 +598,13 @@ impl BedrockBackend {
                 Ok(Some(StreamEvent::MessageStop { stop_reason }))
             }
             ConverseStreamOutput::Metadata(metadata) => {
-                // Extract usage information
+                // Extract usage information including cache metrics
                 if let Some(usage) = metadata.usage() {
                     Ok(Some(StreamEvent::Usage(Usage {
                         input_tokens: usage.input_tokens() as i64,
                         output_tokens: usage.output_tokens() as i64,
+                        cache_read_input_tokens: usage.cache_read_input_tokens().map(|v| v as i64),
+                        cache_write_input_tokens: usage.cache_write_input_tokens().map(|v| v as i64),
                     })))
                 } else {
                     Ok(None)
@@ -606,10 +640,10 @@ impl BedrockBackend {
                 max_output_tokens: 8192,
             },
             ModelInfo {
-                id: "anthropic.claude-3-haiku-20240307-v1:0".to_string(),
-                name: "Claude 3 Haiku (Bedrock)".to_string(),
+                id: "anthropic.claude-3-5-haiku-20241022-v1:0".to_string(),
+                name: "Claude 3.5 Haiku (Bedrock)".to_string(),
                 context_window: 200000,
-                max_output_tokens: 4096,
+                max_output_tokens: 8192,
             },
         ]
     }
@@ -617,5 +651,95 @@ impl BedrockBackend {
     /// Get the region this backend is configured for
     pub fn region(&self) -> &str {
         &self.region
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_system_blocks_with_caching() {
+        // Create a backend with caching enabled
+        let backend = BedrockBackend {
+            client: Client::from_conf(
+                aws_sdk_bedrockruntime::Config::builder()
+                    .behavior_version(aws_config::BehaviorVersion::latest())
+                    .build()
+            ),
+            region: "us-east-1".to_string(),
+            enable_prompt_caching: true,
+        };
+
+        let blocks = backend.build_system_blocks("You are a helpful assistant");
+
+        // Should have 2 blocks: Text and CachePoint
+        assert_eq!(blocks.len(), 2);
+        assert!(matches!(blocks[0], SystemContentBlock::Text(_)));
+        assert!(matches!(blocks[1], SystemContentBlock::CachePoint(_)));
+    }
+
+    #[test]
+    fn test_build_system_blocks_without_caching() {
+        // Create a backend with caching disabled
+        let backend = BedrockBackend {
+            client: Client::from_conf(
+                aws_sdk_bedrockruntime::Config::builder()
+                    .behavior_version(aws_config::BehaviorVersion::latest())
+                    .build()
+            ),
+            region: "us-east-1".to_string(),
+            enable_prompt_caching: false,
+        };
+
+        let blocks = backend.build_system_blocks("You are a helpful assistant");
+
+        // Should have 1 block: Text only
+        assert_eq!(blocks.len(), 1);
+        assert!(matches!(blocks[0], SystemContentBlock::Text(_)));
+    }
+
+    #[test]
+    fn test_build_system_blocks_empty_prompt() {
+        // Create a backend with caching enabled
+        let backend = BedrockBackend {
+            client: Client::from_conf(
+                aws_sdk_bedrockruntime::Config::builder()
+                    .behavior_version(aws_config::BehaviorVersion::latest())
+                    .build()
+            ),
+            region: "us-east-1".to_string(),
+            enable_prompt_caching: true,
+        };
+
+        let blocks = backend.build_system_blocks("");
+
+        // Empty prompt should return empty vec
+        assert_eq!(blocks.len(), 0);
+    }
+
+    #[test]
+    fn test_usage_with_cache_metrics() {
+        let usage = Usage {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_read_input_tokens: Some(90),
+            cache_write_input_tokens: None,
+        };
+
+        assert_eq!(usage.input_tokens, 100);
+        assert_eq!(usage.output_tokens, 50);
+        assert_eq!(usage.cache_read_input_tokens, Some(90));
+        assert_eq!(usage.cache_write_input_tokens, None);
+    }
+
+    #[test]
+    fn test_usage_default() {
+        let usage = Usage::default();
+
+        assert_eq!(usage.input_tokens, 0);
+        assert_eq!(usage.output_tokens, 0);
+        assert_eq!(usage.cache_read_input_tokens, None);
+        assert_eq!(usage.cache_write_input_tokens, None);
     }
 }

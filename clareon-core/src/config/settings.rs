@@ -74,6 +74,12 @@ pub struct BedrockConfig {
 
     /// AWS profile to use (None = default credential chain)
     pub profile: Option<String>,
+
+    /// Enable prompt caching (default: true)
+    /// Caches system prompts to reduce costs and latency on subsequent calls
+    /// Only works with Claude Sonnet 3.5+, Opus 4, and Nova models
+    #[serde(default = "default_true")]
+    pub enable_prompt_caching: bool,
 }
 
 fn default_region() -> String {
@@ -85,6 +91,7 @@ impl Default for BedrockConfig {
         Self {
             region: default_region(),
             profile: None,
+            enable_prompt_caching: true,
         }
     }
 }
@@ -162,7 +169,7 @@ pub struct ModelsConfig {
 }
 
 fn default_title_model() -> String {
-    "anthropic.claude-3-haiku-20240307-v1:0".to_string()
+    "anthropic.claude-3-5-haiku-20241022-v1:0".to_string()
 }
 
 impl Default for ModelsConfig {
@@ -183,7 +190,7 @@ pub struct ToolsConfig {
     /// Sandbox mode
     #[serde(default)]
     pub sandbox_mode: SandboxModeConfig,
-
+    
     /// Default timeout for tool execution (seconds)
     #[serde(default = "default_tool_timeout")]
     pub default_timeout: u64,

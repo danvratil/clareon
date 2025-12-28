@@ -130,6 +130,8 @@ impl AnthropicBackend {
         let usage = Usage {
             input_tokens: response.usage.input_tokens,
             output_tokens: response.usage.output_tokens,
+            cache_read_input_tokens: None,
+            cache_write_input_tokens: None,
         };
 
         let message = Message::assistant(
@@ -154,6 +156,8 @@ impl AnthropicBackend {
                 Ok(Some(StreamEvent::Usage(Usage {
                     input_tokens: message.usage.input_tokens,
                     output_tokens: message.usage.output_tokens,
+                    cache_read_input_tokens: None,
+                    cache_write_input_tokens: None,
                 })))
             }
             AnthropicStreamEvent::ContentBlockStart { index, content_block } => {

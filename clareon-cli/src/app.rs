@@ -125,13 +125,15 @@ impl App {
             }
             _ => {
                 // Default to Bedrock - use profile if specified
-                if let Some(profile) = &options.profile {
-                    Arc::new(BedrockBackend::with_profile(&region, profile).await?)
-                } else if let Some(profile) = &config.backends.bedrock.profile {
-                    Arc::new(BedrockBackend::with_profile(&region, profile).await?)
-                } else {
-                    Arc::new(BedrockBackend::new(&region).await?)
-                }
+                let profile = options.profile.clone()
+                    .or_else(|| config.backends.bedrock.profile.clone());
+                let enable_caching = config.backends.bedrock.enable_prompt_caching;
+
+                Arc::new(BedrockBackend::new_with_config(
+                    &region,
+                    profile,
+                    enable_caching
+                ).await?)
             }
         };
 
@@ -274,6 +276,8 @@ impl App {
                             usage: Usage {
                                 input_tokens: response.message.input_tokens.unwrap_or(0),
                                 output_tokens: response.message.output_tokens.unwrap_or(0),
+                                cache_read_input_tokens: None,
+                                cache_write_input_tokens: None,
                             },
                         };
                         let _ = tx.send(Ok(update));
