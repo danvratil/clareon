@@ -1,58 +1,78 @@
 # Clareon
 
-A Claude desktop assistant for Linux, designed as an alternative to Claude Desktop with AWS Bedrock and Anthropic API support.
+A Claude desktop assistant for Linux with AWS Bedrock and Anthropic API support, featuring a Qt/QML GUI with native desktop integration.
 
 ## Project Overview
 
-Clareon is a cross-platform Claude assistant with a focus on KDE Plasma integration (future). It provides a conversational interface to Claude models via AWS Bedrock or the Anthropic API, with local conversation storage, search, and future MCP/tool support.
+Clareon is a cross-platform Claude assistant with integrated tool support, conversation management, and native Linux desktop integration. It provides a Qt/QML graphical interface for interacting with Claude models via AWS Bedrock or the Anthropic API, with local conversation storage, full-text search, and built-in file operation tools.
+
+The project includes a terminal UI (clareon-cli) primarily used for testing and prototyping new features.
+
+## Code Style & Licensing
+
+**IMPORTANT:** All source files must begin with SPDX license headers:
+
+```rust
+// SPDX-FileContributor: Daniel Vrátil <me@dvratil.cz>
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+```
+
+This applies to all `.rs` files in the project. The project is licensed under GPL-3.0-or-later.
+
+### Code Quality Checks
+
+**CRITICAL:** After making any changes to the codebase, you MUST run the following commands and ensure they pass without errors:
+
+```bash
+# Format code using rustfmt
+cargo fmt --all
+
+# Run clippy with strict linting
+cargo clippy --all --locked --tests -- --deny clippy::all --deny warnings
+```
+
+**Guidelines:**
+- `cargo fmt` must be run on all code changes to ensure consistent formatting
+- All clippy warnings and errors must be fixed before committing changes
+- Use `#[allow(dead_code)]` for intentionally unused code (e.g., deserialization-only fields)
+- Fix actual issues rather than suppressing warnings with `#[allow(...)]` attributes, unless the warning is intentional (e.g., dead code for future use or deserialization)
+- Both commands must complete successfully - no errors or warnings are acceptable
 
 ## Architecture
 
-```
-clareon/
-├── Cargo.toml                    # Workspace root
-├── clareon-core/                 # Core library
-│   └── src/
-│       ├── lib.rs                # Library entry point
-│       ├── error.rs              # Error types (Error, BackendError, ConfigError)
-│       ├── types/
-│       │   ├── mod.rs
-│       │   ├── content.rs        # ContentBlock, ToolResultContent
-│       │   ├── message.rs        # Message, Role
-│       │   └── conversation.rs   # Conversation, ConversationSummary, SearchResult
-│       ├── backend/
-│       │   ├── mod.rs
-│       │   ├── traits.rs         # LlmBackend trait, ChatRequest, ChatResponse
-│       │   ├── anthropic.rs      # Anthropic API implementation
-│       │   └── bedrock.rs        # AWS Bedrock implementation
-│       ├── storage/
-│       │   ├── mod.rs
-│       │   └── database.rs       # SQLite with FTS5 search
-│       ├── config/
-│       │   ├── mod.rs
-│       │   ├── settings.rs       # Config struct, XDG paths
-│       │   └── secrets.rs        # secret-service keyring integration
-│       ├── conversation/
-│       │   ├── mod.rs
-│       │   ├── manager.rs        # ConversationManager orchestration
-│       │   └── title.rs          # Haiku-based title generation
-│       └── resources/
-│           └── system_prompt.txt # Default system prompt
-│
-└── clareon-cli/                  # TUI application
-    └── src/
-        ├── main.rs               # Entry point, CLI argument handling
-        ├── cli.rs                # Clap argument definitions
-        ├── app.rs                # Application state
-        ├── events.rs             # Keyboard event handling
-        └── ui/
-            └── mod.rs            # ratatui UI components
-```
+The project is organized as a Cargo workspace with three main crates:
+
+- **clareon-core**: Core library containing LLM backends, conversation management, storage, configuration, and tool execution
+- **clareon**: Qt/QML GUI application with KDE Plasma integration
+- **clareon-cli**: Terminal UI for testing and prototyping (not production-ready)
+
+### clareon-core Structure
+
+The core library is organized into functional modules:
+
+- `backend/`: LLM backend implementations (Anthropic API, AWS Bedrock) with streaming and prompt caching support
+- `config/`: Configuration management, XDG paths, and secret-service keyring integration
+- `conversation/`: Conversation management and Haiku-based title generation
+- `storage/`: SQLite database with FTS5 full-text search
+- `tools/`: Tool execution framework with sandbox support
+  - `builtin/`: Built-in tools (read_file, write_file, list_directory)
+  - `sandbox/`: Sandboxing implementations (bubblewrap, none)
+- `types/`: Core data types (Message, Conversation, ContentBlock, Workspace, etc.)
+
+### clareon Structure
+
+QML GUI components:
+
+- Qt models for conversations and messages
+- Application controller bridging Rust and QML
+- QML UI components (ChatView, ConversationDrawer, MessageComposer, MessageDelegate)
+- Mock data for UI development
 
 ## Building
 
 ```bash
-# Build
+# Build all crates
 cargo build
 
 # Build release
@@ -60,173 +80,123 @@ cargo build --release
 
 # Run tests
 cargo test
+
+# Build GUI only
+cargo build -p clareon
 ```
 
 ## Running
 
 ```bash
-# Start TUI with AWS Bedrock (default)
-cargo run
+# Start the QML GUI
+cargo run -p clareon
 
-# Start with Anthropic API
-ANTHROPIC_API_KEY=sk-... cargo run -- --backend anthropic
+# For testing: Start TUI with AWS Bedrock (default)
+cargo run -p clareon-cli
 
-# List past conversations
-cargo run -- --chats
-
-# Resume a conversation
-cargo run -- --resume <ID>
-
-# Search conversations
-cargo run -- --search "query"
-
-# Start with a specific model
-cargo run -- --model anthropic.claude-sonnet-4-20250514-v1:0
+# For testing: Start TUI with Anthropic API
+ANTHROPIC_API_KEY=sk-... cargo run -p clareon-cli -- --backend anthropic
 ```
-
-## TUI Keyboard Shortcuts
-
-| Key | Action |
-|-----|--------|
-| Enter | Send message |
-| Ctrl+N | New conversation |
-| Ctrl+O | Open conversation list |
-| Ctrl+Q / Ctrl+C | Quit |
-| Ctrl+U | Clear input |
-| Ctrl+W | Delete word |
-| Up/Down | Scroll messages |
-| ? / F1 | Show help |
 
 ## Configuration
 
 Config file: `~/.config/clareon/config.json`
 
-```json
-{
-  "default_backend": "bedrock",
-  "default_model": "anthropic.claude-sonnet-4-20250514-v1:0",
-  "backends": {
-    "bedrock": {
-      "region": "us-east-1",
-      "profile": null
-    },
-    "anthropic": {
-      "api_key_in_keyring": true
-    }
-  },
-  "ui": {
-    "theme": "dark",
-    "streaming": true
-  },
-  "system_prompt": {
-    "use_default": true,
-    "custom_instructions": null
-  },
-  "models": {
-    "title_generation": "anthropic.claude-3-haiku-20240307-v1:0"
-  }
-}
-```
+Key configuration sections:
+- `default_backend`: Choose between "bedrock" or "anthropic"
+- `default_model`: Default model to use
+- `backends`: Backend-specific settings (AWS region/profile, API keys, prompt caching)
+- `ui`: UI preferences (theme, streaming)
+- `system_prompt`: System prompt configuration
+- `models`: Model selection for specific tasks (e.g., title generation)
+- `tools`: Tool execution configuration (sandbox type, auto-approve)
+- `logging`: Logging configuration (level, file output)
 
 Database: `~/.local/share/clareon/clareon.db`
 
-## Database Schema
+See `clareon-core/src/config/settings.rs` for the full configuration schema.
 
-```sql
--- Conversations
-CREATE TABLE conversations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
-    model TEXT NOT NULL,
-    system_prompt TEXT,
-    custom_instructions TEXT
-);
+## Features
 
--- Messages with FTS5 search
-CREATE TABLE messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    conversation_id INTEGER NOT NULL REFERENCES conversations(id),
-    created_at INTEGER NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
-    text_content TEXT,        -- For FTS indexing
-    content_json TEXT NOT NULL, -- Full structured content
-    input_tokens INTEGER,
-    output_tokens INTEGER,
-    model TEXT
-);
+### Core Features
 
-CREATE VIRTUAL TABLE messages_fts USING fts5(text_content, content='messages');
-```
+- **Multiple Backends**: AWS Bedrock and Anthropic API support
+- **Streaming Responses**: Real-time message streaming
+- **Prompt Caching**: Automatic caching of system prompts (Claude Sonnet 3.5+, Opus 4, Nova models)
+- **Conversation Management**: Create, resume, search, and manage conversations
+- **Full-Text Search**: FTS5-based search across all message history
+- **Tool Support**: Built-in file operation tools (read, write, list directory)
+- **Sandboxing**: Bubblewrap-based sandboxing for tool execution
+- **Workspace Management**: Persistent workspace configurations
+- **Token Tracking**: Input/output token usage tracking and display
+- **Native Qt/QML UI**: Modern interface with KDE Plasma integration
+
+### Database Schema
+
+The database uses SQLite with FTS5 for full-text search:
+
+- `conversations` table: Stores conversation metadata (title, timestamps, model, system prompt)
+- `messages` table: Stores messages with dual storage (text for FTS, JSON for full content)
+- `messages_fts` virtual table: FTS5 index for fast text search
+- `workspaces` table: Stores persistent workspace configurations
+
+See `clareon-core/migrations/` for the complete schema.
 
 ## Key Dependencies
 
 ### clareon-core
-- `tokio` - Async runtime
-- `sqlx` - SQLite with compile-time checks
-- `aws-sdk-bedrockruntime` - AWS Bedrock API
-- `reqwest` - HTTP client for Anthropic API
-- `secret-service` - D-Bus keyring integration
-- `serde` / `serde_json` - Serialization
-- `thiserror` - Error types
+- `tokio`: Async runtime
+- `sqlx`: SQLite with compile-time checks and migrations
+- `aws-sdk-bedrockruntime`: AWS Bedrock API
+- `reqwest`: HTTP client with streaming support
+- `secret-service`: D-Bus keyring integration
+- `serde`/`serde_json`: Serialization
+- `thiserror`: Error types
+- `tracing`: Structured logging
 
-### clareon-cli
-- `ratatui` - TUI framework
-- `crossterm` - Terminal backend
-- `clap` - CLI argument parsing
-- `anyhow` - Application error handling
+### clareon
+- `cxx-qt`: Qt/QML integration for Rust
+- `cxx-qt-lib`: Qt library bindings
 
-## Future Roadmap
-
-### Phase 8: Streaming
-- Implement streaming in backends
-- Real-time response display in TUI
-
-### Phase 9: Basic Tools
-- Built-in tools (read_file, write_file, bash)
-- Tool approval UI
-- Sandboxing with bubblewrap/landlock
-
-### Phase 10: MCP Support
-- MCP client (JSON-RPC over stdio)
-- Server lifecycle management
-- Tool discovery and registration
-
-### Phase 11: QML GUI
-- Qt/QML frontend with cxx-qt
-- QAbstractItemModel bindings
-- Native KDE Plasma integration
-
-### Phase 12: KRunner Integration
-- KRunner plugin for quick prompts
-- D-Bus integration
-
-### Phase 13: Advanced Features
-- Multi-modal (images)
-- Conversation summarization
-- Context window management
-- Export/import conversations
+### clareon-cli (testing only)
+- `ratatui`: TUI framework
+- `crossterm`: Terminal backend
+- `clap`: CLI argument parsing
 
 ## Design Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Async runtime | Tokio | Industry standard, AWS SDK compatibility |
-| Database | SQLite + sqlx | Compile-time checks, async, embedded |
+| Database | SQLite + sqlx | Compile-time checks, async, migrations, embedded |
 | Secrets | secret-service | Pure Rust, D-Bus based, works with GNOME/KDE |
-| TUI | ratatui | Popular, flexible, good ecosystem |
-| Config format | JSON | Simple, widely supported |
+| GUI | Qt/QML + cxx-qt | Native look, KDE integration, cross-platform |
+| Config format | JSON | Simple, widely supported, human-readable |
 | Message storage | Dual (text + JSON) | FTS on text, full fidelity in JSON |
-| IDs | INTEGER | Simpler than UUIDs for local-only app |
+| Sandboxing | bubblewrap | Standard Linux tool, namespace isolation |
+| Logging | tracing | Structured, async-aware, powerful filtering |
 
 ## Testing
 
-21 unit tests covering:
-- Type serialization/deserialization
-- Database CRUD operations
-- FTS search
-- Configuration loading
-- Title generation utilities
+Run the test suite with:
 
-Run with: `cargo test`
+```bash
+cargo test
+```
+
+Tests cover:
+- Type serialization/deserialization
+- Database CRUD operations and migrations
+- FTS search functionality
+- Configuration loading and validation
+- Backend API interactions
+- Tool execution and sandboxing
+- Title generation
+
+## Development Notes
+
+- Use `RUST_LOG` environment variable to control logging verbosity (e.g., `RUST_LOG=debug`)
+- Tool execution requires explicit workspace configuration for security
+- Prompt caching can significantly reduce costs and latency for conversations with long system prompts
+- Database migrations are automatically applied on startup
+- The TUI (clareon-cli) is primarily for testing and lacks many features present in the GUI
