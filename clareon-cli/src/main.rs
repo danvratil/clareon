@@ -173,8 +173,9 @@ async fn run_tui(config: Config, args: Args) -> Result<()> {
     let mut app = App::new(config, options).await?;
 
     // Resume conversation if specified
-    if let Some(id) = args.resume {
-        app.load_conversation(id).await?;
+    if let Some(id_str) = args.resume {
+        let id = clareon_core::types::ConversationId::from(id_str);
+        app.load_conversation(&id).await?;
     }
 
     // Handle initial prompt if provided
@@ -210,7 +211,7 @@ async fn run_main_loop(
         // Reload messages if streaming just completed
         if app.needs_reload {
             if let Some(conv) = &app.conversation {
-                app.messages = app.manager.get_messages(conv.id).await?;
+                app.messages = app.manager.get_messages(&conv.id).await?;
                 app.scroll_to_bottom();
                 app.calculate_conversation_usage();
             }

@@ -6,6 +6,8 @@
 
 use thiserror::Error;
 
+use crate::types::ConversationId;
+
 /// Result type alias using the Clareon error type
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -20,7 +22,7 @@ pub enum Error {
     Migration(#[from] sqlx::migrate::MigrateError),
 
     #[error("Conversation not found: {0}")]
-    ConversationNotFound(i64),
+    ConversationNotFound(ConversationId),
 
     #[error("Message not found: {0}")]
     MessageNotFound(i64),

@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-use crate::types::{ContentBlock, ToolResultContent};
+use crate::types::{ContentBlock, ConversationId, ToolResultContent};
 
 use super::{
     ArtifactManager, ExecutionContext, Sandbox, ToolRegistry, ToolResult, WorkspaceManager,
@@ -100,7 +100,7 @@ impl ToolExecutor {
     pub async fn execute_multiple(
         &self,
         tool_uses: Vec<(&str, &str, &Value)>, // (id, name, input)
-        conversation_id: i64,
+        conversation_id: &ConversationId,
         message_id: i64,
     ) -> Result<Vec<ContentBlock>, super::ToolError> {
         // 1. Get workspace
@@ -114,7 +114,7 @@ impl ToolExecutor {
 
         // 3. Build execution context
         let context = ExecutionContext {
-            conversation_id,
+            conversation_id: conversation_id.clone(),
             workspace: workspace.clone(),
             sandbox: Arc::clone(self.sandbox()),
             env_vars: HashMap::new(),

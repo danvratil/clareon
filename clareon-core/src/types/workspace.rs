@@ -6,11 +6,13 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::ConversationId;
+
 /// User-uploaded file stored in the database
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserFile {
     pub id: i64,
-    pub conversation_id: i64,
+    pub conversation_id: ConversationId,
     pub message_id: i64,
     pub filename: String,
     pub mime_type: String,
@@ -25,7 +27,7 @@ pub struct UserFile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Artifact {
     pub id: i64,
-    pub conversation_id: i64,
+    pub conversation_id: ConversationId,
     pub message_id: i64,
     pub filename: String, // Relative path in output/
     pub mime_type: Option<String>,
@@ -40,7 +42,7 @@ pub struct Artifact {
 /// Workspace metadata for a conversation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceMetadata {
-    pub conversation_id: i64,
+    pub conversation_id: ConversationId,
     pub workspace_path: String,
     pub created_at: i64,
     pub last_accessed_at: i64,

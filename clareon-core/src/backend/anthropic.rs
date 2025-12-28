@@ -17,7 +17,7 @@ use super::traits::{
     ChatRequest, ChatResponse, ContentDelta, LlmBackend, ModelInfo, StopReason, StreamEvent, Usage,
 };
 use crate::error::BackendError;
-use crate::types::{ContentBlock, Message, Role};
+use crate::types::{ContentBlock, ConversationId, Message, Role};
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
@@ -100,7 +100,7 @@ impl AnthropicBackend {
     /// Convert Anthropic response to our types
     fn convert_response(
         response: AnthropicResponse,
-        conversation_id: i64,
+        conversation_id: ConversationId,
     ) -> (Message, StopReason, Usage) {
         let content: Vec<ContentBlock> = response
             .content
@@ -273,8 +273,8 @@ impl LlmBackend for AnthropicBackend {
         let conversation_id = request
             .messages
             .first()
-            .map(|m| m.conversation_id)
-            .unwrap_or(0);
+            .map(|m| m.conversation_id.clone())
+            .unwrap_or_else(|| ConversationId::from("temp"));
 
         let (message, stop_reason, usage) = Self::convert_response(api_response, conversation_id);
 

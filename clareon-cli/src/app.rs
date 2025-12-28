@@ -17,7 +17,9 @@ use clareon_core::{
     ToolRegistry, WorkspaceManager,
     backend::Usage,
     register_builtin_tools,
-    types::{ContentBlock, Conversation, ConversationSummary, Message, SearchResult},
+    types::{
+        ContentBlock, Conversation, ConversationId, ConversationSummary, Message, SearchResult,
+    },
 };
 
 /// Current view mode
@@ -228,7 +230,7 @@ impl App {
     }
 
     /// Load a conversation by ID
-    pub async fn load_conversation(&mut self, id: i64) -> anyhow::Result<()> {
+    pub async fn load_conversation(&mut self, id: &ConversationId) -> anyhow::Result<()> {
         let conv = self.manager.load_conversation(id).await?;
         let messages = self.manager.get_messages(id).await?;
 
@@ -256,7 +258,7 @@ impl App {
         self.input.clear();
 
         // Add user message to UI immediately
-        let conv_id = self.conversation.as_ref().unwrap().id;
+        let conv_id = self.conversation.as_ref().unwrap().id.clone();
         let user_message = clareon_core::types::Message::user(conv_id, &user_input);
         self.messages.push(user_message);
         self.scroll_to_bottom();

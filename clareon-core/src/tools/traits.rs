@@ -11,6 +11,7 @@ use std::time::Duration;
 use std::{collections::HashMap, fmt::Debug};
 
 use crate::backend::ToolDefinition;
+use crate::types::ConversationId;
 
 use super::{PersistentWorkspace, ToolError};
 
@@ -64,7 +65,7 @@ pub trait Tool: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct ExecutionContext {
     /// Conversation ID
-    pub conversation_id: i64,
+    pub conversation_id: ConversationId,
 
     /// Persistent workspace for this conversation
     pub workspace: Arc<PersistentWorkspace>,

@@ -52,7 +52,7 @@ ColumnLayout {
         delegate: Controls.ItemDelegate {
             id: conversationDelegate
 
-            required property int conversationId
+            required property string conversationId
             required property string title
             required property int updatedAt
             required property string model

@@ -189,7 +189,7 @@ impl ffi::ConversationListModel {
         let conversation = &self.conversations[row as usize];
 
         match role {
-            257 => cxx_qt_lib::QVariant::from(&(conversation.id as i32)),
+            257 => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&conversation.id)),
             258 => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&conversation.title)),
             259 => cxx_qt_lib::QVariant::from(&(conversation.updated_at as i32)),
             260 => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&conversation.model)),

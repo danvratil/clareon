@@ -24,7 +24,7 @@ use super::traits::{
     ChatRequest, ChatResponse, ContentDelta, LlmBackend, ModelInfo, StopReason, StreamEvent, Usage,
 };
 use crate::error::BackendError;
-use crate::types::{ContentBlock, Message, Role, ToolResultContent};
+use crate::types::{ContentBlock, ConversationId, Message, Role, ToolResultContent};
 
 /// AWS Bedrock backend for Claude models
 pub struct BedrockBackend {
@@ -414,8 +414,8 @@ impl LlmBackend for BedrockBackend {
         let conversation_id = request
             .messages
             .first()
-            .map(|m| m.conversation_id)
-            .unwrap_or(0);
+            .map(|m| m.conversation_id.clone())
+            .unwrap_or_else(|| ConversationId::from("temp"));
 
         let message = Message::assistant(
             conversation_id,

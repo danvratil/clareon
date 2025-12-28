@@ -49,8 +49,8 @@ impl TitleGenerator {
             user_truncated, assistant_truncated
         );
 
-        // Create a temporary message for the request
-        let message = Message::user(0, prompt);
+        // Create a temporary message for the request (using placeholder conversation ID)
+        let message = Message::user("temp", prompt);
 
         let request = ChatRequest::new(vec![message], &self.model)
             .with_system_prompt(TITLE_SYSTEM_PROMPT.to_string())

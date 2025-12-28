@@ -19,7 +19,9 @@ use crate::config::Config;
 use crate::error::Result;
 use crate::storage::Storage;
 use crate::tools::ToolExecutor;
-use crate::types::{ContentBlock, Conversation, ConversationSummary, Message, Role, SearchResult};
+use crate::types::{
+    ContentBlock, Conversation, ConversationId, ConversationSummary, Message, Role, SearchResult,
+};
 
 /// Update from streaming message containing both the event and accumulated state
 #[derive(Debug, Clone)]
@@ -101,20 +103,20 @@ impl ConversationManager {
         conversation.custom_instructions = self.config.system_prompt.custom_instructions.clone();
 
         let id = self.storage.create_conversation(&conversation).await?;
-        conversation.id = id;
+        conversation.id = id.clone();
 
         info!("Created new conversation: {}", id);
         Ok(conversation)
     }
 
     /// Load an existing conversation by ID
-    pub async fn load_conversation(&self, id: i64) -> Result<Conversation> {
+    pub async fn load_conversation(&self, id: &ConversationId) -> Result<Conversation> {
         debug!("Loading conversation: {}", id);
         self.storage.get_conversation(id).await
     }
 
     /// Get all messages for a conversation
-    pub async fn get_messages(&self, conversation_id: i64) -> Result<Vec<Message>> {
+    pub async fn get_messages(&self, conversation_id: &ConversationId) -> Result<Vec<Message>> {
         self.storage.get_messages(conversation_id).await
     }
 
@@ -131,12 +133,12 @@ impl ConversationManager {
         user_input: &str,
     ) -> Result<ChatResponse> {
         // Create and store user message
-        let user_message = Message::user(conversation.id, user_input);
+        let user_message = Message::user(conversation.id.clone(), user_input);
         let user_msg_id = self.storage.add_message(&user_message).await?;
         debug!("Stored user message: {}", user_msg_id);
 
         // Get conversation history
-        let messages = self.storage.get_messages(conversation.id).await?;
+        let messages = self.storage.get_messages(&conversation.id).await?;
 
         // Build the request
         let system_prompt = self.get_effective_system_prompt(conversation);
@@ -151,7 +153,7 @@ impl ConversationManager {
 
         // Store assistant response
         let mut assistant_message = response.message.clone();
-        assistant_message.conversation_id = conversation.id;
+        assistant_message.conversation_id = conversation.id.clone();
         let assistant_msg_id = self.storage.add_message(&assistant_message).await?;
         debug!("Stored assistant message: {}", assistant_msg_id);
 
@@ -182,12 +184,12 @@ impl ConversationManager {
         user_input: &str,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamUpdate>> + Send>>> {
         // Create and store user message
-        let user_message = Message::user(conversation.id, user_input);
+        let user_message = Message::user(conversation.id.clone(), user_input);
         let user_msg_id = self.storage.add_message(&user_message).await?;
         debug!("Stored user message: {}", user_msg_id);
 
         // Get conversation history
-        let messages = self.storage.get_messages(conversation.id).await?;
+        let messages = self.storage.get_messages(&conversation.id).await?;
 
         // Build the request
         let system_prompt = self.get_effective_system_prompt(conversation);
@@ -200,7 +202,7 @@ impl ConversationManager {
         let backend_stream = self.backend.send_message_stream(&request).await?;
 
         // Set up state accumulation
-        let conv_id = conversation.id;
+        let conv_id = conversation.id.clone();
         let storage = self.storage.clone();
         let model = conversation.model.clone();
         let user_input_clone = user_input.to_string();
@@ -332,7 +334,7 @@ impl ConversationManager {
         self.storage.add_message(&tool_result_message).await?;
 
         // Get updated conversation history
-        let messages = self.storage.get_messages(conversation.id).await?;
+        let messages = self.storage.get_messages(&conversation.id).await?;
 
         // Build the request
         let system_prompt = self.get_effective_system_prompt(conversation);
@@ -346,7 +348,7 @@ impl ConversationManager {
 
         // Store assistant response
         let mut assistant_message = response.message.clone();
-        assistant_message.conversation_id = conversation.id;
+        assistant_message.conversation_id = conversation.id.clone();
         self.storage.add_message(&assistant_message).await?;
 
         // Update conversation
@@ -371,7 +373,7 @@ impl ConversationManager {
         const MAX_TOOL_ITERATIONS: usize = 5;
 
         // Create and store user message
-        let user_message = Message::user(conversation.id, user_input);
+        let user_message = Message::user(conversation.id.clone(), user_input);
         self.storage.add_message(&user_message).await?;
 
         let mut iteration = 0;
@@ -387,7 +389,7 @@ impl ConversationManager {
             }
 
             // Get conversation history
-            let messages = self.storage.get_messages(conversation.id).await?;
+            let messages = self.storage.get_messages(&conversation.id).await?;
 
             // Build request with tool definitions if executor is available
             let system_prompt = self.get_effective_system_prompt(conversation);
@@ -412,7 +414,7 @@ impl ConversationManager {
 
             // Store assistant response
             let mut assistant_message = response.message.clone();
-            assistant_message.conversation_id = conversation.id;
+            assistant_message.conversation_id = conversation.id.clone();
             let assistant_msg_id = self.storage.add_message(&assistant_message).await?;
 
             // Check stop reason
@@ -437,7 +439,7 @@ impl ConversationManager {
                             .execute_tools(
                                 &response.message,
                                 executor,
-                                conversation.id,
+                                &conversation.id,
                                 assistant_msg_id,
                             )
                             .await?;
@@ -445,7 +447,7 @@ impl ConversationManager {
                         // Store tool results as user message
                         let tool_result_message = Message {
                             id: 0,
-                            conversation_id: conversation.id,
+                            conversation_id: conversation.id.clone(),
                             created_at: chrono::Utc::now().timestamp(),
                             role: Role::User,
                             text_content: None,
@@ -474,7 +476,7 @@ impl ConversationManager {
         &self,
         message: &Message,
         executor: &ToolExecutor,
-        conversation_id: i64,
+        conversation_id: &ConversationId,
         message_id: i64,
     ) -> Result<Vec<ContentBlock>> {
         let mut tool_uses = Vec::new();
@@ -516,7 +518,7 @@ impl ConversationManager {
     }
 
     /// Delete a conversation
-    pub async fn delete_conversation(&self, id: i64) -> Result<()> {
+    pub async fn delete_conversation(&self, id: &ConversationId) -> Result<()> {
         info!("Deleting conversation: {}", id);
         self.storage.delete_conversation(id).await
     }

@@ -15,9 +15,9 @@ pub struct Args {
     #[arg(long)]
     pub chats: bool,
 
-    /// Resume a conversation by ID
-    #[arg(long, value_name = "ID")]
-    pub resume: Option<i64>,
+    /// Resume a conversation by ID (UUID)
+    #[arg(long, value_name = "UUID")]
+    pub resume: Option<String>,
 
     /// Search conversations
     #[arg(long, value_name = "QUERY")]

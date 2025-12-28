@@ -6,7 +6,7 @@ use chrono::Utc;
 
 #[derive(Debug, Clone)]
 pub struct MockConversation {
-    pub id: i64,
+    pub id: String,
     pub title: String,
     pub updated_at: i64,
     pub model: String,
@@ -27,56 +27,56 @@ pub fn mock_conversations() -> Vec<MockConversation> {
 
     vec![
         MockConversation {
-            id: 1,
+            id: "550e8400-e29b-41d4-a716-446655440001".to_string(),
             title: "Rust async patterns".to_string(),
             updated_at: now - 3600, // 1 hour ago
             model: "claude-sonnet-4".to_string(),
             message_count: 12,
         },
         MockConversation {
-            id: 2,
+            id: "550e8400-e29b-41d4-a716-446655440002".to_string(),
             title: "QML layout design".to_string(),
             updated_at: now - 7200, // 2 hours ago
             model: "claude-sonnet-4".to_string(),
             message_count: 8,
         },
         MockConversation {
-            id: 3,
+            id: "550e8400-e29b-41d4-a716-446655440003".to_string(),
             title: "Debugging SQLite queries".to_string(),
             updated_at: now - 86400, // 1 day ago
             model: "claude-sonnet-4".to_string(),
             message_count: 15,
         },
         MockConversation {
-            id: 4,
+            id: "550e8400-e29b-41d4-a716-446655440004".to_string(),
             title: "Kirigami components overview".to_string(),
             updated_at: now - 172800, // 2 days ago
             model: "claude-sonnet-4".to_string(),
             message_count: 6,
         },
         MockConversation {
-            id: 5,
+            id: "550e8400-e29b-41d4-a716-446655440005".to_string(),
             title: "Git workflow best practices".to_string(),
             updated_at: now - 259200, // 3 days ago
             model: "claude-haiku".to_string(),
             message_count: 10,
         },
         MockConversation {
-            id: 6,
+            id: "550e8400-e29b-41d4-a716-446655440006".to_string(),
             title: "Linux desktop integration".to_string(),
             updated_at: now - 432000, // 5 days ago
             model: "claude-sonnet-4".to_string(),
             message_count: 20,
         },
         MockConversation {
-            id: 7,
+            id: "550e8400-e29b-41d4-a716-446655440007".to_string(),
             title: "Error handling in Rust".to_string(),
             updated_at: now - 604800, // 1 week ago
             model: "claude-sonnet-4".to_string(),
             message_count: 14,
         },
         MockConversation {
-            id: 8,
+            id: "550e8400-e29b-41d4-a716-446655440008".to_string(),
             title: "CSS grid vs flexbox".to_string(),
             updated_at: now - 1209600, // 2 weeks ago
             model: "claude-haiku".to_string(),

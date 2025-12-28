@@ -11,6 +11,7 @@ use tokio::fs;
 use tracing::{debug, info};
 
 use crate::storage::Storage;
+use crate::types::ConversationId;
 
 use super::{PersistentWorkspace, ToolError};
 
@@ -90,7 +91,7 @@ impl ArtifactManager {
     /// Returns number of new/updated artifacts
     pub async fn sync_artifacts(
         &self,
-        conversation_id: i64,
+        conversation_id: &ConversationId,
         message_id: i64,
         workspace: &PersistentWorkspace,
         previous_hashes: &HashMap<String, String>,
@@ -155,7 +156,7 @@ impl ArtifactManager {
     /// This is useful for recovering the output directory if it gets deleted
     pub async fn restore_artifacts(
         &self,
-        conversation_id: i64,
+        conversation_id: &ConversationId,
         workspace: &PersistentWorkspace,
     ) -> Result<usize, ToolError> {
         let artifacts = self

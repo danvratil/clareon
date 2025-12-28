@@ -12,14 +12,14 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 use crate::storage::Storage;
-use crate::types::UserFile;
+use crate::types::{ConversationId, UserFile};
 
 use super::ToolError;
 
 /// Persistent workspace for a conversation (does NOT auto-cleanup on drop)
 #[derive(Debug, Clone)]
 pub struct PersistentWorkspace {
-    conversation_id: i64,
+    conversation_id: ConversationId,
     root_path: PathBuf,      // ~/.cache/clareon/conversations/<id>/
     workspace_path: PathBuf, // ~/.cache/clareon/conversations/<id>/workspace/
     input_path: PathBuf,     // ~/.cache/clareon/conversations/<id>/input/
@@ -30,13 +30,14 @@ pub struct PersistentWorkspace {
 impl PersistentWorkspace {
     /// Create a new persistent workspace for a conversation
     pub fn new(
-        conversation_id: i64,
+        conversation_id: impl Into<ConversationId>,
         cache_root: &Path,
         shared_pip: &Path,
     ) -> std::result::Result<Self, ToolError> {
+        let conversation_id = conversation_id.into();
         let root_path = cache_root
             .join("conversations")
-            .join(conversation_id.to_string());
+            .join(conversation_id.as_ref());
         let workspace_path = root_path.join("workspace");
         let input_path = root_path.join("input");
         let output_path = root_path.join("output");
@@ -253,7 +254,7 @@ pub struct WorkspaceManager {
     pub(crate) storage: Arc<Storage>, // Make accessible to ToolExecutor
 
     // Cache of loaded workspaces (conversation_id -> workspace)
-    workspaces: Arc<RwLock<HashMap<i64, Arc<PersistentWorkspace>>>>,
+    workspaces: Arc<RwLock<HashMap<ConversationId, Arc<PersistentWorkspace>>>>,
 }
 
 impl WorkspaceManager {
@@ -281,12 +282,12 @@ impl WorkspaceManager {
     /// Get or create workspace for a conversation
     pub async fn get_workspace(
         &self,
-        conversation_id: i64,
+        conversation_id: &ConversationId,
     ) -> std::result::Result<Arc<PersistentWorkspace>, ToolError> {
         // Check cache first
         {
             let workspaces = self.workspaces.read().await;
-            if let Some(workspace) = workspaces.get(&conversation_id) {
+            if let Some(workspace) = workspaces.get(conversation_id) {
                 // Update last access time
                 if let Err(e) = self
                     .storage
@@ -305,7 +306,7 @@ impl WorkspaceManager {
         // Cache it
         {
             let mut workspaces = self.workspaces.write().await;
-            workspaces.insert(conversation_id, workspace.clone());
+            workspaces.insert(conversation_id.clone(), workspace.clone());
         }
 
         Ok(workspace)
@@ -315,7 +316,7 @@ impl WorkspaceManager {
     pub async fn cleanup_old_workspaces(
         &self,
         days: u64,
-    ) -> std::result::Result<Vec<i64>, ToolError> {
+    ) -> std::result::Result<Vec<ConversationId>, ToolError> {
         use chrono::Utc;
 
         let cutoff_timestamp = Utc::now().timestamp() - (days * 86400) as i64;
@@ -345,7 +346,7 @@ impl WorkspaceManager {
             // Delete database record
             if let Err(e) = self
                 .storage
-                .delete_workspace_metadata(metadata.conversation_id)
+                .delete_workspace_metadata(&metadata.conversation_id)
                 .await
             {
                 warn!(
@@ -371,7 +372,7 @@ impl WorkspaceManager {
     /// Get workspace for conversation (from cache or create new)
     async fn load_or_create_workspace(
         &self,
-        conversation_id: i64,
+        conversation_id: &ConversationId,
     ) -> std::result::Result<Arc<PersistentWorkspace>, ToolError> {
         // Check database first
         let metadata = self
@@ -382,7 +383,11 @@ impl WorkspaceManager {
 
         let workspace = if let Some(_metadata) = metadata {
             // Workspace exists in database
-            let ws = PersistentWorkspace::new(conversation_id, &self.cache_root, &self.shared_pip)?;
+            let ws = PersistentWorkspace::new(
+                conversation_id.clone(),
+                &self.cache_root,
+                &self.shared_pip,
+            )?;
 
             // Verify directory exists, recreate if missing
             if !ws.root().exists() {
@@ -396,7 +401,11 @@ impl WorkspaceManager {
             ws
         } else {
             // Create new workspace
-            let ws = PersistentWorkspace::new(conversation_id, &self.cache_root, &self.shared_pip)?;
+            let ws = PersistentWorkspace::new(
+                conversation_id.clone(),
+                &self.cache_root,
+                &self.shared_pip,
+            )?;
             ws.ensure_directories().await?;
 
             // Store metadata in database

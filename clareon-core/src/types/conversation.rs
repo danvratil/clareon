@@ -6,11 +6,66 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Unique identifier for a conversation (UUIDv4 string)
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ConversationId(String);
+
+impl ConversationId {
+    /// Generate a new random UUIDv4 conversation ID
+    pub fn new() -> Self {
+        Self(uuid::Uuid::new_v4().to_string())
+    }
+}
+
+impl Default for ConversationId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for ConversationId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl AsRef<str> for ConversationId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for ConversationId {
+    type Target = str;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<String> for ConversationId {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl From<&str> for ConversationId {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+impl std::borrow::Borrow<str> for ConversationId {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
 /// A conversation with Claude
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Conversation {
-    /// Unique identifier (database primary key)
-    pub id: i64,
+    /// Unique identifier (UUIDv4)
+    pub id: ConversationId,
 
     /// Title of the conversation (auto-generated or user-provided)
     pub title: Option<String>,
@@ -36,7 +91,7 @@ impl Conversation {
     pub fn new(model: impl Into<String>) -> Self {
         let now = chrono::Utc::now().timestamp();
         Self {
-            id: 0, // Will be set by database
+            id: ConversationId::new(),
             title: None,
             created_at: now,
             updated_at: now,
@@ -80,7 +135,7 @@ impl Conversation {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationSummary {
     /// Conversation ID
-    pub id: i64,
+    pub id: ConversationId,
 
     /// Title
     pub title: Option<String>,
@@ -106,7 +161,7 @@ impl ConversationSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
     /// Conversation ID
-    pub conversation_id: i64,
+    pub conversation_id: ConversationId,
 
     /// Conversation title
     pub conversation_title: Option<String>,
@@ -131,7 +186,7 @@ mod tests {
     #[test]
     fn test_conversation_creation() {
         let conv = Conversation::new("claude-sonnet-4-20250514");
-        assert_eq!(conv.id, 0);
+        assert!(!conv.id.as_ref().is_empty()); // ID should be generated
         assert_eq!(conv.title, None);
         assert_eq!(conv.model, "claude-sonnet-4-20250514");
         assert!(conv.created_at > 0);

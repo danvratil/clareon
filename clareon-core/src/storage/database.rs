@@ -5,12 +5,12 @@
 //! SQLite database operations
 
 use sqlx::{Pool, Row, Sqlite, sqlite::SqlitePoolOptions};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::error::{Error, Result};
 use crate::types::{
-    Artifact, ContentBlock, Conversation, ConversationSummary, Message, Role, SearchResult,
-    UserFile, WorkspaceMetadata,
+    Artifact, ContentBlock, Conversation, ConversationId, ConversationSummary, Message, Role,
+    SearchResult, UserFile, WorkspaceMetadata,
 };
 
 /// Storage layer for persisting conversations and messages
@@ -46,90 +46,23 @@ impl Storage {
     async fn run_migrations(&self) -> Result<()> {
         debug!("Running database migrations");
 
-        // Run migrations in order
-        let migrations = [
-            include_str!("../../migrations/001_initial_schema.sql"),
-            include_str!("../../migrations/002_persistent_workspaces.sql"),
-        ];
-
-        for (i, migration_sql) in migrations.iter().enumerate() {
-            debug!("Running migration {}", i + 1);
-
-            // Remove comment lines
-            let cleaned: String = migration_sql
-                .lines()
-                .filter(|line| {
-                    let trimmed = line.trim();
-                    !trimmed.is_empty() && !trimmed.starts_with("--")
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            // Split statements respecting BEGIN...END blocks
-            let statements = self.split_sql_statements(&cleaned);
-
-            // Execute each statement
-            for statement in statements {
-                if !statement.trim().is_empty() {
-                    debug!("Executing SQL: {}", &statement[..statement.len().min(100)]);
-                    if let Err(e) = sqlx::raw_sql(&statement).execute(&self.pool).await {
-                        warn!("Failed to execute SQL: {}", e);
-                        warn!("Statement was: {}", statement);
-                        return Err(e.into());
-                    }
-                }
-            }
-        }
+        sqlx::migrate!("./migrations").run(&self.pool).await?;
 
         info!("Database migrations completed");
         Ok(())
     }
 
-    /// Split SQL into statements, respecting BEGIN...END blocks
-    fn split_sql_statements(&self, sql: &str) -> Vec<String> {
-        let mut statements = Vec::new();
-        let mut current = String::new();
-        let mut in_begin_end: i32 = 0;
-
-        for line in sql.lines() {
-            let trimmed_upper = line.trim().to_uppercase();
-
-            // Track BEGIN...END nesting
-            if trimmed_upper.contains("BEGIN") {
-                in_begin_end += 1;
-            }
-            if trimmed_upper.contains("END") {
-                in_begin_end = in_begin_end.saturating_sub(1);
-            }
-
-            current.push_str(line);
-            current.push('\n');
-
-            // If line ends with semicolon and we're not in BEGIN...END, it's a statement boundary
-            if line.trim().ends_with(';') && in_begin_end == 0 {
-                statements.push(current.trim().to_string());
-                current.clear();
-            }
-        }
-
-        // Add any remaining content
-        if !current.trim().is_empty() {
-            statements.push(current.trim().to_string());
-        }
-
-        statements
-    }
-
     // ==================== Conversation Operations ====================
 
     /// Create a new conversation
-    pub async fn create_conversation(&self, conversation: &Conversation) -> Result<i64> {
-        let result = sqlx::query(
+    pub async fn create_conversation(&self, conversation: &Conversation) -> Result<ConversationId> {
+        sqlx::query(
             r#"
-            INSERT INTO conversations (title, created_at, updated_at, model, system_prompt, custom_instructions)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO conversations (id, title, created_at, updated_at, model, system_prompt, custom_instructions)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             "#,
         )
+        .bind(conversation.id.as_ref())
         .bind(&conversation.title)
         .bind(conversation.created_at)
         .bind(conversation.updated_at)
@@ -139,11 +72,11 @@ impl Storage {
         .execute(&self.pool)
         .await?;
 
-        Ok(result.last_insert_rowid())
+        Ok(conversation.id.clone())
     }
 
     /// Get a conversation by ID
-    pub async fn get_conversation(&self, id: i64) -> Result<Conversation> {
+    pub async fn get_conversation(&self, id: &ConversationId) -> Result<Conversation> {
         let row = sqlx::query(
             r#"
             SELECT id, title, created_at, updated_at, model, system_prompt, custom_instructions
@@ -151,13 +84,13 @@ impl Storage {
             WHERE id = ?
             "#,
         )
-        .bind(id)
+        .bind(id.as_ref())
         .fetch_optional(&self.pool)
         .await?
-        .ok_or(Error::ConversationNotFound(id))?;
+        .ok_or_else(|| Error::ConversationNotFound(id.clone()))?;
 
         Ok(Conversation {
-            id: row.get("id"),
+            id: row.get::<String, _>("id").into(),
             title: row.get("title"),
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
@@ -181,26 +114,26 @@ impl Storage {
         .bind(&conversation.model)
         .bind(&conversation.system_prompt)
         .bind(&conversation.custom_instructions)
-        .bind(conversation.id)
+        .bind(conversation.id.as_ref())
         .execute(&self.pool)
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(Error::ConversationNotFound(conversation.id));
+            return Err(Error::ConversationNotFound(conversation.id.clone()));
         }
 
         Ok(())
     }
 
     /// Delete a conversation and all its messages
-    pub async fn delete_conversation(&self, id: i64) -> Result<()> {
+    pub async fn delete_conversation(&self, id: &ConversationId) -> Result<()> {
         let result = sqlx::query("DELETE FROM conversations WHERE id = ?")
-            .bind(id)
+            .bind(id.as_ref())
             .execute(&self.pool)
             .await?;
 
         if result.rows_affected() == 0 {
-            return Err(Error::ConversationNotFound(id));
+            return Err(Error::ConversationNotFound(id.clone()));
         }
 
         Ok(())
@@ -228,7 +161,7 @@ impl Storage {
         let summaries = rows
             .into_iter()
             .map(|row| ConversationSummary {
-                id: row.get("id"),
+                id: row.get::<String, _>("id").into(),
                 title: row.get("title"),
                 updated_at: row.get("updated_at"),
                 model: row.get("model"),
@@ -251,7 +184,7 @@ impl Storage {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
-        .bind(message.conversation_id)
+        .bind(message.conversation_id.as_ref())
         .bind(message.created_at)
         .bind(message.role.as_str())
         .bind(&message.text_content)
@@ -265,7 +198,7 @@ impl Storage {
         // Update conversation's updated_at timestamp
         sqlx::query("UPDATE conversations SET updated_at = ? WHERE id = ?")
             .bind(message.created_at)
-            .bind(message.conversation_id)
+            .bind(message.conversation_id.as_ref())
             .execute(&self.pool)
             .await?;
 
@@ -290,7 +223,7 @@ impl Storage {
     }
 
     /// Get all messages for a conversation, ordered by creation time
-    pub async fn get_messages(&self, conversation_id: i64) -> Result<Vec<Message>> {
+    pub async fn get_messages(&self, conversation_id: &ConversationId) -> Result<Vec<Message>> {
         let rows = sqlx::query(
             r#"
             SELECT id, conversation_id, created_at, role, text_content, content_json, input_tokens, output_tokens, model
@@ -299,7 +232,7 @@ impl Storage {
             ORDER BY created_at ASC
             "#,
         )
-        .bind(conversation_id)
+        .bind(conversation_id.as_ref())
         .fetch_all(&self.pool)
         .await?;
 
@@ -350,7 +283,7 @@ impl Storage {
         let results = rows
             .into_iter()
             .map(|row| SearchResult {
-                conversation_id: row.get("conversation_id"),
+                conversation_id: row.get::<String, _>("conversation_id").into(),
                 conversation_title: row.get("conversation_title"),
                 message_id: row.get("message_id"),
                 role: row.get("role"),
@@ -375,7 +308,7 @@ impl Storage {
 
         Ok(Message {
             id: row.get("id"),
-            conversation_id: row.get("conversation_id"),
+            conversation_id: row.get::<String, _>("conversation_id").into(),
             created_at: row.get("created_at"),
             role,
             text_content: row.get("text_content"),
@@ -387,7 +320,10 @@ impl Storage {
     }
 
     /// Get token counts for a conversation
-    pub async fn get_conversation_token_count(&self, conversation_id: i64) -> Result<(i64, i64)> {
+    pub async fn get_conversation_token_count(
+        &self,
+        conversation_id: &ConversationId,
+    ) -> Result<(i64, i64)> {
         let row = sqlx::query(
             r#"
             SELECT
@@ -397,7 +333,7 @@ impl Storage {
             WHERE conversation_id = ?
             "#,
         )
-        .bind(conversation_id)
+        .bind(conversation_id.as_ref())
         .fetch_one(&self.pool)
         .await?;
 
@@ -409,7 +345,7 @@ impl Storage {
     /// Add a user-uploaded file to the database
     pub async fn add_user_file(
         &self,
-        conversation_id: i64,
+        conversation_id: &ConversationId,
         message_id: i64,
         filename: &str,
         mime_type: &str,
@@ -430,7 +366,7 @@ impl Storage {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
-        .bind(conversation_id)
+        .bind(conversation_id.as_ref())
         .bind(message_id)
         .bind(filename)
         .bind(mime_type)
@@ -445,7 +381,7 @@ impl Storage {
     }
 
     /// Get all user files for a conversation
-    pub async fn get_user_files(&self, conversation_id: i64) -> Result<Vec<UserFile>> {
+    pub async fn get_user_files(&self, conversation_id: &ConversationId) -> Result<Vec<UserFile>> {
         let rows = sqlx::query(
             r#"
             SELECT id, conversation_id, message_id, filename, mime_type,
@@ -455,7 +391,7 @@ impl Storage {
             ORDER BY created_at ASC
             "#,
         )
-        .bind(conversation_id)
+        .bind(conversation_id.as_ref())
         .fetch_all(&self.pool)
         .await?;
 
@@ -463,7 +399,7 @@ impl Storage {
         for row in rows {
             files.push(UserFile {
                 id: row.get("id"),
-                conversation_id: row.get("conversation_id"),
+                conversation_id: row.get::<String, _>("conversation_id").into(),
                 message_id: row.get("message_id"),
                 filename: row.get("filename"),
                 mime_type: row.get("mime_type"),
@@ -496,7 +432,7 @@ impl Storage {
         for row in rows {
             files.push(UserFile {
                 id: row.get("id"),
-                conversation_id: row.get("conversation_id"),
+                conversation_id: row.get::<String, _>("conversation_id").into(),
                 message_id: row.get("message_id"),
                 filename: row.get("filename"),
                 mime_type: row.get("mime_type"),
@@ -515,7 +451,7 @@ impl Storage {
     /// Add an artifact to the database
     pub async fn add_artifact(
         &self,
-        conversation_id: i64,
+        conversation_id: &ConversationId,
         message_id: i64,
         filename: &str,
         mime_type: Option<&str>,
@@ -537,7 +473,7 @@ impl Storage {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
-        .bind(conversation_id)
+        .bind(conversation_id.as_ref())
         .bind(message_id)
         .bind(filename)
         .bind(mime_type)
@@ -555,7 +491,7 @@ impl Storage {
     /// Update an existing artifact
     pub async fn update_artifact(
         &self,
-        conversation_id: i64,
+        conversation_id: &ConversationId,
         message_id: i64,
         filename: &str,
         content: &[u8],
@@ -581,7 +517,7 @@ impl Storage {
         .bind(size_bytes)
         .bind(now)
         .bind(message_id)
-        .bind(conversation_id)
+        .bind(conversation_id.as_ref())
         .bind(filename)
         .execute(&self.pool)
         .await?;
@@ -590,7 +526,7 @@ impl Storage {
     }
 
     /// Get all artifacts for a conversation
-    pub async fn get_artifacts(&self, conversation_id: i64) -> Result<Vec<Artifact>> {
+    pub async fn get_artifacts(&self, conversation_id: &ConversationId) -> Result<Vec<Artifact>> {
         let rows = sqlx::query(
             r#"
             SELECT id, conversation_id, message_id, filename, mime_type,
@@ -600,7 +536,7 @@ impl Storage {
             ORDER BY updated_at DESC
             "#,
         )
-        .bind(conversation_id)
+        .bind(conversation_id.as_ref())
         .fetch_all(&self.pool)
         .await?;
 
@@ -608,7 +544,7 @@ impl Storage {
         for row in rows {
             artifacts.push(Artifact {
                 id: row.get("id"),
-                conversation_id: row.get("conversation_id"),
+                conversation_id: row.get::<String, _>("conversation_id").into(),
                 message_id: row.get("message_id"),
                 filename: row.get("filename"),
                 mime_type: row.get("mime_type"),
@@ -642,7 +578,7 @@ impl Storage {
         for row in rows {
             artifacts.push(Artifact {
                 id: row.get("id"),
-                conversation_id: row.get("conversation_id"),
+                conversation_id: row.get::<String, _>("conversation_id").into(),
                 message_id: row.get("message_id"),
                 filename: row.get("filename"),
                 mime_type: row.get("mime_type"),
@@ -662,7 +598,7 @@ impl Storage {
     /// Create workspace metadata for a conversation
     pub async fn create_workspace_metadata(
         &self,
-        conversation_id: i64,
+        conversation_id: &ConversationId,
         workspace_path: &str,
     ) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
@@ -674,7 +610,7 @@ impl Storage {
             VALUES (?, ?, ?, ?, 0)
             "#,
         )
-        .bind(conversation_id)
+        .bind(conversation_id.as_ref())
         .bind(workspace_path)
         .bind(now)
         .bind(now)
@@ -687,7 +623,7 @@ impl Storage {
     /// Get workspace metadata for a conversation
     pub async fn get_workspace_metadata(
         &self,
-        conversation_id: i64,
+        conversation_id: &ConversationId,
     ) -> Result<Option<WorkspaceMetadata>> {
         let row = sqlx::query(
             r#"
@@ -697,13 +633,13 @@ impl Storage {
             WHERE conversation_id = ?
             "#,
         )
-        .bind(conversation_id)
+        .bind(conversation_id.as_ref())
         .fetch_optional(&self.pool)
         .await?;
 
         if let Some(row) = row {
             Ok(Some(WorkspaceMetadata {
-                conversation_id: row.get("conversation_id"),
+                conversation_id: row.get::<String, _>("conversation_id").into(),
                 workspace_path: row.get("workspace_path"),
                 created_at: row.get("created_at"),
                 last_accessed_at: row.get("last_accessed_at"),
@@ -716,7 +652,10 @@ impl Storage {
     }
 
     /// Update workspace last access time
-    pub async fn update_workspace_last_access(&self, conversation_id: i64) -> Result<()> {
+    pub async fn update_workspace_last_access(
+        &self,
+        conversation_id: &ConversationId,
+    ) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
 
         sqlx::query(
@@ -727,7 +666,7 @@ impl Storage {
             "#,
         )
         .bind(now)
-        .bind(conversation_id)
+        .bind(conversation_id.as_ref())
         .execute(&self.pool)
         .await?;
 
@@ -737,7 +676,7 @@ impl Storage {
     /// Update workspace disk usage
     pub async fn update_workspace_disk_usage(
         &self,
-        conversation_id: i64,
+        conversation_id: &ConversationId,
         bytes: i64,
     ) -> Result<()> {
         sqlx::query(
@@ -748,7 +687,7 @@ impl Storage {
             "#,
         )
         .bind(bytes)
-        .bind(conversation_id)
+        .bind(conversation_id.as_ref())
         .execute(&self.pool)
         .await?;
 
@@ -758,7 +697,7 @@ impl Storage {
     /// Update installed packages list
     pub async fn update_workspace_packages(
         &self,
-        conversation_id: i64,
+        conversation_id: &ConversationId,
         packages_json: &str,
     ) -> Result<()> {
         sqlx::query(
@@ -769,7 +708,7 @@ impl Storage {
             "#,
         )
         .bind(packages_json)
-        .bind(conversation_id)
+        .bind(conversation_id.as_ref())
         .execute(&self.pool)
         .await?;
 
@@ -777,14 +716,14 @@ impl Storage {
     }
 
     /// Delete workspace metadata
-    pub async fn delete_workspace_metadata(&self, conversation_id: i64) -> Result<()> {
+    pub async fn delete_workspace_metadata(&self, conversation_id: &ConversationId) -> Result<()> {
         sqlx::query(
             r#"
             DELETE FROM workspace_metadata
             WHERE conversation_id = ?
             "#,
         )
-        .bind(conversation_id)
+        .bind(conversation_id.as_ref())
         .execute(&self.pool)
         .await?;
 
@@ -812,7 +751,7 @@ impl Storage {
         let mut metadata = Vec::new();
         for row in rows {
             metadata.push(WorkspaceMetadata {
-                conversation_id: row.get("conversation_id"),
+                conversation_id: row.get::<String, _>("conversation_id").into(),
                 workspace_path: row.get("workspace_path"),
                 created_at: row.get("created_at"),
                 last_accessed_at: row.get("last_accessed_at"),
@@ -843,7 +782,7 @@ mod tests {
         let conv = Conversation::new("claude-sonnet-4-20250514");
         let id = storage.create_conversation(&conv).await.unwrap();
 
-        let loaded = storage.get_conversation(id).await.unwrap();
+        let loaded = storage.get_conversation(&id).await.unwrap();
         assert_eq!(loaded.model, "claude-sonnet-4-20250514");
         assert!(loaded.title.is_none());
     }
@@ -855,11 +794,11 @@ mod tests {
         let mut conv = Conversation::new("claude-sonnet-4-20250514");
         let id = storage.create_conversation(&conv).await.unwrap();
 
-        conv.id = id;
+        conv.id = id.clone();
         conv.set_title("My Chat");
         storage.update_conversation(&conv).await.unwrap();
 
-        let loaded = storage.get_conversation(id).await.unwrap();
+        let loaded = storage.get_conversation(&id).await.unwrap();
         assert_eq!(loaded.title, Some("My Chat".to_string()));
     }
 
@@ -870,9 +809,9 @@ mod tests {
         let conv = Conversation::new("test");
         let id = storage.create_conversation(&conv).await.unwrap();
 
-        storage.delete_conversation(id).await.unwrap();
+        storage.delete_conversation(&id).await.unwrap();
 
-        let result = storage.get_conversation(id).await;
+        let result = storage.get_conversation(&id).await;
         assert!(matches!(result, Err(Error::ConversationNotFound(_))));
     }
 
@@ -883,7 +822,7 @@ mod tests {
         let conv = Conversation::new("test");
         let conv_id = storage.create_conversation(&conv).await.unwrap();
 
-        let msg = Message::user(conv_id, "Hello, Claude!");
+        let msg = Message::user(conv_id.clone(), "Hello, Claude!");
         let msg_id = storage.add_message(&msg).await.unwrap();
 
         let loaded = storage.get_message(msg_id).await.unwrap();
@@ -898,13 +837,13 @@ mod tests {
         let conv = Conversation::new("test");
         let conv_id = storage.create_conversation(&conv).await.unwrap();
 
-        let msg1 = Message::user(conv_id, "First message");
-        let msg2 = Message::user(conv_id, "Second message");
+        let msg1 = Message::user(conv_id.clone(), "First message");
+        let msg2 = Message::user(conv_id.clone(), "Second message");
 
         storage.add_message(&msg1).await.unwrap();
         storage.add_message(&msg2).await.unwrap();
 
-        let messages = storage.get_messages(conv_id).await.unwrap();
+        let messages = storage.get_messages(&conv_id).await.unwrap();
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].text_content, Some("First message".to_string()));
         assert_eq!(messages[1].text_content, Some("Second message".to_string()));
@@ -931,9 +870,9 @@ mod tests {
         let conv = Conversation::new("test");
         let conv_id = storage.create_conversation(&conv).await.unwrap();
 
-        let msg1 = Message::user(conv_id, "Hello world");
-        let msg2 = Message::user(conv_id, "Goodbye world");
-        let msg3 = Message::user(conv_id, "Something else");
+        let msg1 = Message::user(conv_id.clone(), "Hello world");
+        let msg2 = Message::user(conv_id.clone(), "Goodbye world");
+        let msg3 = Message::user(conv_id.clone(), "Something else");
 
         storage.add_message(&msg1).await.unwrap();
         storage.add_message(&msg2).await.unwrap();
@@ -950,11 +889,11 @@ mod tests {
         let conv = Conversation::new("test");
         let conv_id = storage.create_conversation(&conv).await.unwrap();
 
-        let msg = Message::user(conv_id, "Test message");
+        let msg = Message::user(conv_id.clone(), "Test message");
         let msg_id = storage.add_message(&msg).await.unwrap();
 
         // Delete conversation should also delete messages
-        storage.delete_conversation(conv_id).await.unwrap();
+        storage.delete_conversation(&conv_id).await.unwrap();
 
         let result = storage.get_message(msg_id).await;
         assert!(matches!(result, Err(Error::MessageNotFound(_))));

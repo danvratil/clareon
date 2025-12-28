@@ -12,7 +12,7 @@ mod app_controller {
     unsafe extern "RustQt" {
         #[qobject]
         #[qml_element]
-        #[qproperty(i64, current_conversation_id, cxx_name = "currentConversationId")]
+        #[qproperty(QString, current_conversation_id, cxx_name = "currentConversationId")]
         #[qproperty(QString, conversation_title, cxx_name = "conversationTitle")]
         #[qproperty(bool, is_waiting, cxx_name = "isWaiting")]
         #[qproperty(QString, status_message, cxx_name = "statusMessage")]
@@ -30,7 +30,7 @@ mod app_controller {
     unsafe extern "RustQt" {
         #[qinvokable]
         #[cxx_name = "selectConversation"]
-        fn select_conversation(self: Pin<&mut AppController>, conversation_id: i64);
+        fn select_conversation(self: Pin<&mut AppController>, conversation_id: &QString);
 
         #[qinvokable]
         #[cxx_name = "sendMessage"]
@@ -48,7 +48,7 @@ mod app_controller {
 use std::pin::Pin;
 
 pub struct AppControllerRust {
-    current_conversation_id: i64,
+    current_conversation_id: cxx_qt_lib::QString,
     conversation_title: cxx_qt_lib::QString,
     is_waiting: bool,
     status_message: cxx_qt_lib::QString,
@@ -58,7 +58,9 @@ pub struct AppControllerRust {
 impl Default for AppControllerRust {
     fn default() -> Self {
         Self {
-            current_conversation_id: 1,
+            current_conversation_id: cxx_qt_lib::QString::from(
+                "550e8400-e29b-41d4-a716-446655440001",
+            ),
             conversation_title: cxx_qt_lib::QString::from("Rust async patterns"),
             is_waiting: false,
             status_message: cxx_qt_lib::QString::from("Ready"),
@@ -68,20 +70,22 @@ impl Default for AppControllerRust {
 }
 
 impl app_controller::AppController {
-    pub fn select_conversation(mut self: Pin<&mut Self>, conversation_id: i64) {
-        let title = match conversation_id {
-            1 => "Rust async patterns",
-            2 => "QML layout design",
-            3 => "Debugging SQLite queries",
-            4 => "Kirigami components overview",
-            5 => "Git workflow best practices",
-            6 => "Linux desktop integration",
-            7 => "Error handling in Rust",
-            8 => "CSS grid vs flexbox",
+    pub fn select_conversation(mut self: Pin<&mut Self>, conversation_id: &cxx_qt_lib::QString) {
+        let id_str = conversation_id.to_string();
+        let title = match id_str.as_str() {
+            "550e8400-e29b-41d4-a716-446655440001" => "Rust async patterns",
+            "550e8400-e29b-41d4-a716-446655440002" => "QML layout design",
+            "550e8400-e29b-41d4-a716-446655440003" => "Debugging SQLite queries",
+            "550e8400-e29b-41d4-a716-446655440004" => "Kirigami components overview",
+            "550e8400-e29b-41d4-a716-446655440005" => "Git workflow best practices",
+            "550e8400-e29b-41d4-a716-446655440006" => "Linux desktop integration",
+            "550e8400-e29b-41d4-a716-446655440007" => "Error handling in Rust",
+            "550e8400-e29b-41d4-a716-446655440008" => "CSS grid vs flexbox",
             _ => "Conversation",
         };
 
-        self.as_mut().set_current_conversation_id(conversation_id);
+        self.as_mut()
+            .set_current_conversation_id(conversation_id.clone());
         self.as_mut()
             .set_conversation_title(cxx_qt_lib::QString::from(title));
         self.as_mut().conversation_changed();
@@ -106,7 +110,7 @@ impl app_controller::AppController {
     }
 
     pub fn new_conversation(mut self: Pin<&mut Self>) {
-        let new_id = 100;
+        let new_id = cxx_qt_lib::QString::from("0000000-0000-0000-0000-000000000000");
         self.as_mut().set_current_conversation_id(new_id);
         self.as_mut()
             .set_conversation_title(cxx_qt_lib::QString::from("New Conversation"));

@@ -238,6 +238,7 @@ impl Sandbox for BubblewrapSandbox {
 mod tests {
     use super::*;
     use crate::tools::workspace::PersistentWorkspace;
+    use crate::types::ConversationId;
     use std::collections::HashMap;
     use std::fs;
     use std::sync::Arc;
@@ -249,14 +250,15 @@ mod tests {
         let cache_root = temp_dir.path().join("cache");
         let shared_pip = temp_dir.path().join("shared_pip");
 
-        let workspace = PersistentWorkspace::new(1, &cache_root, &shared_pip).unwrap();
+        let workspace =
+            PersistentWorkspace::new("test-conversation", &cache_root, &shared_pip).unwrap();
         workspace.ensure_directories().await.unwrap();
 
         // Create a NoneSandbox for path mapping in tests (not used for actual execution)
         let sandbox = super::super::NoneSandbox;
 
         let context = ExecutionContext {
-            conversation_id: 1,
+            conversation_id: ConversationId::from("test-conversation"),
             workspace: Arc::new(workspace),
             sandbox: Arc::new(sandbox),
             env_vars: HashMap::new(),

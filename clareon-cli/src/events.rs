@@ -218,8 +218,8 @@ async fn handle_list_keys(app: &mut App, key: KeyEvent) -> anyhow::Result<()> {
         KeyCode::Char(c) if c.is_ascii_digit() => {
             let index = c.to_digit(10).unwrap() as usize;
             if index > 0 && index <= app.conversations.len() {
-                let conv_id = app.conversations[index - 1].id;
-                app.load_conversation(conv_id).await?;
+                let conv_id = app.conversations[index - 1].id.clone();
+                app.load_conversation(&conv_id).await?;
                 app.view_mode = ViewMode::Chat;
             }
         }
@@ -242,8 +242,8 @@ async fn handle_search_keys(app: &mut App, key: KeyEvent) -> anyhow::Result<()> 
         KeyCode::Char(c) if c.is_ascii_digit() => {
             let index = c.to_digit(10).unwrap() as usize;
             if index > 0 && index <= app.search_results.len() {
-                let conv_id = app.search_results[index - 1].conversation_id;
-                app.load_conversation(conv_id).await?;
+                let conv_id = app.search_results[index - 1].conversation_id.clone();
+                app.load_conversation(&conv_id).await?;
                 app.view_mode = ViewMode::Chat;
             }
         }

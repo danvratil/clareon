@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::ContentBlock;
+use super::{ContentBlock, ConversationId};
 
 /// Role of the message sender
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -53,7 +53,7 @@ pub struct Message {
     pub id: i64,
 
     /// ID of the conversation this message belongs to
-    pub conversation_id: i64,
+    pub conversation_id: ConversationId,
 
     /// Unix timestamp when the message was created
     pub created_at: i64,
@@ -79,11 +79,11 @@ pub struct Message {
 
 impl Message {
     /// Create a new user message
-    pub fn user(conversation_id: i64, text: impl Into<String>) -> Self {
+    pub fn user(conversation_id: impl Into<ConversationId>, text: impl Into<String>) -> Self {
         let text = text.into();
         Self {
             id: 0, // Will be set by database
-            conversation_id,
+            conversation_id: conversation_id.into(),
             created_at: chrono::Utc::now().timestamp(),
             role: Role::User,
             text_content: Some(text.clone()),
@@ -96,7 +96,7 @@ impl Message {
 
     /// Create a new assistant message
     pub fn assistant(
-        conversation_id: i64,
+        conversation_id: impl Into<ConversationId>,
         content: Vec<ContentBlock>,
         model: impl Into<String>,
         input_tokens: i64,
@@ -107,7 +107,7 @@ impl Message {
 
         Self {
             id: 0, // Will be set by database
-            conversation_id,
+            conversation_id: conversation_id.into(),
             created_at: chrono::Utc::now().timestamp(),
             role: Role::Assistant,
             text_content,
@@ -167,7 +167,7 @@ mod tests {
 
     #[test]
     fn test_user_message_creation() {
-        let msg = Message::user(1, "Hello, Claude!");
+        let msg = Message::user("test-conversation-id", "Hello, Claude!");
         assert_eq!(msg.role, Role::User);
         assert_eq!(msg.text_content, Some("Hello, Claude!".to_string()));
         assert_eq!(msg.content.len(), 1);

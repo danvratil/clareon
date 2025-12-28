@@ -128,6 +128,7 @@ impl Tool for ListDirectoryTool {
 mod tests {
     use super::*;
     use crate::tools::{NoneSandbox, PersistentWorkspace};
+    use crate::types::ConversationId;
     use std::collections::HashMap;
     use std::sync::Arc;
     use tempfile::TempDir;
@@ -137,11 +138,12 @@ mod tests {
         let cache_root = temp_dir.path();
         let shared_pip = cache_root.join("shared").join("pip");
 
-        let workspace = PersistentWorkspace::new(1, cache_root, &shared_pip).unwrap();
+        let workspace =
+            PersistentWorkspace::new("test-conversation", cache_root, &shared_pip).unwrap();
         workspace.ensure_directories().await.unwrap();
 
         let context = ExecutionContext {
-            conversation_id: 1,
+            conversation_id: ConversationId::from("test-conversation"),
             workspace: Arc::new(workspace),
             sandbox: Arc::new(NoneSandbox),
             env_vars: HashMap::new(),

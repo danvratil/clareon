@@ -10,6 +10,6 @@ mod message;
 mod workspace;
 
 pub use content::{ContentBlock, ToolResultContent};
-pub use conversation::{Conversation, ConversationSummary, SearchResult};
+pub use conversation::{Conversation, ConversationId, ConversationSummary, SearchResult};
 pub use message::{Message, Role};
 pub use workspace::{Artifact, UserFile, WorkspaceMetadata};
