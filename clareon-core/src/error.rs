@@ -29,6 +29,10 @@ pub enum Error {
     #[error("Configuration error: {0}")]
     Config(#[from] ConfigError),
 
+    // Tool errors
+    #[error("Tool error: {0}")]
+    Tool(#[from] crate::tools::ToolError),
+
     // Serialization errors
     #[error("JSON serialization error: {0}")]
     Json(#[from] serde_json::Error),

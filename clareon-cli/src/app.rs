@@ -7,6 +7,8 @@ use tokio::sync::mpsc;
 
 use clareon_core::{
     backend::Usage,
+    register_builtin_tools, ArtifactManager, BubblewrapSandbox, NoneSandbox, Sandbox,
+    SandboxMode, SandboxModeConfig, ToolExecutor, ToolRegistry, WorkspaceManager,
     types::{ContentBlock, Conversation, ConversationSummary, Message, SearchResult},
     BedrockBackend, Config, ConversationManager, LlmBackend, Storage, StreamUpdate,
 };
@@ -133,7 +135,54 @@ impl App {
             }
         };
 
-        let manager = ConversationManager::with_single_backend(storage, backend, config.clone());
+        // Initialize tool executor if tools are enabled
+        let mut manager = ConversationManager::with_single_backend(storage, backend, config.clone());
+
+        if config.tools.enabled {
+            // Get cache root directory
+            let cache_root = Config::cache_root()?;
+
+            // Get storage Arc for workspace manager
+            let storage_arc = manager.storage();
+
+            // Create workspace manager
+            let workspace_manager = Arc::new(WorkspaceManager::new(
+                cache_root,
+                storage_arc.clone(),
+            ));
+
+            // Ensure shared directories exist
+            workspace_manager.ensure_shared_directories().await?;
+
+            // Create artifact manager
+            let artifact_manager = Arc::new(ArtifactManager::new(storage_arc.clone()));
+
+            // Create tool registry and register built-in tools
+            let mut registry = ToolRegistry::default();
+            register_builtin_tools(&mut registry);
+
+            // Create sandbox based on config
+            let sandbox: Arc<dyn Sandbox> = match config.tools.sandbox_mode {
+                SandboxModeConfig::None => Arc::new(NoneSandbox),
+                SandboxModeConfig::Basic => {
+                    Arc::new(BubblewrapSandbox::new(SandboxMode::Basic))
+                }
+                SandboxModeConfig::Strict => {
+                    Arc::new(BubblewrapSandbox::new(SandboxMode::Strict))
+                }
+            };
+
+            // Create tool executor with workspace and artifact managers
+            let executor = ToolExecutor::new(
+                Arc::new(registry),
+                sandbox,
+                workspace_manager,
+                artifact_manager,
+            );
+
+            // Add tools to conversation manager
+            manager = manager.with_tools(Arc::new(executor));
+        }
 
         Ok(Self {
             manager: Arc::new(manager),
@@ -199,35 +248,73 @@ impl App {
         self.scroll_to_bottom();
 
         self.waiting = true;
-        self.streaming_message = Some(PartialMessage {
-            content: Vec::new(),
-            usage: Usage::default(),
-        });
 
-        // Create channel for streaming updates
-        let (tx, rx) = mpsc::unbounded_channel();
-        self.stream_rx = Some(rx);
+        // If tools are enabled, use non-streaming version for now
+        // (streaming + tools requires more complex handling)
+        if self.config.tools.enabled {
+            self.status = Some("Processing with tools enabled...".to_string());
 
-        // Clone for background task
-        let mut conv = self.conversation.clone().unwrap();
-        let manager = Arc::clone(&self.manager);
+            let mut conv = self.conversation.clone().unwrap();
+            let manager = Arc::clone(&self.manager);
 
-        // Spawn background task to handle streaming
-        tokio::spawn(async move {
-            match manager.send_message_stream(&mut conv, &user_input).await {
-                Ok(mut stream) => {
-                    while let Some(update) = stream.next().await {
-                        if tx.send(update.map_err(Into::into)).is_err() {
-                            // Receiver dropped - user cancelled or quit
-                            break;
-                        }
+            // Spawn background task for non-streaming with tools
+            let (tx, rx) = mpsc::unbounded_channel();
+            self.stream_rx = Some(rx);
+
+            tokio::spawn(async move {
+                match manager.send_message_with_tools(&mut conv, &user_input).await {
+                    Ok(response) => {
+                        // Send the final response as a stream update
+                        let update = StreamUpdate {
+                            event: clareon_core::backend::StreamEvent::MessageStop {
+                                stop_reason: response.stop_reason,
+                            },
+                            partial_content: response.message.content.clone(),
+                            stop_reason: Some(response.stop_reason),
+                            usage: Usage {
+                                input_tokens: response.message.input_tokens.unwrap_or(0),
+                                output_tokens: response.message.output_tokens.unwrap_or(0),
+                            },
+                        };
+                        let _ = tx.send(Ok(update));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Err(e.into()));
                     }
                 }
-                Err(e) => {
-                    let _ = tx.send(Err(e.into()));
+            });
+        } else {
+            // Use streaming for non-tool messages
+            self.streaming_message = Some(PartialMessage {
+                content: Vec::new(),
+                usage: Usage::default(),
+            });
+
+            // Create channel for streaming updates
+            let (tx, rx) = mpsc::unbounded_channel();
+            self.stream_rx = Some(rx);
+
+            // Clone for background task
+            let mut conv = self.conversation.clone().unwrap();
+            let manager = Arc::clone(&self.manager);
+
+            // Spawn background task to handle streaming
+            tokio::spawn(async move {
+                match manager.send_message_stream(&mut conv, &user_input).await {
+                    Ok(mut stream) => {
+                        while let Some(update) = stream.next().await {
+                            if tx.send(update.map_err(Into::into)).is_err() {
+                                // Receiver dropped - user cancelled or quit
+                                break;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Err(e.into()));
+                    }
                 }
-            }
-        });
+            });
+        }
 
         Ok(())
     }

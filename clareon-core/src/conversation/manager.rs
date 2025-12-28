@@ -2,6 +2,7 @@
 
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures::{Stream, StreamExt};
 use tracing::{debug, info};
@@ -11,7 +12,8 @@ use crate::backend::{ChatRequest, ChatResponse, ContentDelta, LlmBackend, StopRe
 use crate::config::Config;
 use crate::error::Result;
 use crate::storage::Storage;
-use crate::types::{ContentBlock, Conversation, ConversationSummary, Message, SearchResult};
+use crate::tools::ToolExecutor;
+use crate::types::{ContentBlock, Conversation, ConversationSummary, Message, Role, SearchResult};
 
 /// Update from streaming message containing both the event and accumulated state
 #[derive(Debug, Clone)]
@@ -35,6 +37,7 @@ pub struct ConversationManager {
     backend: Arc<dyn LlmBackend>,
     title_generator: Arc<TitleGenerator>,
     config: Config,
+    tool_executor: Option<Arc<ToolExecutor>>,
 }
 
 impl ConversationManager {
@@ -53,7 +56,14 @@ impl ConversationManager {
             backend,
             title_generator: Arc::new(title_generator),
             config,
+            tool_executor: None,
         }
+    }
+
+    /// Set the tool executor for this conversation manager
+    pub fn with_tools(mut self, executor: Arc<ToolExecutor>) -> Self {
+        self.tool_executor = Some(executor);
+        self
     }
 
     /// Create a new conversation manager using the same backend for chat and title generation
@@ -63,6 +73,11 @@ impl ConversationManager {
         config: Config,
     ) -> Self {
         Self::new(storage, backend.clone(), backend, config)
+    }
+
+    /// Get a reference to the storage
+    pub fn storage(&self) -> Arc<Storage> {
+        self.storage.clone()
     }
 
     /// Start a new conversation
@@ -335,6 +350,144 @@ impl ConversationManager {
         Ok(response)
     }
 
+    /// Send a message with automatic tool execution loop
+    ///
+    /// This is similar to send_message but handles tool use automatically:
+    /// 1. Send user message
+    /// 2. If response contains tool uses, execute them
+    /// 3. Send tool results back and repeat
+    /// 4. Continue until response has stop_reason != ToolUse
+    pub async fn send_message_with_tools(
+        &self,
+        conversation: &mut Conversation,
+        user_input: &str,
+    ) -> Result<ChatResponse> {
+        const MAX_TOOL_ITERATIONS: usize = 5;
+
+        // Create and store user message
+        let user_message = Message::user(conversation.id, user_input);
+        self.storage.add_message(&user_message).await?;
+
+        let mut iteration = 0;
+        loop {
+            iteration += 1;
+
+            if iteration > MAX_TOOL_ITERATIONS {
+                return Err(crate::error::Error::Tool(
+                    crate::tools::ToolError::ExecutionFailed(
+                        "Too many tool iterations".to_string(),
+                    ),
+                ));
+            }
+
+            // Get conversation history
+            let messages = self.storage.get_messages(conversation.id).await?;
+
+            // Build request with tool definitions if executor is available
+            let system_prompt = self.get_effective_system_prompt(conversation);
+            let mut request = ChatRequest::new(messages, &conversation.model)
+                .with_system_prompt(system_prompt)
+                .with_max_tokens(4096);
+
+            // Add tool definitions if tools are enabled
+            if let Some(executor) = &self.tool_executor && self.config.tools.enabled {
+                request.tools = executor.registry.tool_definitions();
+            }
+
+            // Send to backend
+            info!("Sending request to {} backend (iteration {})", self.backend.name(), iteration);
+            let response = self.backend.send_message(&request).await?;
+
+            // Store assistant response
+            let mut assistant_message = response.message.clone();
+            assistant_message.conversation_id = conversation.id;
+            let assistant_msg_id = self.storage.add_message(&assistant_message).await?;
+
+            // Check stop reason
+            match response.stop_reason {
+                StopReason::EndTurn | StopReason::MaxTokens | StopReason::StopSequence => {
+                    // Natural end - update conversation and return
+                    conversation.touch();
+                    self.storage.update_conversation(conversation).await?;
+
+                    if conversation.title.is_none() && iteration == 1 {
+                        self.maybe_generate_title(conversation, user_input, &response)
+                            .await?;
+                    }
+
+                    return Ok(response);
+                }
+                StopReason::ToolUse => {
+                    // Execute tools and continue
+                    if let Some(executor) = &self.tool_executor {
+                        info!("Tool use requested, executing tools");
+                        let tool_results = self
+                            .execute_tools(&response.message, executor, conversation.id, assistant_msg_id)
+                            .await?;
+
+                        // Store tool results as user message
+                        let tool_result_message = Message {
+                            id: 0,
+                            conversation_id: conversation.id,
+                            created_at: chrono::Utc::now().timestamp(),
+                            role: Role::User,
+                            text_content: None,
+                            content: tool_results,
+                            input_tokens: None,
+                            output_tokens: None,
+                            model: None,
+                        };
+                        self.storage.add_message(&tool_result_message).await?;
+
+                        // Continue loop to send tool results back
+                    } else {
+                        return Err(crate::error::Error::Tool(
+                            crate::tools::ToolError::ExecutionFailed(
+                                "Model requested tools but executor not configured".to_string(),
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Execute all tool uses in a message
+    async fn execute_tools(
+        &self,
+        message: &Message,
+        executor: &ToolExecutor,
+        conversation_id: i64,
+        message_id: i64,
+    ) -> Result<Vec<ContentBlock>> {
+        let mut tool_uses = Vec::new();
+
+        for block in &message.content {
+            if let ContentBlock::ToolUse { id, name, input } = block {
+                tool_uses.push((id.as_str(), name.as_str(), input));
+            }
+        }
+
+        if tool_uses.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        info!("Executing {} tools", tool_uses.len());
+
+        // Execute tools with artifact synchronization
+        let timeout = Duration::from_secs(self.config.tools.default_timeout);
+        tokio::select! {
+            results = executor.execute_multiple(tool_uses, conversation_id, message_id) => {
+                results.map_err(crate::error::Error::Tool)
+            },
+            _ = tokio::time::sleep(timeout) => {
+                Err(crate::error::Error::Tool(
+                    crate::tools::ToolError::Timeout(timeout),
+                ))
+            }
+        }
+    }
+
     /// List all conversations
     pub async fn list_conversations(&self) -> Result<Vec<ConversationSummary>> {
         self.storage.list_conversations().await
@@ -366,8 +519,7 @@ impl ConversationManager {
         // Use conversation-specific system prompt if set
         let base_prompt = conversation
             .system_prompt
-            .as_ref()
-            .map(|s| s.as_str())
+            .as_deref()
             .unwrap_or_else(|| {
                 if self.config.system_prompt.use_default {
                     Config::default_system_prompt()

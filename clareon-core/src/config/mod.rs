@@ -7,4 +7,4 @@ mod secrets;
 mod settings;
 
 pub use secrets::SecretStore;
-pub use settings::Config;
+pub use settings::{Config, SandboxModeConfig};

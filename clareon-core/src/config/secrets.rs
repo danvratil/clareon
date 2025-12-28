@@ -10,11 +10,8 @@ pub struct SecretStore {
     service: SecretService<'static>,
 }
 
-/// Known secret identifiers
-pub mod secrets {
-    /// Anthropic API key
-    pub const ANTHROPIC_API_KEY: &str = "anthropic-api-key";
-}
+/// Anthropic API key
+pub const ANTHROPIC_API_KEY: &str = "anthropic-api-key";
 
 impl SecretStore {
     /// Create a new secret store

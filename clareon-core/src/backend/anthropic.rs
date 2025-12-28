@@ -209,6 +209,7 @@ impl LlmBackend for AnthropicBackend {
     async fn send_message(&self, request: &ChatRequest) -> Result<ChatResponse, BackendError> {
         info!("Sending message to Anthropic API, model: {}", request.model);
         debug!("Message count: {}", request.messages.len());
+        debug!("Tools count: {}", request.tools.len());
 
         let api_request = AnthropicRequest {
             model: request.model.clone(),
@@ -217,6 +218,11 @@ impl LlmBackend for AnthropicBackend {
             messages: Self::convert_messages(&request.messages),
             temperature: request.temperature,
             stream: Some(false),
+            tools: request.tools.iter().map(|t| AnthropicTool {
+                name: t.name.clone(),
+                description: t.description.clone(),
+                input_schema: t.input_schema.clone(),
+            }).collect(),
         };
 
         let response = self
@@ -271,6 +277,7 @@ impl LlmBackend for AnthropicBackend {
     {
         info!("Streaming message to Anthropic API, model: {}", request.model);
         debug!("Message count: {}", request.messages.len());
+        debug!("Tools count: {}", request.tools.len());
 
         let api_request = AnthropicRequest {
             model: request.model.clone(),
@@ -279,6 +286,11 @@ impl LlmBackend for AnthropicBackend {
             messages: Self::convert_messages(&request.messages),
             temperature: request.temperature,
             stream: Some(true),
+            tools: request.tools.iter().map(|t| AnthropicTool {
+                name: t.name.clone(),
+                description: t.description.clone(),
+                input_schema: t.input_schema.clone(),
+            }).collect(),
         };
 
         // Send the request
@@ -372,6 +384,15 @@ struct AnthropicRequest {
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tools: Vec<AnthropicTool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AnthropicTool {
+    name: String,
+    description: String,
+    input_schema: serde_json::Value,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

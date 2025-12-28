@@ -9,18 +9,45 @@ use ratatui::{
 };
 
 use crate::app::{App, ViewMode};
-use clareon_core::types::{ContentBlock, Role};
+use clareon_core::types::{ContentBlock, Role, ToolResultContent};
 
-/// Helper to extract text from content blocks
-fn extract_text_from_blocks(blocks: &[ContentBlock]) -> String {
+/// Helper to convert content blocks to displayable text
+fn format_content_blocks(blocks: &[ContentBlock]) -> String {
     blocks
         .iter()
-        .filter_map(|block| match block {
-            ContentBlock::Text { text } => Some(text.as_str()),
-            _ => None,
+        .map(|block| match block {
+            ContentBlock::Text { text } => text.clone(),
+            ContentBlock::ToolUse { id, name, input } => {
+                format!(
+                    "[Tool: {}]\nID: {}\nInput: {}",
+                    name,
+                    id,
+                    serde_json::to_string_pretty(input).unwrap_or_else(|_| "{}".to_string())
+                )
+            }
+            ContentBlock::ToolResult {
+                tool_use_id,
+                content,
+                is_error,
+            } => {
+                let result_text = content
+                    .iter()
+                    .filter_map(|c| match c {
+                        ToolResultContent::Text { text } => Some(text.as_str()),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                let status = if is_error.unwrap_or(false) {
+                    "ERROR"
+                } else {
+                    "SUCCESS"
+                };
+                format!("[Tool Result: {}]\n{}", status, result_text)
+            }
         })
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\n\n")
 }
 
 /// Wrap a line of text to fit within a maximum width
@@ -196,7 +223,7 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
                 Role::Assistant => ("Claude: ", Style::default().fg(Color::Green)),
             };
 
-            let text = msg.text().unwrap_or("[no text content]");
+            let text = format_content_blocks(&msg.content);
             let mut all_lines: Vec<Line> = Vec::new();
             let mut is_first_line = true;
 
@@ -224,7 +251,7 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
 
     // Append streaming message if present
     if let Some(partial) = &app.streaming_message {
-        let text = extract_text_from_blocks(&partial.content);
+        let text = format_content_blocks(&partial.content);
 
         if !text.is_empty() {
             let mut all_lines: Vec<Line> = Vec::new();

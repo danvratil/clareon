@@ -34,6 +34,10 @@ pub struct Config {
     /// Model configuration
     #[serde(default)]
     pub models: ModelsConfig,
+
+    /// Tool execution configuration
+    #[serde(default)]
+    pub tools: ToolsConfig,
 }
 
 fn default_backend() -> String {
@@ -121,7 +125,7 @@ impl Default for UiConfig {
 }
 
 /// System prompt configuration
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemPromptConfig {
     /// Whether to use the default system prompt
     #[serde(default = "default_true")]
@@ -132,6 +136,16 @@ pub struct SystemPromptConfig {
 
     /// Additional instructions appended to the system prompt
     pub custom_instructions: Option<String>,
+}
+
+impl Default for SystemPromptConfig {
+    fn default() -> Self {
+        Self {
+            use_default: true,
+            custom_prompt: None,
+            custom_instructions: None,
+        }
+    }
 }
 
 /// Model configuration
@@ -154,6 +168,85 @@ impl Default for ModelsConfig {
     }
 }
 
+/// Tool execution configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolsConfig {
+    /// Whether tools are enabled
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Sandbox mode
+    #[serde(default)]
+    pub sandbox_mode: SandboxModeConfig,
+
+    /// Default timeout for tool execution (seconds)
+    #[serde(default = "default_tool_timeout")]
+    pub default_timeout: u64,
+
+    /// Whether to automatically execute tools (vs requiring approval)
+    #[serde(default = "default_true")]
+    pub auto_execute: bool,
+
+    /// Workspace retention policy (days to keep inactive workspaces)
+    #[serde(default = "default_workspace_retention_days")]
+    pub workspace_retention_days: u64,
+
+    /// Maximum workspace size per conversation (MB)
+    #[serde(default = "default_max_workspace_size_mb")]
+    pub max_workspace_size_mb: u64,
+
+    /// Maximum file upload size (MB)
+    #[serde(default = "default_max_upload_size_mb")]
+    pub max_upload_size_mb: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SandboxModeConfig {
+    /// No sandboxing (development only)
+    None,
+    /// Basic sandboxing
+    Basic,
+    /// Strict sandboxing (recommended)
+    Strict,
+}
+
+impl Default for SandboxModeConfig {
+    fn default() -> Self {
+        Self::Strict
+    }
+}
+
+fn default_tool_timeout() -> u64 {
+    30 // seconds
+}
+
+fn default_workspace_retention_days() -> u64 {
+    30 // Keep workspaces for 30 days
+}
+
+fn default_max_workspace_size_mb() -> u64 {
+    500 // 500MB per conversation
+}
+
+fn default_max_upload_size_mb() -> u64 {
+    100 // 100MB per file upload
+}
+
+impl Default for ToolsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            sandbox_mode: SandboxModeConfig::default(),
+            default_timeout: default_tool_timeout(),
+            auto_execute: true,
+            workspace_retention_days: default_workspace_retention_days(),
+            max_workspace_size_mb: default_max_workspace_size_mb(),
+            max_upload_size_mb: default_max_upload_size_mb(),
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -163,6 +256,7 @@ impl Default for Config {
             ui: UiConfig::default(),
             system_prompt: SystemPromptConfig::default(),
             models: ModelsConfig::default(),
+            tools: ToolsConfig::default(),
         }
     }
 }
@@ -231,6 +325,30 @@ impl Config {
     pub fn database_url() -> Result<String> {
         let path = Self::database_path()?;
         Ok(format!("sqlite://{}?mode=rwc", path.display()))
+    }
+
+    /// Get the cache root directory
+    pub fn cache_root() -> Result<PathBuf> {
+        let dirs = Self::project_dirs()?;
+        let cache_dir = dirs.cache_dir();
+        std::fs::create_dir_all(cache_dir).map_err(ConfigError::Io)?;
+        Ok(cache_dir.to_path_buf())
+    }
+
+    /// Get the workspace cache directory
+    pub fn workspace_cache_dir() -> Result<PathBuf> {
+        let cache_root = Self::cache_root()?;
+        let workspace_dir = cache_root.join("conversations");
+        std::fs::create_dir_all(&workspace_dir).map_err(ConfigError::Io)?;
+        Ok(workspace_dir)
+    }
+
+    /// Get the shared cache directory
+    pub fn shared_cache_dir() -> Result<PathBuf> {
+        let cache_root = Self::cache_root()?;
+        let shared_dir = cache_root.join("shared");
+        std::fs::create_dir_all(&shared_dir).map_err(ConfigError::Io)?;
+        Ok(shared_dir)
     }
 
     /// Get the project directories

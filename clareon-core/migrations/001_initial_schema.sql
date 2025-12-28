@@ -55,38 +55,7 @@ CREATE TRIGGER IF NOT EXISTS messages_fts_update AFTER UPDATE ON messages BEGIN
     VALUES (new.rowid, new.text_content);
 END;
 
--- Artifacts table (for future use)
-CREATE TABLE IF NOT EXISTS artifacts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    conversation_id INTEGER NOT NULL
-        REFERENCES conversations(id) ON DELETE CASCADE,
-    message_id INTEGER NOT NULL
-        REFERENCES messages(id) ON DELETE CASCADE,
-    artifact_type TEXT NOT NULL,
-    title TEXT,
-    language TEXT,
-    content TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_artifacts_conversation ON artifacts(conversation_id);
-CREATE INDEX IF NOT EXISTS idx_artifacts_message ON artifacts(message_id);
-
--- Attachments table (for future use)
-CREATE TABLE IF NOT EXISTS attachments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    conversation_id INTEGER NOT NULL
-        REFERENCES conversations(id) ON DELETE CASCADE,
-    message_id INTEGER NOT NULL
-        REFERENCES messages(id) ON DELETE CASCADE,
-    filename TEXT NOT NULL,
-    mime_type TEXT NOT NULL,
-    size_bytes INTEGER NOT NULL,
-    content BLOB NOT NULL,
-    created_at INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
+-- Note: artifacts and user_files tables are now defined in migration 002
 
 -- Summaries table (for future context management)
 CREATE TABLE IF NOT EXISTS conversation_summaries (

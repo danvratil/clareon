@@ -1,10 +1,13 @@
 //! SQLite database operations
 
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Row, Sqlite};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::error::{Error, Result};
-use crate::types::{ContentBlock, Conversation, ConversationSummary, Message, Role, SearchResult};
+use crate::types::{
+    Artifact, ContentBlock, Conversation, ConversationSummary, Message, Role, SearchResult,
+    UserFile, WorkspaceMetadata,
+};
 
 /// Storage layer for persisting conversations and messages
 pub struct Storage {
@@ -39,14 +42,78 @@ impl Storage {
     async fn run_migrations(&self) -> Result<()> {
         debug!("Running database migrations");
 
-        // Read and execute the migration SQL
-        let migration_sql = include_str!("../../migrations/001_initial_schema.sql");
+        // Run migrations in order
+        let migrations = [
+            include_str!("../../migrations/001_initial_schema.sql"),
+            include_str!("../../migrations/002_persistent_workspaces.sql"),
+        ];
 
-        // Execute migration (split by semicolons for multiple statements)
-        sqlx::raw_sql(migration_sql).execute(&self.pool).await?;
+        for (i, migration_sql) in migrations.iter().enumerate() {
+            debug!("Running migration {}", i + 1);
+
+            // Remove comment lines
+            let cleaned: String = migration_sql
+                .lines()
+                .filter(|line| {
+                    let trimmed = line.trim();
+                    !trimmed.is_empty() && !trimmed.starts_with("--")
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            // Split statements respecting BEGIN...END blocks
+            let statements = self.split_sql_statements(&cleaned);
+
+            // Execute each statement
+            for statement in statements {
+                if !statement.trim().is_empty() {
+                    debug!("Executing SQL: {}", &statement[..statement.len().min(100)]);
+                    if let Err(e) = sqlx::raw_sql(&statement).execute(&self.pool).await {
+                        warn!("Failed to execute SQL: {}", e);
+                        warn!("Statement was: {}", statement);
+                        return Err(e.into());
+                    }
+                }
+            }
+        }
 
         info!("Database migrations completed");
         Ok(())
+    }
+
+    /// Split SQL into statements, respecting BEGIN...END blocks
+    fn split_sql_statements(&self, sql: &str) -> Vec<String> {
+        let mut statements = Vec::new();
+        let mut current = String::new();
+        let mut in_begin_end: i32 = 0;
+
+        for line in sql.lines() {
+            let trimmed_upper = line.trim().to_uppercase();
+
+            // Track BEGIN...END nesting
+            if trimmed_upper.contains("BEGIN") {
+                in_begin_end += 1;
+            }
+            if trimmed_upper.contains("END") {
+                in_begin_end = in_begin_end.saturating_sub(1);
+            }
+
+            current.push_str(line);
+            current.push('\n');
+
+            // If line ends with semicolon and we're not in BEGIN...END, it's a statement boundary
+            if line.trim().ends_with(';') && in_begin_end == 0 {
+                statements.push(current.trim().to_string());
+                current.clear();
+            }
+        }
+
+        // Add any remaining content
+        if !current.trim().is_empty() {
+            statements.push(current.trim().to_string());
+        }
+
+        statements
     }
 
     // ==================== Conversation Operations ====================
@@ -332,6 +399,426 @@ impl Storage {
 
         Ok((row.get("total_input"), row.get("total_output")))
     }
+
+    // ==================== User Files Operations ====================
+
+    /// Add a user-uploaded file to the database
+    pub async fn add_user_file(
+        &self,
+        conversation_id: i64,
+        message_id: i64,
+        filename: &str,
+        mime_type: &str,
+        content: &[u8],
+    ) -> Result<i64> {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(content);
+        let content_hash = format!("{:x}", hasher.finalize());
+
+        let size_bytes = content.len() as i64;
+        let created_at = chrono::Utc::now().timestamp();
+
+        let result = sqlx::query(
+            r#"
+            INSERT INTO user_files
+            (conversation_id, message_id, filename, mime_type, size_bytes, content, content_hash, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(conversation_id)
+        .bind(message_id)
+        .bind(filename)
+        .bind(mime_type)
+        .bind(size_bytes)
+        .bind(content)
+        .bind(&content_hash)
+        .bind(created_at)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.last_insert_rowid())
+    }
+
+    /// Get all user files for a conversation
+    pub async fn get_user_files(&self, conversation_id: i64) -> Result<Vec<UserFile>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, conversation_id, message_id, filename, mime_type,
+                   size_bytes, content, content_hash, created_at
+            FROM user_files
+            WHERE conversation_id = ?
+            ORDER BY created_at ASC
+            "#,
+        )
+        .bind(conversation_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut files = Vec::new();
+        for row in rows {
+            files.push(UserFile {
+                id: row.get("id"),
+                conversation_id: row.get("conversation_id"),
+                message_id: row.get("message_id"),
+                filename: row.get("filename"),
+                mime_type: row.get("mime_type"),
+                size_bytes: row.get("size_bytes"),
+                content: row.get("content"),
+                content_hash: row.get("content_hash"),
+                created_at: row.get("created_at"),
+            });
+        }
+
+        Ok(files)
+    }
+
+    /// Get user files for a specific message
+    pub async fn get_user_files_for_message(&self, message_id: i64) -> Result<Vec<UserFile>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, conversation_id, message_id, filename, mime_type,
+                   size_bytes, content, content_hash, created_at
+            FROM user_files
+            WHERE message_id = ?
+            ORDER BY created_at ASC
+            "#,
+        )
+        .bind(message_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut files = Vec::new();
+        for row in rows {
+            files.push(UserFile {
+                id: row.get("id"),
+                conversation_id: row.get("conversation_id"),
+                message_id: row.get("message_id"),
+                filename: row.get("filename"),
+                mime_type: row.get("mime_type"),
+                size_bytes: row.get("size_bytes"),
+                content: row.get("content"),
+                content_hash: row.get("content_hash"),
+                created_at: row.get("created_at"),
+            });
+        }
+
+        Ok(files)
+    }
+
+    // ==================== Artifacts Operations ====================
+
+    /// Add an artifact to the database
+    pub async fn add_artifact(
+        &self,
+        conversation_id: i64,
+        message_id: i64,
+        filename: &str,
+        mime_type: Option<&str>,
+        content: &[u8],
+    ) -> Result<i64> {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(content);
+        let content_hash = format!("{:x}", hasher.finalize());
+
+        let size_bytes = content.len() as i64;
+        let now = chrono::Utc::now().timestamp();
+
+        let result = sqlx::query(
+            r#"
+            INSERT INTO artifacts
+            (conversation_id, message_id, filename, mime_type, size_bytes,
+             content, content_hash, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(conversation_id)
+        .bind(message_id)
+        .bind(filename)
+        .bind(mime_type)
+        .bind(size_bytes)
+        .bind(content)
+        .bind(&content_hash)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.last_insert_rowid())
+    }
+
+    /// Update an existing artifact
+    pub async fn update_artifact(
+        &self,
+        conversation_id: i64,
+        message_id: i64,
+        filename: &str,
+        content: &[u8],
+    ) -> Result<()> {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(content);
+        let content_hash = format!("{:x}", hasher.finalize());
+
+        let size_bytes = content.len() as i64;
+        let now = chrono::Utc::now().timestamp();
+
+        sqlx::query(
+            r#"
+            UPDATE artifacts
+            SET content = ?, content_hash = ?, size_bytes = ?,
+                updated_at = ?, message_id = ?
+            WHERE conversation_id = ? AND filename = ?
+            "#,
+        )
+        .bind(content)
+        .bind(&content_hash)
+        .bind(size_bytes)
+        .bind(now)
+        .bind(message_id)
+        .bind(conversation_id)
+        .bind(filename)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Get all artifacts for a conversation
+    pub async fn get_artifacts(&self, conversation_id: i64) -> Result<Vec<Artifact>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, conversation_id, message_id, filename, mime_type,
+                   size_bytes, content, content_hash, created_at, updated_at
+            FROM artifacts
+            WHERE conversation_id = ?
+            ORDER BY updated_at DESC
+            "#,
+        )
+        .bind(conversation_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut artifacts = Vec::new();
+        for row in rows {
+            artifacts.push(Artifact {
+                id: row.get("id"),
+                conversation_id: row.get("conversation_id"),
+                message_id: row.get("message_id"),
+                filename: row.get("filename"),
+                mime_type: row.get("mime_type"),
+                size_bytes: row.get("size_bytes"),
+                content: row.get("content"),
+                content_hash: row.get("content_hash"),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+            });
+        }
+
+        Ok(artifacts)
+    }
+
+    /// Get artifacts for a specific message
+    pub async fn get_artifacts_for_message(&self, message_id: i64) -> Result<Vec<Artifact>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, conversation_id, message_id, filename, mime_type,
+                   size_bytes, content, content_hash, created_at, updated_at
+            FROM artifacts
+            WHERE message_id = ?
+            ORDER BY updated_at DESC
+            "#,
+        )
+        .bind(message_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut artifacts = Vec::new();
+        for row in rows {
+            artifacts.push(Artifact {
+                id: row.get("id"),
+                conversation_id: row.get("conversation_id"),
+                message_id: row.get("message_id"),
+                filename: row.get("filename"),
+                mime_type: row.get("mime_type"),
+                size_bytes: row.get("size_bytes"),
+                content: row.get("content"),
+                content_hash: row.get("content_hash"),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+            });
+        }
+
+        Ok(artifacts)
+    }
+
+    // ==================== Workspace Metadata Operations ====================
+
+    /// Create workspace metadata for a conversation
+    pub async fn create_workspace_metadata(
+        &self,
+        conversation_id: i64,
+        workspace_path: &str,
+    ) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+
+        sqlx::query(
+            r#"
+            INSERT INTO workspace_metadata
+            (conversation_id, workspace_path, created_at, last_accessed_at, disk_usage_bytes)
+            VALUES (?, ?, ?, ?, 0)
+            "#,
+        )
+        .bind(conversation_id)
+        .bind(workspace_path)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Get workspace metadata for a conversation
+    pub async fn get_workspace_metadata(
+        &self,
+        conversation_id: i64,
+    ) -> Result<Option<WorkspaceMetadata>> {
+        let row = sqlx::query(
+            r#"
+            SELECT conversation_id, workspace_path, created_at, last_accessed_at,
+                   installed_packages, disk_usage_bytes
+            FROM workspace_metadata
+            WHERE conversation_id = ?
+            "#,
+        )
+        .bind(conversation_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            Ok(Some(WorkspaceMetadata {
+                conversation_id: row.get("conversation_id"),
+                workspace_path: row.get("workspace_path"),
+                created_at: row.get("created_at"),
+                last_accessed_at: row.get("last_accessed_at"),
+                installed_packages: row.get("installed_packages"),
+                disk_usage_bytes: row.get("disk_usage_bytes"),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Update workspace last access time
+    pub async fn update_workspace_last_access(&self, conversation_id: i64) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+
+        sqlx::query(
+            r#"
+            UPDATE workspace_metadata
+            SET last_accessed_at = ?
+            WHERE conversation_id = ?
+            "#,
+        )
+        .bind(now)
+        .bind(conversation_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Update workspace disk usage
+    pub async fn update_workspace_disk_usage(
+        &self,
+        conversation_id: i64,
+        bytes: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE workspace_metadata
+            SET disk_usage_bytes = ?
+            WHERE conversation_id = ?
+            "#,
+        )
+        .bind(bytes)
+        .bind(conversation_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Update installed packages list
+    pub async fn update_workspace_packages(
+        &self,
+        conversation_id: i64,
+        packages_json: &str,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE workspace_metadata
+            SET installed_packages = ?
+            WHERE conversation_id = ?
+            "#,
+        )
+        .bind(packages_json)
+        .bind(conversation_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Delete workspace metadata
+    pub async fn delete_workspace_metadata(&self, conversation_id: i64) -> Result<()> {
+        sqlx::query(
+            r#"
+            DELETE FROM workspace_metadata
+            WHERE conversation_id = ?
+            "#,
+        )
+        .bind(conversation_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Get workspaces older than a timestamp
+    pub async fn get_workspaces_older_than(
+        &self,
+        timestamp: i64,
+    ) -> Result<Vec<WorkspaceMetadata>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT conversation_id, workspace_path, created_at, last_accessed_at,
+                   installed_packages, disk_usage_bytes
+            FROM workspace_metadata
+            WHERE last_accessed_at < ?
+            ORDER BY last_accessed_at ASC
+            "#,
+        )
+        .bind(timestamp)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut metadata = Vec::new();
+        for row in rows {
+            metadata.push(WorkspaceMetadata {
+                conversation_id: row.get("conversation_id"),
+                workspace_path: row.get("workspace_path"),
+                created_at: row.get("created_at"),
+                last_accessed_at: row.get("last_accessed_at"),
+                installed_packages: row.get("installed_packages"),
+                disk_usage_bytes: row.get("disk_usage_bytes"),
+            });
+        }
+
+        Ok(metadata)
+    }
 }
 
 #[cfg(test)]
@@ -340,7 +827,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_and_get_conversation() {
-        let storage = Storage::in_memory().await.unwrap();
+        let storage = match Storage::in_memory().await {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Failed to create storage: {}", e);
+                eprintln!("Error type: {:?}", e);
+                panic!("Storage creation failed");
+            }
+        };
 
         let conv = Conversation::new("claude-sonnet-4-20250514");
         let id = storage.create_conversation(&conv).await.unwrap();

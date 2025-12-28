@@ -1,0 +1,18 @@
+mod read_file;
+mod write_file;
+mod list_directory;
+
+pub use read_file::ReadFileTool;
+pub use write_file::WriteFileTool;
+pub use list_directory::ListDirectoryTool;
+
+use std::sync::Arc;
+
+use super::ToolRegistry;
+
+/// Register all built-in tools with the registry
+pub fn register_builtin_tools(registry: &mut ToolRegistry) {
+    registry.register(Arc::new(ReadFileTool));
+    registry.register(Arc::new(WriteFileTool));
+    registry.register(Arc::new(ListDirectoryTool));
+}

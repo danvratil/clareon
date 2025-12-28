@@ -6,9 +6,10 @@ use async_trait::async_trait;
 use aws_config::BehaviorVersion;
 use aws_sdk_bedrockruntime::error::SdkError;
 use aws_sdk_bedrockruntime::types::{
-    ContentBlock as BedrockContentBlock, ContentBlockDelta, ContentBlockStart as BedrockContentBlockStart,
-    ConverseStreamOutput, ConversationRole, Message as BedrockMessage, SystemContentBlock,
-    ToolResultBlock, ToolResultContentBlock, ToolUseBlock,
+    CachePointBlock, CachePointType, ContentBlock as BedrockContentBlock, ContentBlockDelta,
+    ContentBlockStart as BedrockContentBlockStart, ConverseStreamOutput, ConversationRole,
+    Message as BedrockMessage, SystemContentBlock, Tool as BedrockTool, ToolConfiguration,
+    ToolInputSchema, ToolResultBlock, ToolResultContentBlock, ToolUseBlock,
 };
 use aws_sdk_bedrockruntime::Client;
 use aws_smithy_types::Document;
@@ -171,11 +172,11 @@ impl BedrockBackend {
                     })
                     .collect();
 
-                Ok(BedrockMessage::builder()
+                BedrockMessage::builder()
                     .role(role)
                     .set_content(Some(content))
                     .build()
-                    .map_err(|e| BackendError::InvalidResponse(e.to_string()))?)
+                    .map_err(|e| BackendError::InvalidResponse(e.to_string()))
             })
             .collect()
     }
@@ -195,6 +196,37 @@ impl BedrockBackend {
             })
             .collect()
     }
+
+    /// Convert our ToolDefinition to Bedrock's ToolConfiguration
+    fn convert_tools(tools: &[super::traits::ToolDefinition]) -> Option<ToolConfiguration> {
+        if tools.is_empty() {
+            return None;
+        }
+
+        let bedrock_tools: Vec<BedrockTool> = tools
+            .iter()
+            .map(|tool| {
+                let tool_spec = aws_sdk_bedrockruntime::types::ToolSpecification::builder()
+                    .name(&tool.name)
+                    .description(&tool.description)
+                    .input_schema(ToolInputSchema::Json(Self::json_to_document(
+                        &tool.input_schema,
+                    )))
+                    .build()
+                    .expect("Failed to build ToolSpecification");
+
+                BedrockTool::ToolSpec(tool_spec)
+            })
+            .collect();
+
+        Some(
+            ToolConfiguration::builder()
+                .set_tools(Some(bedrock_tools))
+                .build()
+                .expect("Failed to build ToolConfiguration"),
+        )
+    }
+
 }
 
 #[async_trait]
@@ -206,6 +238,7 @@ impl LlmBackend for BedrockBackend {
         );
         debug!("Message count: {}", request.messages.len());
         debug!("Max tokens: {}", request.max_tokens);
+        debug!("Tools count: {}", request.tools.len());
         if let Some(sys) = &request.system_prompt {
             debug!("System prompt length: {} chars", sys.len());
         }
@@ -216,6 +249,7 @@ impl LlmBackend for BedrockBackend {
                 msg.role,
                 msg.content.len()
             );
+            debug!("Message {} content: {:?}", i, msg.content);
         }
 
         let messages = Self::convert_messages(&request.messages)?;
@@ -232,6 +266,11 @@ impl LlmBackend for BedrockBackend {
                 converse_builder =
                     converse_builder.system(SystemContentBlock::Text(system_prompt.clone()));
             }
+        }
+
+        // Add tool configuration if tools are provided
+        if let Some(tool_config) = Self::convert_tools(&request.tools) {
+            converse_builder = converse_builder.tool_config(tool_config);
         }
 
         // Set inference configuration
@@ -354,6 +393,7 @@ impl LlmBackend for BedrockBackend {
             request.model, self.region
         );
         debug!("Message count: {}", request.messages.len());
+        debug!("Tools count: {}", request.tools.len());
 
         let messages = Self::convert_messages(&request.messages)?;
 
@@ -369,6 +409,11 @@ impl LlmBackend for BedrockBackend {
                 converse_builder =
                     converse_builder.system(SystemContentBlock::Text(system_prompt.clone()));
             }
+        }
+
+        // Add tool configuration if tools are provided
+        if let Some(tool_config) = Self::convert_tools(&request.tools) {
+            converse_builder = converse_builder.tool_config(tool_config);
         }
 
         // Set inference configuration
