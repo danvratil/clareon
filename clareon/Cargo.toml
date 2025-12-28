@@ -1,0 +1,23 @@
+[package]
+name = "clareon"
+description = "Qt/QML GUI for Clareon - Claude assistant for Linux"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Core library (for future integration - not used in Phase 1)
+clareon-core = { path = "../clareon-core" }
+
+# CXX-Qt bridge
+cxx = { workspace = true }
+cxx-qt = { workspace = true }
+cxx-qt-lib = { workspace = true }
+
+# Time handling
+chrono = { workspace = true }
+
+[build-dependencies]
+cxx-qt-build = { workspace = true }

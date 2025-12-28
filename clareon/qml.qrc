@@ -1,0 +1,10 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/qt/qml/cz/dvratil/clareon">
+        <file>qml/main.qml</file>
+        <file>qml/ChatView.qml</file>
+        <file>qml/ConversationDrawer.qml</file>
+        <file>qml/MessageDelegate.qml</file>
+        <file>qml/MessageComposer.qml</file>
+    </qresource>
+</RCC>

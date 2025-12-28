@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "clareon-core",
     "clareon-cli",
+    "clareon",
 ]
 
 [workspace.package]
@@ -62,3 +63,9 @@ uuid = { version = "1", features = ["v4"] }
 
 # Time handling
 chrono = { version = "0.4", features = ["serde"] }
+
+# Qt/QML integration
+cxx = "1.0"
+cxx-qt = "0.8"
+cxx-qt-lib = { version = "0.8", features = ["qt_full"] }
+cxx-qt-build = { version = "0.8", features = ["link_qt_object_files"] }
