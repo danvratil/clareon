@@ -118,7 +118,7 @@ fn wrap_line(text: &str, max_width: usize) -> Vec<String> {
 }
 
 /// Render the UI based on current app state
-pub fn render(frame: &mut Frame, app: &App) {
+pub fn render(frame: &mut Frame, app: &mut App) {
     match app.view_mode {
         ViewMode::Chat => render_chat(frame, app),
         ViewMode::ConversationList => render_conversation_list(frame, app),
@@ -131,7 +131,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 }
 
 /// Render the main chat view
-fn render_chat(frame: &mut Frame, app: &App) {
+fn render_chat(frame: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -185,16 +185,78 @@ fn render_chat(frame: &mut Frame, app: &App) {
     frame.render_widget(input, chunks[2]);
 
     // Status bar
-    let status_text = app
-        .status
-        .as_deref()
-        .unwrap_or("Ctrl+H help | Ctrl+N new | Ctrl+O open | Ctrl+Q quit");
+    let status_text = if let Some(status) = &app.status {
+        // If there's a status message (e.g., streaming, error), show it
+        status.clone()
+    } else {
+        // Otherwise, show token info if available
+        format_status_bar(app)
+    };
     let status = Paragraph::new(status_text).style(Style::default().fg(Color::DarkGray));
     frame.render_widget(status, chunks[3]);
 }
 
+/// Format the status bar with token information
+fn format_status_bar(app: &App) -> String {
+    let mut parts = Vec::new();
+
+    // Last message tokens
+    if let Some(usage) = &app.last_usage {
+        // Build cache info string
+        let mut cache_parts = Vec::new();
+        if let Some(cached) = usage.cache_read_input_tokens {
+            if cached > 0 {
+                cache_parts.push(format!("⚡{}", format_number(cached)));
+            }
+        }
+        if let Some(written) = usage.cache_write_input_tokens {
+            if written > 0 {
+                cache_parts.push(format!("✍{}", format_number(written)));
+            }
+        }
+
+        let cache_info = if !cache_parts.is_empty() {
+            format!(" ({})", cache_parts.join(" "))
+        } else {
+            String::new()
+        };
+
+        parts.push(format!(
+            "Last: ↓{}{} ↑{}",
+            format_number(usage.input_tokens),
+            cache_info,
+            format_number(usage.output_tokens)
+        ));
+    }
+
+    // Conversation total
+    if app.conversation_usage.input_tokens > 0 || app.conversation_usage.output_tokens > 0 {
+        parts.push(format!(
+            "Total: ↓{} ↑{}",
+            format_number(app.conversation_usage.input_tokens),
+            format_number(app.conversation_usage.output_tokens)
+        ));
+    }
+
+    // Help text
+    parts.push("Ctrl+H help | Ctrl+Q quit".to_string());
+
+    parts.join(" | ")
+}
+
+/// Format a number with K/M suffix for readability
+fn format_number(n: i64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{:.1}K", n as f64 / 1_000.0)
+    } else {
+        n.to_string()
+    }
+}
+
 /// Render messages in the chat
-fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
+fn render_messages(frame: &mut Frame, app: &mut App, area: Rect) {
     let block = Block::default()
         .title(" Conversation ")
         .borders(Borders::ALL);
@@ -310,7 +372,7 @@ fn render_messages(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     let list = List::new(items);
-    frame.render_widget(list, inner_area);
+    frame.render_stateful_widget(list, inner_area, &mut app.message_list_state);
 }
 
 /// Render conversation list view

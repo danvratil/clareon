@@ -5,6 +5,8 @@ use std::sync::Arc;
 use futures::StreamExt;
 use tokio::sync::mpsc;
 
+use ratatui::widgets::ListState;
+
 use clareon_core::{
     backend::Usage,
     register_builtin_tools, ArtifactManager, BubblewrapSandbox, NoneSandbox, Sandbox,
@@ -64,8 +66,8 @@ pub struct App {
     /// Input buffer
     pub input: String,
 
-    /// Scroll offset for messages
-    pub scroll_offset: usize,
+    /// Scroll state for messages list
+    pub message_list_state: ListState,
 
     /// Is the app running?
     pub running: bool,
@@ -195,7 +197,7 @@ impl App {
             search_results: Vec::new(),
             search_query: String::new(),
             input: String::new(),
-            scroll_offset: 0,
+            message_list_state: ListState::default(),
             running: true,
             status: None,
             waiting: false,
@@ -211,7 +213,7 @@ impl App {
         let conv = self.manager.new_conversation().await?;
         self.conversation = Some(conv);
         self.messages.clear();
-        self.scroll_offset = 0;
+        self.message_list_state = ListState::default();
         self.status = Some("New conversation started".to_string());
         Ok(())
     }
@@ -223,7 +225,7 @@ impl App {
 
         self.conversation = Some(conv);
         self.messages = messages;
-        self.scroll_offset = 0;
+        self.message_list_state = ListState::default();
         self.status = Some(format!("Loaded conversation {}", id));
 
         Ok(())
@@ -340,18 +342,31 @@ impl App {
 
     /// Scroll messages up
     pub fn scroll_up(&mut self, amount: usize) {
-        self.scroll_offset = self.scroll_offset.saturating_sub(amount);
+        let current = self.message_list_state.selected().unwrap_or(0);
+        let new_pos = current.saturating_sub(amount);
+        self.message_list_state.select(Some(new_pos));
     }
 
     /// Scroll messages down
     pub fn scroll_down(&mut self, amount: usize) {
-        self.scroll_offset = self.scroll_offset.saturating_add(amount);
+        // Calculate total items (messages + streaming message if present)
+        let total_items = self.messages.len() + if self.streaming_message.is_some() { 1 } else { 0 };
+
+        if total_items == 0 {
+            return;
+        }
+
+        let current = self.message_list_state.selected().unwrap_or(0);
+        let new_pos = (current + amount).min(total_items.saturating_sub(1));
+        self.message_list_state.select(Some(new_pos));
     }
 
     /// Scroll to the bottom of messages
     pub fn scroll_to_bottom(&mut self) {
-        // This will be clamped during rendering
-        self.scroll_offset = self.messages.len().saturating_sub(1);
+        let total_items = self.messages.len() + if self.streaming_message.is_some() { 1 } else { 0 };
+        if total_items > 0 {
+            self.message_list_state.select(Some(total_items.saturating_sub(1)));
+        }
     }
 
     /// Quit the application
