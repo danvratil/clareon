@@ -25,3 +25,4 @@ chrono = { workspace = true }
 
 [build-dependencies]
 cxx-qt-build = { workspace = true }
+glob = "0.3"

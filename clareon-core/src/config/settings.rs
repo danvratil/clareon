@@ -13,12 +13,32 @@ use tracing::{debug, info};
 
 use crate::error::{ConfigError, Result};
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Backend {
+    #[default]
+    Bedrock,
+    Anthropic,
+}
+
+impl TryFrom <&str> for Backend {
+    type Error = ConfigError;
+
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        match value.to_lowercase().as_str() {
+            "bedrock" => Ok(Backend::Bedrock),
+            "anthropic" => Ok(Backend::Anthropic),
+            other => Err(ConfigError::Invalid(format!("Unknown backend: {}", other))),
+        }
+    }
+}
+
 /// Main configuration struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Default backend to use (bedrock or anthropic)
-    #[serde(default = "default_backend")]
-    pub default_backend: String,
+    #[serde(default)]
+    pub default_backend: Backend,
 
     /// Default model to use
     #[serde(default = "default_model")]
@@ -47,10 +67,6 @@ pub struct Config {
     /// Logging configuration
     #[serde(default)]
     pub logging: LoggingConfig,
-}
-
-fn default_backend() -> String {
-    "bedrock".to_string()
 }
 
 fn default_model() -> String {
@@ -326,7 +342,7 @@ impl LoggingConfig {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            default_backend: default_backend(),
+            default_backend: Backend::default(),
             default_model: default_model(),
             backends: BackendsConfig::default(),
             ui: UiConfig::default(),
@@ -468,7 +484,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.default_backend, "bedrock");
+        assert_eq!(config.default_backend, Backend::Bedrock);
         assert!(config.ui.streaming);
     }
 
@@ -485,7 +501,7 @@ mod tests {
         // Test that missing fields use defaults
         let json = r#"{"default_backend": "anthropic"}"#;
         let config: Config = serde_json::from_str(json).unwrap();
-        assert_eq!(config.default_backend, "anthropic");
+        assert_eq!(config.default_backend, Backend::Anthropic);
         assert!(config.ui.streaming); // Should use default
     }
 

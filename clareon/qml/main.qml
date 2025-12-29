@@ -21,14 +21,6 @@ Kirigami.ApplicationWindow {
         id: appController
     }
 
-    ConversationListModel {
-        id: conversationModel
-    }
-
-    MessageListModel {
-        id: messageModel
-    }
-
     // Signal connections for AppController
     Connections {
         target: appController
@@ -49,52 +41,6 @@ Kirigami.ApplicationWindow {
             // TODO: Show error dialog instead of just logging
             console.error("Error:", message)
         }
-    }
-
-    // Initialize conversations on startup
-    Component.onCompleted: {
-        conversationModel.refreshConversations()
-    }
-
-    // Global drawer with conversation list
-    globalDrawer: Kirigami.GlobalDrawer {
-        id: drawer
-        title: "Conversations"
-        titleIcon: "view-conversation-balloon"
-
-        modal: false
-        handleVisible: true
-        width: 320
-
-        actions: [
-            Kirigami.Action {
-                text: "New Conversation"
-                icon.name: "list-add"
-                onTriggered: {
-                    appController.newConversation()
-                }
-            },
-            Kirigami.Action {
-                text: "Settings"
-                icon.name: "configure"
-                onTriggered: {
-                    // TODO: Open settings dialog
-                }
-            }
-        ]
-
-        // Drawer content
-        ConversationDrawer {
-            Layout.fillWidth: true
-            appController: appController
-            conversationModel: conversationModel
-        }
-    }
-
-    // Main chat view
-    pageStack.initialPage: ChatView {
-        appController: appController
-        messageModel: messageModel
     }
 
     // Keyboard shortcuts
@@ -118,6 +64,11 @@ Kirigami.ApplicationWindow {
         onActivated: Qt.quit()
     }
 
+    Shortcut {
+        sequence: "Ctrl+,"
+        onActivated: openConfiguration()
+    }
+
     // Help dialog
     Controls.Dialog {
         id: helpDialog
@@ -133,6 +84,7 @@ Kirigami.ApplicationWindow {
             model: ListModel {
                 ListElement { shortcut: "Ctrl+N"; description: "New conversation" }
                 ListElement { shortcut: "Ctrl+O"; description: "Toggle conversation drawer" }
+                ListElement { shortcut: "Ctrl+,"; description: "Open settings" }
                 ListElement { shortcut: "Enter"; description: "Send message" }
                 ListElement { shortcut: "Shift+Enter"; description: "New line in message" }
                 ListElement { shortcut: "Esc"; description: "Clear message input" }
@@ -164,5 +116,37 @@ Kirigami.ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+H"
         onActivated: helpDialog.open()
+    }
+
+    pageStack {
+        initialPage: ConversationListPage {
+            appController: root.appController
+        }
+        columnView.columnResizeMode: pageStack.wideMode ? Kirigami.ColumnView.DynamicColumns : Kirigami.ColumnView.SingleColumn
+    }
+
+    // Configuration window loader
+    Loader {
+        id: configWindowLoader
+        active: false
+        source: "qrc:/qt/qml/cz/dvratil/clareon/qml/config/ConfigurationPage.qml"
+
+        onLoaded: {
+            item.show()
+            item.raise()
+            item.requestActivate()
+        }
+    }
+
+    function openConfiguration() {
+        if (configWindowLoader.item) {
+            // Window already exists, just show it
+            configWindowLoader.item.show()
+            configWindowLoader.item.raise()
+            configWindowLoader.item.requestActivate()
+        } else {
+            // Create the window
+            configWindowLoader.active = true
+        }
     }
 }

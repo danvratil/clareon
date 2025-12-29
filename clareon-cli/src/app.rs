@@ -12,14 +12,9 @@ use tokio::sync::mpsc;
 use ratatui::widgets::ListState;
 
 use clareon_core::{
-    ArtifactManager, BedrockBackend, BubblewrapSandbox, Config, ConversationManager, LlmBackend,
-    NoneSandbox, Sandbox, SandboxMode, SandboxModeConfig, Storage, StreamUpdate, ToolExecutor,
-    ToolRegistry, WorkspaceManager,
-    backend::Usage,
-    register_builtin_tools,
-    types::{
+    ArtifactManager, BedrockBackend, BubblewrapSandbox, Config, ConversationManager, LlmBackend, NoneSandbox, Sandbox, SandboxMode, SandboxModeConfig, Storage, StreamUpdate, ToolExecutor, ToolRegistry, WorkspaceManager, backend::Usage, config::Backend, register_builtin_tools, types::{
         ContentBlock, Conversation, ConversationId, ConversationSummary, Message, SearchResult,
-    },
+    }
 };
 
 /// Current view mode
@@ -128,8 +123,8 @@ impl App {
             .clone();
 
         // Initialize backend based on config
-        let backend: Arc<dyn LlmBackend> = match config.default_backend.as_str() {
-            "anthropic" => {
+        let backend: Arc<dyn LlmBackend> = match config.default_backend {
+            Backend::Anthropic => {
                 // For now, require API key in environment
                 let api_key = std::env::var("ANTHROPIC_API_KEY").map_err(|_| {
                     anyhow::anyhow!(
@@ -139,7 +134,7 @@ impl App {
                 })?;
                 Arc::new(clareon_core::AnthropicBackend::new(api_key))
             }
-            _ => {
+            Backend::Bedrock => {
                 // Default to Bedrock - use profile if specified
                 let profile = options
                     .profile

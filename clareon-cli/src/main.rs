@@ -27,7 +27,7 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use app::{App, AppOptions};
-use clareon_core::Config;
+use clareon_core::config::{Config, Backend};
 use cli::Args;
 
 /// Get the log file path
@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
 
     // Override backend if specified
     if let Some(backend) = &args.backend {
-        config.default_backend = backend.clone();
+        config.default_backend = Backend::try_from(backend.as_str())?;
     }
 
     // Override model if specified

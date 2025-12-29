@@ -45,6 +45,7 @@ mod ffi {
     }
 
     unsafe extern "RustQt" {
+
         #[qobject]
         #[base = QAbstractListModel]
         #[qml_element]

@@ -53,17 +53,12 @@ fn main() {
     app_controller::init_runtime(runtime.clone(), manager.clone());
     models::init_runtime(runtime.clone(), manager.clone());
 
-    // Initialize the Qt application
     let mut app = QGuiApplication::new();
-
-    // Create the QML engine
     let mut engine = QQmlApplicationEngine::new();
 
-    // Load the main QML file from the QML module
     let qml_url = QUrl::from("qrc:/qt/qml/cz/dvratil/clareon/qml/main.qml");
-
-    if let Some(engine_pin) = engine.as_mut() {
-        engine_pin.load(&qml_url);
+    if let Some(engine) = engine.as_mut() {
+        engine.load(&qml_url);
     }
 
     // Check if QML loaded successfully
@@ -71,15 +66,15 @@ fn main() {
     // The application will still run and show errors if QML fails to load
 
     // Run the application event loop
-    if let Some(app_pin) = app.as_mut() {
-        app_pin.exec();
+    if let Some(app) = app.as_mut() {
+        app.exec();
     }
 }
 
 /// Create an LLM backend based on the configuration
 async fn create_backend_from_config(config: &Config) -> Result<Arc<dyn LlmBackend>, String> {
-    match config.default_backend.as_str() {
-        "anthropic" => {
+    match config.default_backend {
+        Backend::Anthropic => {
             // For now, only support API key from environment variable
             // Keyring support can be added later
             let api_key = std::env::var("ANTHROPIC_API_KEY")
@@ -87,7 +82,7 @@ async fn create_backend_from_config(config: &Config) -> Result<Arc<dyn LlmBacken
 
             Ok(Arc::new(AnthropicBackend::new(api_key)))
         }
-        "bedrock" => {
+        Backend::Bedrock => {
             let region = &config.backends.bedrock.region;
             let profile = config.backends.bedrock.profile.as_deref();
 
@@ -103,6 +98,5 @@ async fn create_backend_from_config(config: &Config) -> Result<Arc<dyn LlmBacken
 
             Ok(Arc::new(backend))
         }
-        other => Err(format!("Unknown backend: {}", other)),
     }
 }

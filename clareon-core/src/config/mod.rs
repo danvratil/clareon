@@ -11,4 +11,4 @@ mod secrets;
 mod settings;
 
 pub use secrets::SecretStore;
-pub use settings::{Config, SandboxModeConfig};
+pub use settings::{Config, Backend, SandboxModeConfig};

@@ -12,9 +12,13 @@ Kirigami.Page {
     id: root
 
     required property AppController appController
-    required property MessageListModel messageModel
+    required property string conversationId
 
     title: appController.conversationTitle
+
+    MessageListModel {
+        id: messageModel
+    }
 
     ColumnLayout {
         anchors.fill: parent
