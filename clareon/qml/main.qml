@@ -29,6 +29,33 @@ Kirigami.ApplicationWindow {
         id: messageModel
     }
 
+    // Signal connections for AppController
+    Connections {
+        target: appController
+
+        function onConversationChanged() {
+            messageModel.loadMessages(appController.currentConversationId)
+        }
+
+        function onMessagesLoaded() {
+            // Messages loaded, scroll handled by ChatView
+        }
+
+        function onMessageSent() {
+            messageModel.loadMessages(appController.currentConversationId)
+        }
+
+        function onError(message) {
+            // TODO: Show error dialog instead of just logging
+            console.error("Error:", message)
+        }
+    }
+
+    // Initialize conversations on startup
+    Component.onCompleted: {
+        conversationModel.refreshConversations()
+    }
+
     // Global drawer with conversation list
     globalDrawer: Kirigami.GlobalDrawer {
         id: drawer

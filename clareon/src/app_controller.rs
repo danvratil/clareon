@@ -2,6 +2,25 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use clareon_core::ConversationManager;
+use std::sync::{Arc, OnceLock};
+
+static RUNTIME: OnceLock<Arc<tokio::runtime::Runtime>> = OnceLock::new();
+static MANAGER: OnceLock<Arc<ConversationManager>> = OnceLock::new();
+
+pub fn init_runtime(runtime: Arc<tokio::runtime::Runtime>, manager: Arc<ConversationManager>) {
+    RUNTIME.set(runtime).ok();
+    MANAGER.set(manager).ok();
+}
+
+fn get_runtime() -> Arc<tokio::runtime::Runtime> {
+    RUNTIME.get().expect("Runtime not initialized").clone()
+}
+
+fn get_manager() -> Arc<ConversationManager> {
+    MANAGER.get().expect("Manager not initialized").clone()
+}
+
 #[cxx_qt::bridge]
 mod app_controller {
     unsafe extern "C++" {
@@ -17,6 +36,8 @@ mod app_controller {
         #[qproperty(bool, is_waiting, cxx_name = "isWaiting")]
         #[qproperty(QString, status_message, cxx_name = "statusMessage")]
         #[qproperty(QString, view_mode, cxx_name = "viewMode")]
+        #[qproperty(i64, input_tokens, cxx_name = "inputTokens")]
+        #[qproperty(i64, output_tokens, cxx_name = "outputTokens")]
         type AppController = super::AppControllerRust;
 
         #[qsignal]
@@ -25,6 +46,22 @@ mod app_controller {
 
         #[qsignal]
         fn error(self: Pin<&mut AppController>, message: QString);
+
+        #[qsignal]
+        #[cxx_name = "conversationsLoaded"]
+        fn conversations_loaded(self: Pin<&mut AppController>);
+
+        #[qsignal]
+        #[cxx_name = "messagesLoaded"]
+        fn messages_loaded(self: Pin<&mut AppController>);
+
+        #[qsignal]
+        #[cxx_name = "messageSent"]
+        fn message_sent(self: Pin<&mut AppController>);
+
+        #[qsignal]
+        #[cxx_name = "streamingUpdate"]
+        fn streaming_update(self: Pin<&mut AppController>, text: QString);
     }
 
     unsafe extern "RustQt" {
@@ -46,91 +83,165 @@ mod app_controller {
 }
 
 use std::pin::Pin;
+use cxx_qt_lib::QString;
 
 pub struct AppControllerRust {
-    current_conversation_id: cxx_qt_lib::QString,
-    conversation_title: cxx_qt_lib::QString,
+    current_conversation_id: QString,
+    conversation_title: QString,
     is_waiting: bool,
-    status_message: cxx_qt_lib::QString,
-    view_mode: cxx_qt_lib::QString,
+    status_message: QString,
+    view_mode: QString,
+    input_tokens: i64,
+    output_tokens: i64,
 }
 
 impl Default for AppControllerRust {
     fn default() -> Self {
         Self {
-            current_conversation_id: cxx_qt_lib::QString::from(
-                "550e8400-e29b-41d4-a716-446655440001",
-            ),
-            conversation_title: cxx_qt_lib::QString::from("Rust async patterns"),
+            current_conversation_id: QString::default(),
+            conversation_title: QString::from("No conversation"),
             is_waiting: false,
-            status_message: cxx_qt_lib::QString::from("Ready"),
-            view_mode: cxx_qt_lib::QString::from("chat"),
+            status_message: QString::from("Ready"),
+            view_mode: QString::from("chat"),
+            input_tokens: 0,
+            output_tokens: 0,
         }
     }
 }
 
 impl app_controller::AppController {
-    pub fn select_conversation(mut self: Pin<&mut Self>, conversation_id: &cxx_qt_lib::QString) {
-        let id_str = conversation_id.to_string();
-        let title = match id_str.as_str() {
-            "550e8400-e29b-41d4-a716-446655440001" => "Rust async patterns",
-            "550e8400-e29b-41d4-a716-446655440002" => "QML layout design",
-            "550e8400-e29b-41d4-a716-446655440003" => "Debugging SQLite queries",
-            "550e8400-e29b-41d4-a716-446655440004" => "Kirigami components overview",
-            "550e8400-e29b-41d4-a716-446655440005" => "Git workflow best practices",
-            "550e8400-e29b-41d4-a716-446655440006" => "Linux desktop integration",
-            "550e8400-e29b-41d4-a716-446655440007" => "Error handling in Rust",
-            "550e8400-e29b-41d4-a716-446655440008" => "CSS grid vs flexbox",
-            _ => "Conversation",
-        };
+    pub fn select_conversation(mut self: Pin<&mut Self>, conversation_id: &QString) {
+        use clareon_core::types::ConversationId;
 
+        self.as_mut().set_is_waiting(true);
         self.as_mut()
-            .set_current_conversation_id(conversation_id.clone());
-        self.as_mut()
-            .set_conversation_title(cxx_qt_lib::QString::from(title));
-        self.as_mut().conversation_changed();
+            .set_status_message(QString::from("Loading conversation..."));
+
+        let conv_id = ConversationId::from(conversation_id.to_string());
+        let runtime = get_runtime();
+        let manager = get_manager();
+
+        // Use block_on for now (will block UI briefly)
+        // TODO: Use proper threading with CxxQtThread once we figure out cxx-qt 0.8 pattern
+        let result = runtime.block_on(async {
+            let conversation = manager.load_conversation(&conv_id).await?;
+            let (input, output) = manager
+                .storage()
+                .get_conversation_token_count(&conv_id)
+                .await?;
+            Ok::<_, clareon_core::Error>((conversation, input, output))
+        });
+
+        match result {
+            Ok((conversation, input_tokens, output_tokens)) => {
+                let title = conversation.display_title();
+                self.as_mut()
+                    .set_current_conversation_id(conversation_id.clone());
+                self.as_mut()
+                    .set_conversation_title(QString::from(title));
+                self.as_mut().set_input_tokens(input_tokens);
+                self.as_mut().set_output_tokens(output_tokens);
+                self.as_mut().set_is_waiting(false);
+                self.as_mut()
+                    .set_status_message(QString::from("Ready"));
+                self.as_mut().conversation_changed();
+            }
+            Err(e) => {
+                self.as_mut()
+                    .error(QString::from(&format!("{}", e)));
+                self.as_mut().set_is_waiting(false);
+                self.as_mut()
+                    .set_status_message(QString::from("Error"));
+            }
+        }
     }
 
-    pub fn send_message(mut self: Pin<&mut Self>, text: &cxx_qt_lib::QString) {
+    pub fn send_message(mut self: Pin<&mut Self>, text: &QString) {
+        use clareon_core::types::ConversationId;
+
         let message_text = text.to_string();
 
         if message_text.trim().is_empty() {
             return;
         }
 
+        let conv_id_str = self.current_conversation_id.to_string();
+        if conv_id_str.is_empty() {
+            self.as_mut()
+                .error(QString::from("No conversation selected"));
+            return;
+        }
+
+        let conv_id = ConversationId::from(conv_id_str);
+
         self.as_mut().set_is_waiting(true);
         self.as_mut()
-            .set_status_message(cxx_qt_lib::QString::from("Sending message..."));
+            .set_status_message(QString::from("Sending message..."));
 
-        // In real app, this would send to backend
+        let runtime = get_runtime();
+        let manager = get_manager();
 
-        self.as_mut().set_is_waiting(false);
-        self.as_mut()
-            .set_status_message(cxx_qt_lib::QString::from("Ready"));
+        // Use non-streaming send_message for MVP (blocks UI briefly)
+        // TODO: Implement streaming once we figure out cxx-qt 0.8 threading pattern
+        let result = runtime.block_on(async {
+            let mut conversation = manager.load_conversation(&conv_id).await?;
+            manager.send_message(&mut conversation, &message_text).await
+        });
+
+        match result {
+            Ok(response) => {
+                self.as_mut().set_input_tokens(response.usage.input_tokens);
+                self.as_mut()
+                    .set_output_tokens(response.usage.output_tokens);
+                self.as_mut().set_is_waiting(false);
+                self.as_mut()
+                    .set_status_message(QString::from("Ready"));
+                self.as_mut().message_sent();
+            }
+            Err(e) => {
+                self.as_mut()
+                    .error(QString::from(&format!("{}", e)));
+                self.as_mut().set_is_waiting(false);
+                self.as_mut()
+                    .set_status_message(QString::from("Error"));
+            }
+        }
     }
 
     pub fn new_conversation(mut self: Pin<&mut Self>) {
-        let new_id = cxx_qt_lib::QString::from("0000000-0000-0000-0000-000000000000");
-        self.as_mut().set_current_conversation_id(new_id);
+        let runtime = get_runtime();
+        let manager = get_manager();
+
+        let result = runtime.block_on(async { manager.new_conversation().await });
+        let conversation = match result {
+            Ok(conv) => conv,
+            Err(e) => {
+                self.as_mut()
+                    .error(QString::from(&format!("{}", e)));
+                return;
+            }
+        };
+
+        self.as_mut().set_current_conversation_id(conversation.id.to_string().into());
         self.as_mut()
-            .set_conversation_title(cxx_qt_lib::QString::from("New Conversation"));
+            .set_conversation_title(conversation.display_title().into());
         self.as_mut()
-            .set_status_message(cxx_qt_lib::QString::from("Started new conversation"));
+            .set_status_message(QString::from("Started new conversation"));
         self.as_mut().conversation_changed();
     }
 
-    pub fn search(mut self: Pin<&mut Self>, query: &cxx_qt_lib::QString) {
+    pub fn search(mut self: Pin<&mut Self>, query: &QString) {
         let query_text = query.to_string();
 
         if query_text.trim().is_empty() {
             self.as_mut()
-                .set_view_mode(cxx_qt_lib::QString::from("chat"));
+                .set_view_mode(QString::from("chat"));
             return;
         }
 
         self.as_mut()
-            .set_view_mode(cxx_qt_lib::QString::from("search"));
-        self.as_mut().set_status_message(cxx_qt_lib::QString::from(
+            .set_view_mode(QString::from("search"));
+        self.as_mut().set_status_message(QString::from(
             format!("Searching for '{}'...", query_text).as_str(),
         ));
     }

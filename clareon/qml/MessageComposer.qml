@@ -71,15 +71,6 @@ ColumnLayout {
                 // Call the app controller to send the message
                 root.appController.sendMessage(messageInput.text)
 
-                // Simulate assistant response after a delay
-                // In a real app, this would come from the backend
-                Qt.callLater(() => {
-                    root.messageModel.appendMessage(
-                        "assistant",
-                        "This is a mock response. In the final version, this will be a real response from Claude."
-                    )
-                })
-
                 // Clear the input
                 messageInput.text = ""
 
@@ -98,7 +89,16 @@ ColumnLayout {
 
         Controls.Label {
             Layout.fillWidth: true
-            text: root.appController.statusMessage
+            text: {
+                let msg = root.appController.statusMessage
+                let inTokens = root.appController.inputTokens
+                let outTokens = root.appController.outputTokens
+
+                if (inTokens > 0 || outTokens > 0) {
+                    return msg + " | In: " + inTokens.toLocaleString() + " | Out: " + outTokens.toLocaleString()
+                }
+                return msg
+            }
             font.pointSize: Kirigami.Theme.smallFont.pointSize
             opacity: 0.7
             elide: Text.ElideRight

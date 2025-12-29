@@ -8,13 +8,17 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-# Core library (for future integration - not used in Phase 1)
+# Core library
 clareon-core = { path = "../clareon-core" }
 
 # CXX-Qt bridge
 cxx = { workspace = true }
 cxx-qt = { workspace = true }
 cxx-qt-lib = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true, features = ["rt-multi-thread", "sync"] }
+futures = { workspace = true }
 
 # Time handling
 chrono = { workspace = true }
