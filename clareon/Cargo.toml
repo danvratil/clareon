@@ -20,6 +20,11 @@ cxx-qt-lib = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "sync"] }
 futures = { workspace = true }
 
+# Logging
+tracing = { workspace = true }
+tracing-core = { workspace = true }
+tracing-subscriber = { workspace = true }
+
 # Time handling
 chrono = { workspace = true }
 

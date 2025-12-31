@@ -21,7 +21,7 @@ pub enum Backend {
     Anthropic,
 }
 
-impl TryFrom <&str> for Backend {
+impl TryFrom<&str> for Backend {
     type Error = ConfigError;
 
     fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
@@ -289,6 +289,10 @@ pub struct LoggingConfig {
     /// Per-module/crate log level overrides
     #[serde(default = "default_module_levels")]
     pub modules: HashMap<String, String>,
+
+    /// Whether to log to file or to stdout
+    #[serde(default)]
+    pub log_to_file: bool
 }
 
 fn default_log_level() -> String {
@@ -315,6 +319,7 @@ impl Default for LoggingConfig {
         Self {
             global: default_log_level(),
             modules: default_module_levels(),
+            log_to_file: false,
         }
     }
 }
@@ -536,6 +541,7 @@ mod tests {
         let logging = LoggingConfig {
             global: "warn".to_string(),
             modules,
+            log_to_file: false,
         };
 
         let directive = logging.build_filter_directive();

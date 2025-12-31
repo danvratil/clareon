@@ -28,7 +28,12 @@ fn main() {
             .qml_files(find_qml_files())
             .depend("QtQuick"),
     )
-    .files(["src/models.rs", "src/app_controller.rs"])
+    .files([
+        "src/models.rs",
+        "src/app_controller.rs",
+        "src/logging.rs"
+    ])
     .qt_module("Quick")
+    .cpp_file("src/cpp/logging.cpp")
     .build();
 }

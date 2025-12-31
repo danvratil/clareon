@@ -3,15 +3,23 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use clareon_core::backend::{AnthropicBackend, BedrockBackend, LlmBackend};
+use clareon_core::logging::init_logging;
 use clareon_core::{Config, ConversationManager, Storage};
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
 use std::sync::Arc;
 
 pub mod app_controller;
+pub mod logging;
 pub mod mock;
 pub mod models;
 
 fn main() {
+    // Load configuration
+    let config = Config::load().expect("Failed to load config");
+
+    let _guard = init_logging(&config).expect("Failed to initialize logging");
+    logging::init_qt_logging();
+
     // Initialize tokio runtime
     let runtime = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
@@ -22,9 +30,6 @@ fn main() {
 
     // Initialize core components (blocking on the runtime)
     let manager = runtime.block_on(async {
-        // Load configuration
-        let config = Config::load().expect("Failed to load config");
-
         // Get database URL and create storage
         let db_url = Config::database_url().expect("Failed to get database URL");
         let storage = Storage::new(&db_url)
