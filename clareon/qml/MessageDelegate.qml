@@ -16,7 +16,6 @@ Item {
     required property string textContent
     required property int createdAt
 
-    width: ListView.view.width
     height: messageLayout.implicitHeight + Kirigami.Units.largeSpacing * 2
 
     RowLayout {

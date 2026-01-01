@@ -122,6 +122,7 @@ Kirigami.ScrollablePage {
 
         delegate: ConversationItemDelegate {
             id: delegate
+            width: conversationListView.width
             highlighted: delegate.conversationId === pageRoot.currentConversationId
             onClicked: pageRoot.openConversation(delegate.conversationId)
         }

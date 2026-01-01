@@ -14,6 +14,7 @@ Kirigami.Page {
     required property string conversationId
 
     title: qsTr("Conversation")
+    padding: 0
 
     MessageListModel {
         id: messageDataProvider
@@ -71,39 +72,62 @@ Kirigami.Page {
 
         // Messages view
         Controls.ScrollView {
+            id: messageView
             Layout.fillWidth: true
             Layout.fillHeight: true
 
-            ListView {
+            contentWidth: availableWidth
+
+            ColumnLayout {
                 id: messagesView
-                clip: true
+                width: messageView.availableWidth
+                spacing: 0
 
-                model: messageListModel
+                // The Repeater is a bit unfortunate choice here, but ListView has serious issues with
+                // dynamic height items and scrolling (and scrollbars), since ListView can only guesstimate
+                // the heights of delegates that are currently not rendered. This leads to a poor UX.
+                // The Repeater instantiates all items, so the scrolling always works correctly. The drawback
+                // is that for very long (or large) conversations, this will impact memory usage and initial
+                // load times - we will likely need to revisit this in the future.
+                Repeater {
+                    model: messageListModel
 
-                // Scroll to bottom when new messages arrive
-                onCountChanged: {
-                    Qt.callLater(() => {
-                        messagesView.positionViewAtEnd()
-                    })
-                }
-
-                Component.onCompleted: {
-                    messagesView.positionViewAtEnd()
-                }
-
-                delegate: MessageDelegate {
-                    // Role maps to delegate's properties automatically
+                    MessageDelegate {
+                        Layout.fillWidth: true
+                        // Role maps to delegate's properties automatically
+                    }
                 }
 
                 // Empty state
                 Kirigami.PlaceholderMessage {
-                    anchors.centerIn: parent
-                    width: parent.width - (Kirigami.Units.largeSpacing * 4)
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignVCenter
                     visible: messagesView.count === 0
                     icon.name: "view-conversation-balloon"
                     text: "No messages yet"
                     explanation: "Start a conversation by typing a message below"
                 }
+            }
+
+            Controls.ScrollBar.vertical: Controls.ScrollBar { }
+
+            // Scroll to bottom helper
+            function scrollToBottom() {
+                if (contentHeight > height) {
+                    contentItem.contentY = contentHeight - height
+                }
+            }
+
+            // Auto-scroll when messages change
+            Connections {
+                target: messageListModel
+                function onCountChanged() {
+                    Qt.callLater(() => messageView.scrollToBottom())
+                }
+            }
+
+            Component.onCompleted: {
+                Qt.callLater(() => scrollToBottom())
             }
         }
 
