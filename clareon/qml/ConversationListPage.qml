@@ -12,9 +12,9 @@ import cz.dvratil.clareon 1.0
 Kirigami.ScrollablePage {
     id: pageRoot
 
-    required property variant appController
-
     implicitWidth: Kirigami.Units.gridUnit * 20
+
+    property string currentConversationId: ""
 
     title: qsTr("Clareon")
 
@@ -49,12 +49,30 @@ Kirigami.ScrollablePage {
     }
 
     ConversationListModel {
-        id: conversationModel
+        id: conversationDataProvider
+
+        onDataChanged: {
+            // Rebuild the list model from data provider
+            conversationListModel.clear()
+            for (var i = 0; i < conversationDataProvider.count; i++) {
+                conversationListModel.append({
+                    conversationId: conversationDataProvider.getId(i),
+                    title: conversationDataProvider.getTitle(i),
+                    updatedAt: conversationDataProvider.getUpdatedAt(i),
+                    model: conversationDataProvider.getModel(i),
+                    messageCount: 0  // Not available yet
+                })
+            }
+        }
+    }
+
+    ListModel {
+        id: conversationListModel
     }
 
     KItemModels.KSortFilterProxyModel {
         id: filteredModel
-        sourceModel: conversationModel
+        sourceModel: conversationListModel
         filterRoleName: "title"
         filterRegularExpression: {
             if (searchField.text === "") return new RegExp()
@@ -62,19 +80,37 @@ Kirigami.ScrollablePage {
         }
     }
 
-    function openConversation(conversationId) {
-        const uri = "qrc:/qt/qml/cz/dvratil/clareon/qml/ChatView.qml"
-        if (pageStack.depth > 2) {
-            pageStack.replace(uri, {
-                appController: pageRoot.appController,
-                conversationId: conversationId,
-            })
-        } else {
-            pageStack.push(uri, {
-                appController: pageRoot.appController,
-                conversationId: conversationId,
-            })
+    // Connect to ServiceController signals
+    Connections {
+        target: ServiceController
+
+        function onConversationsChanged() {
+            conversationDataProvider.refresh()
         }
+    }
+
+    function openConversation(conversationId) {
+        const chatView = chatViewComponent.createObject(null, {
+            conversationId: conversationId
+        })
+
+        if (chatView) {
+            if (pageStack.depth > 2) {
+                pageStack.replace(chatView)
+            } else {
+                pageStack.push(chatView)
+            }
+
+            pageRoot.currentConversationId = conversationId
+
+        } else {
+            console.error("Failed to create ChatView")
+        }
+    }
+
+    Component {
+        id: chatViewComponent
+        ChatView {}
     }
 
     ListView {
@@ -85,9 +121,9 @@ Kirigami.ScrollablePage {
         model: filteredModel
 
         delegate: ConversationItemDelegate {
-            appController: pageRoot.appController
-
-            onClicked: pageRoot.openConversation(model.conversationId)
+            id: delegate
+            highlighted: delegate.conversationId === pageRoot.currentConversationId
+            onClicked: pageRoot.openConversation(delegate.conversationId)
         }
 
         // Empty state
@@ -99,9 +135,5 @@ Kirigami.ScrollablePage {
             text: "No conversations yet"
             explanation: "Start a conversation by clicking the + button"
         }
-    }
-
-    Component.onCompleted: {
-        conversationModel.refreshConversations()
     }
 }

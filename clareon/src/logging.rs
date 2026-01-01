@@ -4,10 +4,8 @@
 
 use std::sync::LazyLock;
 
-use clareon_core::logging::LoggingGuard;
 use tracing::info;
 use tracing_core::{
-    LevelFilter,
     callsite::Callsite,
     event::Event,
     field::{Field, FieldSet, Value},
@@ -49,9 +47,6 @@ mod ffi {
 }
 
 use cxx_qt_lib::{QMessageLogContext, QString, QtMsgType};
-use tracing_subscriber::{
-    EnvFilter, layer::SubscriberExt, util::SubscriberInitExt,
-};
 
 static FIELD_NAMES: &[&str] = &["message", "qt.function", "qt.file", "qt.line"];
 

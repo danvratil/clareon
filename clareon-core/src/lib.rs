@@ -11,10 +11,10 @@ pub mod backend;
 pub mod config;
 pub mod conversation;
 pub mod error;
+pub mod logging;
 pub mod storage;
 pub mod tools;
 pub mod types;
-pub mod logging;
 
 pub use backend::{
     AnthropicBackend, BedrockBackend, ChatRequest, ChatResponse, LlmBackend, StopReason,

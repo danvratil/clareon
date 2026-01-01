@@ -6,13 +6,13 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
+import cz.dvratil.clareon 1.0
 
 ColumnLayout {
     id: root
     spacing: 0
 
-    required property var appController
-    required property var messageModel
+    required property string conversationId
 
     signal messageSent(string text)
 
@@ -58,57 +58,25 @@ ColumnLayout {
             id: sendButton
             text: "Send"
             icon.name: "document-send"
-            enabled: !root.appController.isWaiting && messageInput.text.trim().length > 0
+            enabled: messageInput.text.trim().length > 0
 
             onClicked: {
                 if (messageInput.text.trim().length === 0) {
                     return
                 }
 
-                // Add user message to the model
-                root.messageModel.appendMessage("user", messageInput.text)
+                // Store the message text before clearing
+                const messageText = messageInput.text
 
-                // Call the app controller to send the message
-                root.appController.sendMessage(messageInput.text)
-
-                // Clear the input
+                // Clear the input first
                 messageInput.text = ""
 
+                // Call ServiceController to send the message
+                ServiceController.sendMessage(root.conversationId, messageText)
+
                 // Emit signal
-                root.messageSent(messageInput.text)
+                root.messageSent(messageText)
             }
-        }
-    }
-
-    // Status bar
-    RowLayout {
-        Layout.fillWidth: true
-        Layout.margins: Kirigami.Units.smallSpacing
-        spacing: Kirigami.Units.smallSpacing
-        visible: root.appController.statusMessage.length > 0
-
-        Controls.Label {
-            Layout.fillWidth: true
-            text: {
-                let msg = root.appController.statusMessage
-                let inTokens = root.appController.inputTokens
-                let outTokens = root.appController.outputTokens
-
-                if (inTokens > 0 || outTokens > 0) {
-                    return msg + " | In: " + inTokens.toLocaleString() + " | Out: " + outTokens.toLocaleString()
-                }
-                return msg
-            }
-            font.pointSize: Kirigami.Theme.smallFont.pointSize
-            opacity: 0.7
-            elide: Text.ElideRight
-        }
-
-        Controls.BusyIndicator {
-            Layout.preferredWidth: Kirigami.Units.iconSizes.small
-            Layout.preferredHeight: Kirigami.Units.iconSizes.small
-            running: root.appController.isWaiting
-            visible: root.appController.isWaiting
         }
     }
 }

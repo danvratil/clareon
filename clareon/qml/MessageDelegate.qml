@@ -35,7 +35,8 @@ Item {
         // Message bubble
         Kirigami.Card {
             Layout.fillWidth: true
-            Layout.maximumWidth: root.width * 0.75
+            /// Assistant messages can use full width, user messages are limited to 75%, right-aligned
+            Layout.maximumWidth: root.role === "user" ? root.width * 0.75 : root.width
 
             background: Rectangle {
                 color: root.role === "user"
@@ -48,62 +49,53 @@ Item {
                 radius: Kirigami.Units.cornerRadius
             }
 
-            contentItem: ColumnLayout {
+            contentItem: TextEdit {
+                Layout.fillWidth: true
+                readOnly: true
+                textFormat: TextEdit.MarkdownText
+                text: root.textContent
+                wrapMode: Text.Wrap
+                color: root.role === "user"
+                    ? Kirigami.Theme.highlightedTextColor
+                    : Kirigami.Theme.textColor
+            }
+
+            footer: RowLayout {
+                Layout.fillWidth: true
                 spacing: Kirigami.Units.smallSpacing
 
                 Controls.Label {
-                    Layout.fillWidth: true
-                    text: root.textContent
-                    wrapMode: Text.Wrap
+                    text: root.role === "user" ? "You" : "Claude"
+                    opacity: 0.7
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    font.bold: true
                     color: root.role === "user"
                         ? Kirigami.Theme.highlightedTextColor
                         : Kirigami.Theme.textColor
                 }
 
-                RowLayout {
+                Controls.Label {
+                    text: "•"
+                    opacity: 0.5
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    color: root.role === "user"
+                        ? Kirigami.Theme.highlightedTextColor
+                        : Kirigami.Theme.textColor
+                }
+
+                Controls.Label {
+                    text: Qt.formatDateTime(new Date(root.createdAt * 1000), "h:mm AP")
+                    opacity: 0.7
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    color: root.role === "user"
+                        ? Kirigami.Theme.highlightedTextColor
+                        : Kirigami.Theme.textColor
+                }
+
+                Item {
                     Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
-
-                    Controls.Label {
-                        text: root.role === "user" ? "You" : "Claude"
-                        opacity: 0.7
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        font.bold: true
-                        color: root.role === "user"
-                            ? Kirigami.Theme.highlightedTextColor
-                            : Kirigami.Theme.textColor
-                    }
-
-                    Controls.Label {
-                        text: "•"
-                        opacity: 0.5
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        color: root.role === "user"
-                            ? Kirigami.Theme.highlightedTextColor
-                            : Kirigami.Theme.textColor
-                    }
-
-                    Controls.Label {
-                        text: Qt.formatDateTime(new Date(root.createdAt * 1000), "h:mm AP")
-                        opacity: 0.7
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        color: root.role === "user"
-                            ? Kirigami.Theme.highlightedTextColor
-                            : Kirigami.Theme.textColor
-                    }
-
-                    Item {
-                        Layout.fillWidth: true
-                    }
                 }
             }
-        }
-
-        // Spacer for assistant messages (left-align)
-        Item {
-            Layout.fillWidth: true
-            Layout.preferredWidth: parent.width * 0.2
-            visible: root.role === "assistant"
         }
     }
 }

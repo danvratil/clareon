@@ -872,6 +872,7 @@ dependencies = [
  "cxx-qt-lib",
  "futures",
  "glob",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-core",

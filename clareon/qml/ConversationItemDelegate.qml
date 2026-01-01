@@ -11,14 +11,11 @@ import cz.dvratil.clareon 1.0
 Controls.ItemDelegate {
     id: delegate
 
-    required property AppController appController
     required property string conversationId
     required property string title
     required property int updatedAt
     required property string model
     required property int messageCount
-
-    highlighted: delegate.conversationId === appController.currentConversationId
 
     contentItem: ColumnLayout {
         spacing: Kirigami.Units.smallSpacing
@@ -29,7 +26,11 @@ Controls.ItemDelegate {
 
             Controls.Label {
                 Layout.fillWidth: true
-                text: delegate.title
+                text: if (delegate.title != "") {
+                    delegate.title
+                } else {
+                    qsTr("Unnamed Conversation")
+                }
                 font.bold: delegate.highlighted
                 elide: Text.ElideRight
             }

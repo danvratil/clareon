@@ -11,13 +11,58 @@ import cz.dvratil.clareon 1.0
 Kirigami.Page {
     id: root
 
-    required property AppController appController
     required property string conversationId
 
-    title: appController.conversationTitle
+    title: qsTr("Conversation")
 
     MessageListModel {
-        id: messageModel
+        id: messageDataProvider
+        conversationId: root.conversationId
+
+        onDataChanged: {
+            // Rebuild the message list from data provider
+            messageListModel.clear()
+            for (var i = 0; i < messageDataProvider.count; i++) {
+                messageListModel.append({
+                    messageId: messageDataProvider.getId(i),
+                    role: messageDataProvider.getRole(i),
+                    textContent: messageDataProvider.getText(i),
+                    createdAt: messageDataProvider.getCreatedAt(i)
+                })
+            }
+        }
+    }
+
+    ListModel {
+        id: messageListModel
+    }
+
+    // Connect to ServiceController signals
+    Connections {
+        target: ServiceController
+
+        function onMessagesLoaded(conversationId) {
+            if (conversationId === root.conversationId) {
+                messageDataProvider.refresh()
+            }
+        }
+
+        function onMessagesChanged(conversationId) {
+            if (conversationId === root.conversationId) {
+                messageDataProvider.refresh()
+            }
+        }
+
+        function onStreamingComplete(conversationId) {
+            if (conversationId === root.conversationId) {
+                messageDataProvider.refresh()
+            }
+        }
+    }
+
+    // Set which conversation this model is displaying
+    Component.onCompleted: {
+        ServiceController.loadMessages(root.conversationId)
     }
 
     ColumnLayout {
@@ -33,7 +78,7 @@ Kirigami.Page {
                 id: messagesView
                 clip: true
 
-                model: root.messageModel
+                model: messageListModel
 
                 // Scroll to bottom when new messages arrive
                 onCountChanged: {
@@ -65,8 +110,7 @@ Kirigami.Page {
         // Message composer
         MessageComposer {
             Layout.fillWidth: true
-            appController: root.appController
-            messageModel: root.messageModel
+            conversationId: root.conversationId
         }
     }
 }

@@ -27,7 +27,7 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use app::{App, AppOptions};
-use clareon_core::config::{Config, Backend};
+use clareon_core::config::{Backend, Config};
 use cli::Args;
 
 /// Get the log file path

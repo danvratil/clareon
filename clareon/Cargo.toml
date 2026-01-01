@@ -20,6 +20,9 @@ cxx-qt-lib = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "sync"] }
 futures = { workspace = true }
 
+# Serialization
+serde_json = { workspace = true }
+
 # Logging
 tracing = { workspace = true }
 tracing-core = { workspace = true }

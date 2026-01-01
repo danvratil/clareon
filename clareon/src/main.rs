@@ -2,61 +2,58 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use clareon_core::backend::{AnthropicBackend, BedrockBackend, LlmBackend};
-use clareon_core::logging::init_logging;
-use clareon_core::{Config, ConversationManager, Storage};
-use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
-use std::sync::Arc;
+use std::sync::{Mutex, OnceLock};
+use tokio::runtime::Runtime;
 
-pub mod app_controller;
+use clareon_core::Config;
+use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
+
+use service::ClareonService;
+
+pub mod conversation_list_model;
 pub mod logging;
-pub mod mock;
-pub mod models;
+pub mod message_list_model;
+pub mod qt;
+pub mod service;
+pub mod service_controller;
+
+// Global service instance
+static SERVICE: OnceLock<Mutex<ClareonService>> = OnceLock::new();
+
+/// Get the tokio runtime
+pub fn get_runtime() -> &'static Runtime {
+    // This is a workaround to get a static reference to the runtime
+    // We rely on the fact that the SERVICE is never dropped
+    unsafe {
+        let service_ptr = SERVICE.get().unwrap().lock().unwrap().runtime() as *const Runtime;
+        &*service_ptr
+    }
+}
 
 fn main() {
     // Load configuration
     let config = Config::load().expect("Failed to load config");
 
-    let _guard = init_logging(&config).expect("Failed to initialize logging");
+    // Initialize logging
+    let _guard =
+        clareon_core::logging::init_logging(&config).expect("Failed to initialize logging");
     logging::init_qt_logging();
 
-    // Initialize tokio runtime
-    let runtime = Arc::new(
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to create tokio runtime"),
-    );
+    // Create the service
+    let mut service = ClareonService::new(config).expect("Failed to create service");
 
-    // Initialize core components (blocking on the runtime)
-    let manager = runtime.block_on(async {
-        // Get database URL and create storage
-        let db_url = Config::database_url().expect("Failed to get database URL");
-        let storage = Storage::new(&db_url)
-            .await
-            .expect("Failed to initialize storage");
+    // Get the service handle and response receiver before storing service
+    let handle = service.handle();
+    let response_rx = service
+        .take_response_receiver()
+        .expect("Failed to get response receiver");
 
-        // Create backend based on configuration
-        let backend = create_backend_from_config(&config)
-            .await
-            .expect("Failed to create backend");
+    // Store service in global
+    SERVICE.set(Mutex::new(service)).ok();
 
-        // Create title generation backend (same as main backend for now)
-        let title_backend = create_backend_from_config(&config)
-            .await
-            .expect("Failed to create title backend");
-
-        Arc::new(ConversationManager::new(
-            storage,
-            backend,
-            title_backend,
-            config,
-        ))
-    });
-
-    // Initialize global singletons for app_controller and models
-    app_controller::init_runtime(runtime.clone(), manager.clone());
-    models::init_runtime(runtime.clone(), manager.clone());
+    // Initialize Qt - pass handle and response receiver
+    qt::init_service_handle(handle);
+    qt::init_response_receiver(response_rx);
 
     let mut app = QGuiApplication::new();
     let mut engine = QQmlApplicationEngine::new();
@@ -73,35 +70,5 @@ fn main() {
     // Run the application event loop
     if let Some(app) = app.as_mut() {
         app.exec();
-    }
-}
-
-/// Create an LLM backend based on the configuration
-async fn create_backend_from_config(config: &Config) -> Result<Arc<dyn LlmBackend>, String> {
-    match config.default_backend {
-        Backend::Anthropic => {
-            // For now, only support API key from environment variable
-            // Keyring support can be added later
-            let api_key = std::env::var("ANTHROPIC_API_KEY")
-                .map_err(|_| "ANTHROPIC_API_KEY environment variable not set".to_string())?;
-
-            Ok(Arc::new(AnthropicBackend::new(api_key)))
-        }
-        Backend::Bedrock => {
-            let region = &config.backends.bedrock.region;
-            let profile = config.backends.bedrock.profile.as_deref();
-
-            let backend = if let Some(profile) = profile {
-                BedrockBackend::with_profile(region.clone(), profile.to_string())
-                    .await
-                    .map_err(|e| format!("Failed to create Bedrock backend: {}", e))?
-            } else {
-                BedrockBackend::new(region.clone())
-                    .await
-                    .map_err(|e| format!("Failed to create Bedrock backend: {}", e))?
-            };
-
-            Ok(Arc::new(backend))
-        }
     }
 }

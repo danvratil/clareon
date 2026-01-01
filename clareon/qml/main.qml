@@ -16,42 +16,15 @@ Kirigami.ApplicationWindow {
     minimumWidth: 800
     minimumHeight: 600
 
-    // Create the models and controller
-    AppController {
-        id: appController
-    }
-
-    // Signal connections for AppController
-    Connections {
-        target: appController
-
-        function onConversationChanged() {
-            messageModel.loadMessages(appController.currentConversationId)
-        }
-
-        function onMessagesLoaded() {
-            // Messages loaded, scroll handled by ChatView
-        }
-
-        function onMessageSent() {
-            messageModel.loadMessages(appController.currentConversationId)
-        }
-
-        function onError(message) {
-            // TODO: Show error dialog instead of just logging
-            console.error("Error:", message)
-        }
+    // ServiceController singleton is automatically available
+    Component.onCompleted: {
+        console.log("Clareon initialized")
     }
 
     // Keyboard shortcuts
     Shortcut {
         sequence: "Ctrl+N"
-        onActivated: appController.newConversation()
-    }
-
-    Shortcut {
-        sequence: "Ctrl+O"
-        onActivated: drawer.drawerOpen = !drawer.drawerOpen
+        onActivated: ServiceController.newConversation()
     }
 
     Shortcut {
@@ -119,10 +92,13 @@ Kirigami.ApplicationWindow {
     }
 
     pageStack {
-        initialPage: ConversationListPage {
-            appController: root.appController
-        }
+        initialPage: conversationListPage
         columnView.columnResizeMode: pageStack.wideMode ? Kirigami.ColumnView.DynamicColumns : Kirigami.ColumnView.SingleColumn
+    }
+
+    Component {
+        id: conversationListPage
+        ConversationListPage {}
     }
 
     // Configuration window loader

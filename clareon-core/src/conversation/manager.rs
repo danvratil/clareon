@@ -117,7 +117,8 @@ impl ConversationManager {
 
     /// Get all messages for a conversation
     pub async fn get_messages(&self, conversation_id: &ConversationId) -> Result<Vec<Message>> {
-        self.storage.get_messages(conversation_id).await
+        let messages = self.storage.get_messages(conversation_id).await?;
+        Ok(messages)
     }
 
     /// Send a user message and get the assistant's response
@@ -508,7 +509,7 @@ impl ConversationManager {
     }
 
     /// List all conversations
-    pub async fn list_conversations(&self) -> Result<Vec<ConversationSummary>> {
+    pub async fn refresh_conversations(&self) -> Result<Vec<ConversationSummary>> {
         self.storage.list_conversations().await
     }
 

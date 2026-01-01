@@ -29,9 +29,10 @@ fn main() {
             .depend("QtQuick"),
     )
     .files([
-        "src/models.rs",
-        "src/app_controller.rs",
-        "src/logging.rs"
+        "src/logging.rs",
+        "src/service_controller.rs",
+        "src/conversation_list_model.rs",
+        "src/message_list_model.rs",
     ])
     .qt_module("Quick")
     .cpp_file("src/cpp/logging.cpp")

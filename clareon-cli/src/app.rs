@@ -12,9 +12,15 @@ use tokio::sync::mpsc;
 use ratatui::widgets::ListState;
 
 use clareon_core::{
-    ArtifactManager, BedrockBackend, BubblewrapSandbox, Config, ConversationManager, LlmBackend, NoneSandbox, Sandbox, SandboxMode, SandboxModeConfig, Storage, StreamUpdate, ToolExecutor, ToolRegistry, WorkspaceManager, backend::Usage, config::Backend, register_builtin_tools, types::{
+    ArtifactManager, BedrockBackend, BubblewrapSandbox, Config, ConversationManager, LlmBackend,
+    NoneSandbox, Sandbox, SandboxMode, SandboxModeConfig, Storage, StreamUpdate, ToolExecutor,
+    ToolRegistry, WorkspaceManager,
+    backend::Usage,
+    config::Backend,
+    register_builtin_tools,
+    types::{
         ContentBlock, Conversation, ConversationId, ConversationSummary, Message, SearchResult,
-    }
+    },
 };
 
 /// Current view mode
@@ -332,7 +338,7 @@ impl App {
 
     /// Load conversation list
     pub async fn load_conversation_list(&mut self) -> anyhow::Result<()> {
-        self.conversations = self.manager.list_conversations().await?;
+        self.conversations = self.manager.refresh_conversations().await?;
         self.view_mode = ViewMode::ConversationList;
         Ok(())
     }

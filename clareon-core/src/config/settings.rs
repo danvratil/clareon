@@ -292,7 +292,7 @@ pub struct LoggingConfig {
 
     /// Whether to log to file or to stdout
     #[serde(default)]
-    pub log_to_file: bool
+    pub log_to_file: bool,
 }
 
 fn default_log_level() -> String {
