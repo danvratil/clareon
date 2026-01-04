@@ -171,26 +171,40 @@ impl ConversationManager {
         Ok(response)
     }
 
+    /// Appends user message to the store and returns the updated message.
+    pub async fn append_user_message(
+        &self,
+        conv_id: ConversationId,
+        user_input: &str,
+    ) -> Result<Message> {
+        // Create and store user message
+        let mut user_message = Message::user(conv_id, user_input);
+        let user_msg_id = self.storage.add_message(&user_message).await?;
+        user_message.id = user_msg_id;
+        debug!("Stored user message: {}", user_msg_id);
+        Ok(user_message)
+    }
+
     /// Send a user message and stream the assistant's response
     ///
     /// This handles the full chat turn with streaming:
-    /// 1. Store the user message
-    /// 2. Stream from the LLM backend
-    /// 3. Accumulate and forward streaming events
-    /// 4. Store the complete assistant response when done
-    /// 5. Generate title after first exchange (if needed)
+    /// 1. Stream from the LLM backend
+    /// 2. Accumulate and forward streaming events
+    /// 3. Store the complete assistant response when done
+    /// 4. Generate title after first exchange (if needed)
     pub async fn send_message_stream(
         &self,
         conversation: &mut Conversation,
-        user_input: &str,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamUpdate>> + Send>>> {
-        // Create and store user message
-        let user_message = Message::user(conversation.id.clone(), user_input);
-        let user_msg_id = self.storage.add_message(&user_message).await?;
-        debug!("Stored user message: {}", user_msg_id);
-
         // Get conversation history
         let messages = self.storage.get_messages(&conversation.id).await?;
+        // Find the last user message for title generation later
+        let user_input = messages
+            .iter()
+            .rev()
+            .find(|m| m.role == Role::User)
+            .and_then(|m| m.text())
+            .map(|s| s.to_string());
 
         // Build the request
         let system_prompt = self.get_effective_system_prompt(conversation);
@@ -206,7 +220,6 @@ impl ConversationManager {
         let conv_id = conversation.id.clone();
         let storage = self.storage.clone();
         let model = conversation.model.clone();
-        let user_input_clone = user_input.to_string();
         let title_generator = self.title_generator.clone();
         let mut conv_for_title = conversation.clone();
 
@@ -286,9 +299,9 @@ impl ConversationManager {
             }
 
             // Generate title if needed (don't block on this)
-            if conv_for_title.title.is_none() && stop_reason == Some(StopReason::EndTurn) {
+            if conv_for_title.title.is_none() && stop_reason == Some(StopReason::EndTurn) && let Some(user_input) = user_input {
                 let assistant_text = message.text().unwrap_or("");
-                if let Ok(title) = title_generator.generate_title(&user_input_clone, assistant_text).await {
+                if let Ok(title) = title_generator.generate_title(&user_input, assistant_text).await {
                     info!("Generated title: {}", title);
                     conv_for_title.set_title(&title);
                     let _ = storage.update_conversation(&conv_for_title).await;

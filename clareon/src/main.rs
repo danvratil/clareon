@@ -40,23 +40,21 @@ fn main() {
     logging::init_qt_logging();
 
     // Create the service
-    let mut service = ClareonService::new(config).expect("Failed to create service");
+    let service = ClareonService::new(config).expect("Failed to create service");
 
-    // Get the service handle and response receiver before storing service
+    // Get the service handle before storing service
     let handle = service.handle();
-    let response_rx = service
-        .take_response_receiver()
-        .expect("Failed to get response receiver");
 
     // Store service in global
     SERVICE.set(Mutex::new(service)).ok();
 
-    // Initialize Qt - pass handle and response receiver
+    // Initialize Qt - pass handle
     qt::init_service_handle(handle);
-    qt::init_response_receiver(response_rx);
 
     let mut app = QGuiApplication::new();
     let mut engine = QQmlApplicationEngine::new();
+
+    message_list_model::qml_register_type();
 
     let qml_url = QUrl::from("qrc:/qt/qml/cz/dvratil/clareon/qml/main.qml");
     if let Some(engine) = engine.as_mut() {

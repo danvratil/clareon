@@ -5,10 +5,10 @@
 //! Service worker that processes commands asynchronously
 
 use futures::StreamExt;
-use tokio::sync::mpsc;
+use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
 
-use clareon_core::types::{ConversationSummary, Message};
+use clareon_core::types::{ConversationId, ConversationSummary, Message};
 use clareon_core::{ConversationManager, StreamUpdate};
 
 use super::{
@@ -19,16 +19,16 @@ use super::{
 /// Service worker that processes commands on the tokio runtime
 pub struct ServiceWorker {
     manager: ConversationManager,
-    command_rx: mpsc::UnboundedReceiver<Command>,
-    response_tx: mpsc::UnboundedSender<Response>,
+    command_rx: broadcast::Receiver<Command>,
+    response_tx: broadcast::Sender<Response>,
 }
 
 impl ServiceWorker {
     /// Create a new service worker
     pub fn new(
         manager: ConversationManager,
-        command_rx: mpsc::UnboundedReceiver<Command>,
-        response_tx: mpsc::UnboundedSender<Response>,
+        command_rx: broadcast::Receiver<Command>,
+        response_tx: broadcast::Sender<Response>,
     ) -> Self {
         Self {
             manager,
@@ -43,7 +43,7 @@ impl ServiceWorker {
     pub async fn run(mut self) {
         info!("Service worker started");
 
-        while let Some(cmd) = self.command_rx.recv().await {
+        while let Ok(cmd) = self.command_rx.recv().await {
             debug!("Processing command: {:?}", cmd);
 
             match cmd {
@@ -180,12 +180,33 @@ impl ServiceWorker {
         }
     }
 
-    async fn handle_send_message(
-        &self,
-        conv_id: clareon_core::types::ConversationId,
-        text: String,
-    ) {
-        // First load the conversation
+    async fn handle_send_message(&self, conv_id: ConversationId, text: String) {
+        // First store the user message to the conversation
+        match self
+            .manager
+            .append_user_message(conv_id.clone(), &text)
+            .await
+        {
+            Ok(msg) => {
+                let _ = self.response_tx.send(Response::MessageSent {
+                    conv_id: conv_id.clone(),
+                    message: message_to_data(msg),
+                });
+            }
+            Err(e) => {
+                error!(
+                    "Failed to append user message to conversation {}: {}",
+                    conv_id, e
+                );
+                let _ = self.response_tx.send(Response::Error {
+                    command: format!("SendMessage({})", conv_id),
+                    error: format!("Failed to append user message: {}", e),
+                });
+                return;
+            }
+        };
+
+        // Then load the conversation
         let mut conversation = match self.manager.load_conversation(&conv_id).await {
             Ok(conv) => conv,
             Err(e) => {
@@ -207,11 +228,7 @@ impl ServiceWorker {
         });
 
         // Send message with streaming
-        match self
-            .manager
-            .send_message_stream(&mut conversation, &text)
-            .await
-        {
+        match self.manager.send_message_stream(&mut conversation).await {
             Ok(mut stream) => {
                 let mut accumulated = String::new();
 

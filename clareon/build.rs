@@ -34,7 +34,9 @@ fn main() {
         "src/conversation_list_model.rs",
         "src/message_list_model.rs",
     ])
-    .qt_module("Quick")
     .cpp_file("src/cpp/logging.cpp")
+    .cpp_file("src/cpp/message_list_model.cpp")
+    .qt_module("Quick")
+    .qt_module("Qml")
     .build();
 }

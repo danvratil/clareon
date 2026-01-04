@@ -28,6 +28,11 @@ fn get_service_handle() -> ServiceHandle {
         .clone()
 }
 
+/// Try to get the global service handle (returns None if not initialized)
+pub fn try_get_service_handle() -> Option<ServiceHandle> {
+    SERVICE_HANDLE.get().cloned()
+}
+
 #[cxx_qt::bridge]
 mod ffi {
     unsafe extern "C++" {
@@ -113,14 +118,14 @@ pub struct ServiceControllerRust {
 
 impl cxx_qt::Initialize for ffi::ServiceController {
     fn initialize(self: Pin<&mut Self>) {
-        // Take the response receiver (can only be done once)
-        let response_rx = crate::qt::take_response_receiver();
+        // Subscribe to broadcast events
+        let handle = get_service_handle();
+        let mut response_rx = handle.subscribe();
         let qt_thread = self.qt_thread();
 
         // Spawn task to forward responses to Qt thread
         crate::get_runtime().spawn(async move {
-            let mut rx = response_rx;
-            while let Some(response) = rx.recv().await {
+            while let Ok(response) = response_rx.recv().await {
                 let _ = qt_thread.queue(move |mut controller| {
                     controller.as_mut().handle_response(response);
                 });
@@ -170,29 +175,16 @@ impl ffi::ServiceController {
                 self.as_mut().conversations_changed();
             }
 
-            Response::MessagesLoaded { conv_id, messages } => {
-                // Update cache
-                crate::qt::messages_cache()
-                    .lock()
-                    .unwrap()
-                    .insert(conv_id.clone(), messages);
-
-                // Emit signal
+            Response::MessagesLoaded { conv_id, .. } => {
+                // MessageListModel now handles this directly
+                // Emit signal for UI feedback
                 self.as_mut()
                     .messages_loaded(QString::from(&conv_id.to_string()));
             }
 
-            Response::MessageSent { conv_id, message } => {
-                // Add to cache
-                if let Some(msgs) = crate::qt::messages_cache()
-                    .lock()
-                    .unwrap()
-                    .get_mut(&conv_id)
-                {
-                    msgs.push(message);
-                }
-
-                // Emit signal
+            Response::MessageSent { conv_id, .. } => {
+                // MessageListModel now handles this directly
+                // Emit signal for UI feedback
                 self.as_mut()
                     .messages_changed(QString::from(&conv_id.to_string()));
             }
@@ -214,17 +206,9 @@ impl ffi::ServiceController {
                 );
             }
 
-            Response::StreamingComplete { conv_id, message } => {
-                // Add final message to cache
-                if let Some(msgs) = crate::qt::messages_cache()
-                    .lock()
-                    .unwrap()
-                    .get_mut(&conv_id)
-                {
-                    msgs.push(message);
-                }
-
-                // Emit signals
+            Response::StreamingComplete { conv_id, .. } => {
+                // MessageListModel now handles this directly
+                // Emit signals for UI feedback
                 self.as_mut()
                     .streaming_complete(QString::from(&conv_id.to_string()));
                 self.as_mut()

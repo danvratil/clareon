@@ -14,15 +14,16 @@ pub use worker::ServiceWorker;
 
 use std::sync::Arc;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc;
+use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
 use clareon_core::{Config, ConversationManager, Error, Result, Storage};
 
-/// Handle for sending commands to the service
+/// Handle for sending commands to the service and receiving responses
 #[derive(Clone)]
 pub struct ServiceHandle {
-    command_tx: mpsc::UnboundedSender<Command>,
+    command_tx: broadcast::Sender<Command>,
+    response_tx: broadcast::Sender<Response>,
 }
 
 impl ServiceHandle {
@@ -30,8 +31,12 @@ impl ServiceHandle {
     pub fn send(
         &self,
         command: Command,
-    ) -> std::result::Result<(), mpsc::error::SendError<Command>> {
+    ) -> std::result::Result<usize, tokio::sync::broadcast::error::SendError<Command>> {
         self.command_tx.send(command)
+    }
+
+    pub fn subscribe(&self) -> broadcast::Receiver<Response> {
+        self.response_tx.subscribe()
     }
 }
 
@@ -39,7 +44,6 @@ impl ServiceHandle {
 pub struct ClareonService {
     runtime: Runtime,
     handle: ServiceHandle,
-    response_rx: Option<mpsc::UnboundedReceiver<Response>>,
     worker_handle: JoinHandle<()>,
 }
 
@@ -77,19 +81,21 @@ impl ClareonService {
         })?;
 
         // Create channels for command/response
-        let (command_tx, command_rx) = mpsc::unbounded_channel();
-        let (response_tx, response_rx) = mpsc::unbounded_channel();
+        let (command_tx, command_rx) = broadcast::channel(100);
+        let (response_tx, _) = broadcast::channel(100);
 
         // Create and spawn worker
-        let worker = ServiceWorker::new(manager, command_rx, response_tx);
+        let worker = ServiceWorker::new(manager, command_rx, response_tx.clone());
         let worker_handle = runtime.spawn(async move {
             worker.run().await;
         });
 
         Ok(Self {
             runtime,
-            handle: ServiceHandle { command_tx },
-            response_rx: Some(response_rx),
+            handle: ServiceHandle {
+                command_tx,
+                response_tx,
+            },
             worker_handle,
         })
     }
@@ -97,13 +103,6 @@ impl ClareonService {
     /// Get a handle for sending commands
     pub fn handle(&self) -> ServiceHandle {
         self.handle.clone()
-    }
-
-    /// Take the response receiver (can only be called once)
-    ///
-    /// This is used by the Qt layer to receive responses from the service.
-    pub fn take_response_receiver(&mut self) -> Option<mpsc::UnboundedReceiver<Response>> {
-        self.response_rx.take()
     }
 
     /// Get a reference to the runtime

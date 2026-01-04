@@ -7,6 +7,7 @@ import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import cz.dvratil.clareon 1.0
+import cc.clareon.core 1.0
 
 Kirigami.Page {
     id: root
@@ -17,53 +18,8 @@ Kirigami.Page {
     padding: 0
 
     MessageListModel {
-        id: messageDataProvider
-        conversationId: root.conversationId
-
-        onDataChanged: {
-            // Rebuild the message list from data provider
-            messageListModel.clear()
-            for (var i = 0; i < messageDataProvider.count; i++) {
-                messageListModel.append({
-                    messageId: messageDataProvider.getId(i),
-                    role: messageDataProvider.getRole(i),
-                    textContent: messageDataProvider.getText(i),
-                    createdAt: messageDataProvider.getCreatedAt(i)
-                })
-            }
-        }
-    }
-
-    ListModel {
         id: messageListModel
-    }
-
-    // Connect to ServiceController signals
-    Connections {
-        target: ServiceController
-
-        function onMessagesLoaded(conversationId) {
-            if (conversationId === root.conversationId) {
-                messageDataProvider.refresh()
-            }
-        }
-
-        function onMessagesChanged(conversationId) {
-            if (conversationId === root.conversationId) {
-                messageDataProvider.refresh()
-            }
-        }
-
-        function onStreamingComplete(conversationId) {
-            if (conversationId === root.conversationId) {
-                messageDataProvider.refresh()
-            }
-        }
-    }
-
-    // Set which conversation this model is displaying
-    Component.onCompleted: {
-        ServiceController.loadMessages(root.conversationId)
+        conversationId: root.conversationId
     }
 
     ColumnLayout {
@@ -78,10 +34,25 @@ Kirigami.Page {
 
             contentWidth: availableWidth
 
-            ColumnLayout {
+            Controls.ScrollBar.vertical.policy: Controls.ScrollBar.AsNeeded
+
+            // I tried listening to various Model signals (rowsInserted, dataChanged, etc.), but
+            // it seems that when those signals are triggered, the contentHeight is not yet updated
+            // (probably because the delegate is not yet instantiated or updated), so in the end
+            // scrolling to bottom when contentHeight changes seems to be the only reliable way.
+            // FIXME: This makes it impossible for the user to scroll up while a response is being
+            // streamed in, as contentHeight keeps changing. We need to make sure this does't
+            // trigger when the user scrolls up manually.
+            onContentHeightChanged: {
+                scrollToBottom()
+            }
+
+            Column {
                 id: messagesView
                 width: messageView.availableWidth
                 spacing: 0
+
+                anchors.fill: parent
 
                 // The Repeater is a bit unfortunate choice here, but ListView has serious issues with
                 // dynamic height items and scrolling (and scrollbars), since ListView can only guesstimate
@@ -93,8 +64,8 @@ Kirigami.Page {
                     model: messageListModel
 
                     MessageDelegate {
-                        Layout.fillWidth: true
-                        // Role maps to delegate's properties automatically
+                        width: parent.width
+                        // Role names from MessageListModel are automatically set as properties
                     }
                 }
 
@@ -109,25 +80,11 @@ Kirigami.Page {
                 }
             }
 
-            Controls.ScrollBar.vertical: Controls.ScrollBar { }
-
             // Scroll to bottom helper
             function scrollToBottom() {
                 if (contentHeight > height) {
                     contentItem.contentY = contentHeight - height
                 }
-            }
-
-            // Auto-scroll when messages change
-            Connections {
-                target: messageListModel
-                function onCountChanged() {
-                    Qt.callLater(() => messageView.scrollToBottom())
-                }
-            }
-
-            Component.onCompleted: {
-                Qt.callLater(() => scrollToBottom())
             }
         }
 

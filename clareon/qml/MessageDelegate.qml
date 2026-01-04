@@ -15,6 +15,7 @@ Item {
     required property string role
     required property string textContent
     required property int createdAt
+    required property string messageState
 
     height: messageLayout.implicitHeight + Kirigami.Units.largeSpacing * 2
 
@@ -23,6 +24,11 @@ Item {
         anchors.fill: parent
         anchors.margins: Kirigami.Units.largeSpacing
         spacing: Kirigami.Units.largeSpacing
+
+        Controls.BusyIndicator {
+            visible: root.messageState == "thinking" && root.role == "assistant"
+            running: root.messageState == "thinking"
+        }
 
         // Spacer for user messages (right-align)
         Item {
@@ -36,6 +42,8 @@ Item {
             Layout.fillWidth: true
             /// Assistant messages can use full width, user messages are limited to 75%, right-aligned
             Layout.maximumWidth: root.role === "user" ? root.width * 0.75 : root.width
+
+            visible: root.messageState !== "thinking"
 
             background: Rectangle {
                 color: root.role === "user"
