@@ -20,8 +20,15 @@ Kirigami.ScrollablePage {
 
     actions: [
         Kirigami.Action {
+            text: qsTr("New Conversation")
+            icon.name: "message-new"
+            onTriggered: {
+                console.log("Create new conversation")
+            }
+        },
+        Kirigami.Action {
             text: qsTr("Settings")
-            icon.name: "settings-system"
+            icon.name: "settings-configure"
             onTriggered: {
                 console.log("Open settings")
             }

@@ -17,6 +17,23 @@ Kirigami.Page {
     title: qsTr("Conversation")
     padding: 0
 
+    actions: [
+        Kirigami.Action {
+            text: qsTr("Conversation settings")
+            icon.name: "settings-configure"
+            onTriggered: {
+                console.log("Open conversation settings for", root.conversationId)
+            }
+        },
+        Kirigami.Action {
+            text: qsTr("Delete conversation")
+            icon.name: "edit-delete"
+            onTriggered: {
+                console.log("Delete conversation", root.conversationId)
+            }
+        }
+    ]
+
     MessageListModel {
         id: messageListModel
         conversationId: root.conversationId
