@@ -29,10 +29,26 @@ Kirigami.Page {
             text: qsTr("Delete conversation")
             icon.name: "edit-delete"
             onTriggered: {
-                console.log("Delete conversation", root.conversationId)
+                deleteConfirmDialog.open()
             }
         }
     ]
+
+    // Confirmation dialog for deleting conversations
+    Kirigami.PromptDialog {
+        id: deleteConfirmDialog
+        title: qsTr("Delete Conversation")
+        subtitle: qsTr("Are you sure you want to delete this conversation? This action cannot be undone.")
+        standardButtons: Kirigami.Dialog.Ok | Kirigami.Dialog.Cancel
+
+        onAccepted: {
+            ServiceController.deleteConversation(root.conversationId)
+            // Navigate back to the conversation list
+            if (pageStack.depth > 1) {
+                pageStack.pop()
+            }
+        }
+    }
 
     MessageListModel {
         id: messageListModel
