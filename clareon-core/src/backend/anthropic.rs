@@ -16,6 +16,7 @@ use tracing::{debug, info, warn};
 use super::traits::{
     ChatRequest, ChatResponse, ContentDelta, LlmBackend, ModelInfo, StopReason, StreamEvent, Usage,
 };
+use crate::config::{ANTHROPIC_API_KEY, AnthropicConfig, SecretStore};
 use crate::error::BackendError;
 use crate::types::{ContentBlock, ConversationId, Message, Role};
 
@@ -30,7 +31,66 @@ pub struct AnthropicBackend {
 }
 
 impl AnthropicBackend {
+    /// Create a new Anthropic backend from configuration
+    ///
+    /// This will retrieve the API key from either the system keyring (if configured)
+    /// or fall back to the ANTHROPIC_API_KEY environment variable.
+    pub async fn from_config(config: &AnthropicConfig) -> Result<Self, BackendError> {
+        let api_key = if config.api_key_in_keyring {
+            // Try to get from keyring first
+            match SecretStore::new().await {
+                Ok(store) => match store.get_secret(ANTHROPIC_API_KEY).await {
+                    Ok(key) => {
+                        debug!("Retrieved API key from keyring");
+                        key
+                    }
+                    Err(_) => {
+                        // Fall back to environment variable
+                        debug!("API key not found in keyring, falling back to environment");
+                        std::env::var("ANTHROPIC_API_KEY").map_err(|_| {
+                            BackendError::Configuration(
+                                "ANTHROPIC_API_KEY not found in keyring or environment".to_string(),
+                            )
+                        })?
+                    }
+                },
+                Err(_) => {
+                    // If secret service is not available, fall back to environment
+                    debug!("Secret service not available, using environment variable");
+                    std::env::var("ANTHROPIC_API_KEY").map_err(|_| {
+                        BackendError::Configuration(
+                            "ANTHROPIC_API_KEY environment variable not set".to_string(),
+                        )
+                    })?
+                }
+            }
+        } else {
+            // Use environment variable
+            std::env::var("ANTHROPIC_API_KEY").map_err(|_| {
+                BackendError::Configuration(
+                    "ANTHROPIC_API_KEY environment variable not set".to_string(),
+                )
+            })?
+        };
+
+        let base_url = config
+            .base_url
+            .clone()
+            .unwrap_or_else(|| ANTHROPIC_API_URL.to_string());
+
+        info!("Initializing Anthropic backend with base URL: {}", base_url);
+
+        Ok(Self {
+            client: Client::new(),
+            api_key,
+            base_url,
+        })
+    }
+
     /// Create a new Anthropic backend with the given API key
+    ///
+    /// This is a convenience constructor for testing. Use `from_config` in production.
+    #[cfg(test)]
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
             client: Client::new(),
@@ -40,6 +100,9 @@ impl AnthropicBackend {
     }
 
     /// Create a new Anthropic backend with a custom base URL
+    ///
+    /// This is a convenience constructor for testing. Use `from_config` in production.
+    #[cfg(test)]
     pub fn with_base_url(api_key: impl Into<String>, base_url: impl Into<String>) -> Self {
         Self {
             client: Client::new(),

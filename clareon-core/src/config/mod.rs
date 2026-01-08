@@ -10,5 +10,5 @@
 mod secrets;
 mod settings;
 
-pub use secrets::SecretStore;
-pub use settings::{Backend, Config, SandboxModeConfig};
+pub use secrets::{ANTHROPIC_API_KEY, SecretStore};
+pub use settings::{AnthropicConfig, Backend, Config, SandboxModeConfig};

@@ -106,6 +106,8 @@ Key configuration sections:
 - `default_backend`: Choose between "bedrock" or "anthropic"
 - `default_model`: Default model to use
 - `backends`: Backend-specific settings (AWS region/profile, API keys, prompt caching)
+  - `backends.anthropic.base_url`: Custom API endpoint (useful for development/testing with mock server)
+  - `backends.anthropic.api_key_in_keyring`: Whether to retrieve API key from system keyring
 - `ui`: UI preferences (theme, streaming)
 - `system_prompt`: System prompt configuration
 - `models`: Model selection for specific tasks (e.g., title generation)

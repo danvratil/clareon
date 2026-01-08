@@ -80,6 +80,9 @@ pub enum BackendError {
 
     #[error("Service unavailable")]
     ServiceUnavailable,
+
+    #[error("Configuration error: {0}")]
+    Configuration(String),
 }
 
 /// Errors specific to configuration

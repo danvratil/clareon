@@ -22,12 +22,11 @@ pub use traits::*;
 pub async fn create_backend_from_config(config: &Config) -> Result<Arc<dyn LlmBackend>, String> {
     match config.default_backend {
         Backend::Anthropic => {
-            // For now, only support API key from environment variable
-            // Keyring support can be added later
-            let api_key = std::env::var("ANTHROPIC_API_KEY")
-                .map_err(|_| "ANTHROPIC_API_KEY environment variable not set".to_string())?;
+            let backend = AnthropicBackend::from_config(&config.backends.anthropic)
+                .await
+                .map_err(|e| format!("Failed to create Anthropic backend: {}", e))?;
 
-            Ok(Arc::new(AnthropicBackend::new(api_key)))
+            Ok(Arc::new(backend))
         }
         Backend::Bedrock => {
             let region = &config.backends.bedrock.region;
