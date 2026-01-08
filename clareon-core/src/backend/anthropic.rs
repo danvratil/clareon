@@ -397,6 +397,14 @@ impl LlmBackend for AnthropicBackend {
     fn available_models(&self) -> &[ModelInfo] {
         &ANTHROPIC_MODELS
     }
+
+    fn default_model(&self) -> &ModelInfo {
+        // Return Sonnet as the default model
+        ANTHROPIC_MODELS
+            .iter()
+            .find(|m| m.id.contains("sonnet"))
+            .unwrap_or_else(|| &ANTHROPIC_MODELS[0])
+    }
 }
 
 // Anthropic API types
@@ -587,20 +595,20 @@ impl AnthropicBackend {
     pub fn get_models() -> Vec<ModelInfo> {
         vec![
             ModelInfo {
-                id: "claude-opus-4-20250514".to_string(),
-                name: "Claude Opus 4".to_string(),
+                id: "claude-opus-4-5-20251101".to_string(),
+                name: "Claude Opus 4.5".to_string(),
                 context_window: 200000,
                 max_output_tokens: 32000,
             },
             ModelInfo {
-                id: "claude-sonnet-4-20250514".to_string(),
-                name: "Claude Sonnet 4".to_string(),
+                id: "claude-sonnet-4-5-20250929".to_string(),
+                name: "Claude Sonnet 4.5".to_string(),
                 context_window: 200000,
                 max_output_tokens: 16000,
             },
             ModelInfo {
-                id: "claude-3-5-haiku-20241022".to_string(),
-                name: "Claude 3.5 Haiku".to_string(),
+                id: "claude-haiku-4-5-20251001".to_string(),
+                name: "Claude Haiku 4.5".to_string(),
                 context_window: 200000,
                 max_output_tokens: 8192,
             },

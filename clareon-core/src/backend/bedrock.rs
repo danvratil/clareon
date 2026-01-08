@@ -5,6 +5,7 @@
 //! AWS Bedrock backend implementation
 
 use std::pin::Pin;
+use std::sync::LazyLock;
 
 use async_trait::async_trait;
 use aws_config::BehaviorVersion;
@@ -540,6 +541,18 @@ impl LlmBackend for BedrockBackend {
 
     fn available_models(&self) -> &[ModelInfo] {
         &[] // Models are region-dependent, use get_models() instead
+    }
+
+    fn  default_model(&self) -> &ModelInfo {
+        // Return Claude Opus 4 as the default model
+        static DEFAULT_MODEL: LazyLock<ModelInfo> = LazyLock::new(|| ModelInfo {
+            id: "anthropic.claude-sonnet-4-20250514-v1:0".to_string(),
+            name: "Claude Sonnet 4 (Bedrock)".to_string(),
+            context_window: 200000,
+            max_output_tokens: 32000,
+        });
+
+        &DEFAULT_MODEL
     }
 }
 

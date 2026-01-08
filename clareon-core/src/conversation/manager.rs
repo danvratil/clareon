@@ -90,7 +90,8 @@ impl ConversationManager {
 
     /// Start a new conversation
     pub async fn new_conversation(&self) -> Result<Conversation> {
-        let mut conversation = Conversation::new(&self.config.default_model);
+        let model = &self.backend.default_model().id;
+        let mut conversation = Conversation::new(model);
 
         // Apply custom system prompt if configured
         if !self.config.system_prompt.use_default

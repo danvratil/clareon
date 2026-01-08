@@ -33,6 +33,9 @@ pub trait LlmBackend: Send + Sync {
 
     /// List available models for this backend
     fn available_models(&self) -> &[ModelInfo];
+
+    /// Return the default model for this backend
+    fn default_model(&self) -> &ModelInfo;
 }
 
 /// Request to send to the LLM
