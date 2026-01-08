@@ -543,7 +543,7 @@ impl LlmBackend for BedrockBackend {
         &[] // Models are region-dependent, use get_models() instead
     }
 
-    fn  default_model(&self) -> &ModelInfo {
+    fn default_model(&self) -> &ModelInfo {
         // Return Claude Opus 4 as the default model
         static DEFAULT_MODEL: LazyLock<ModelInfo> = LazyLock::new(|| ModelInfo {
             id: "anthropic.claude-sonnet-4-20250514-v1:0".to_string(),

@@ -28,6 +28,7 @@ pub struct AnthropicBackend {
     client: Client,
     api_key: String,
     base_url: String,
+    models: Vec<ModelInfo>,
 }
 
 impl AnthropicBackend {
@@ -84,6 +85,7 @@ impl AnthropicBackend {
             client: Client::new(),
             api_key,
             base_url,
+            models: get_anthropic_models(),
         })
     }
 
@@ -96,6 +98,7 @@ impl AnthropicBackend {
             client: Client::new(),
             api_key: api_key.into(),
             base_url: ANTHROPIC_API_URL.to_string(),
+            models: get_anthropic_models(),
         }
     }
 
@@ -108,6 +111,7 @@ impl AnthropicBackend {
             client: Client::new(),
             api_key: api_key.into(),
             base_url: base_url.into(),
+            models: get_anthropic_models(),
         }
     }
 
@@ -458,15 +462,15 @@ impl LlmBackend for AnthropicBackend {
     }
 
     fn available_models(&self) -> &[ModelInfo] {
-        &ANTHROPIC_MODELS
+        &self.models
     }
 
     fn default_model(&self) -> &ModelInfo {
         // Return Sonnet as the default model
-        ANTHROPIC_MODELS
+        self.models
             .iter()
             .find(|m| m.id.contains("sonnet"))
-            .unwrap_or_else(|| &ANTHROPIC_MODELS[0])
+            .unwrap_or_else(|| &self.models[0])
     }
 }
 
@@ -624,57 +628,26 @@ struct DeltaUsage {
 }
 
 // Available models
-
-static ANTHROPIC_MODELS: [ModelInfo; 4] = [
-    ModelInfo {
-        id: String::new(), // Will be replaced with proper const initialization
-        name: String::new(),
-        context_window: 200000,
-        max_output_tokens: 8192,
-    },
-    ModelInfo {
-        id: String::new(),
-        name: String::new(),
-        context_window: 200000,
-        max_output_tokens: 8192,
-    },
-    ModelInfo {
-        id: String::new(),
-        name: String::new(),
-        context_window: 200000,
-        max_output_tokens: 4096,
-    },
-    ModelInfo {
-        id: String::new(),
-        name: String::new(),
-        context_window: 200000,
-        max_output_tokens: 4096,
-    },
-];
-
-// Helper function to get model info dynamically
-impl AnthropicBackend {
-    /// Get available model information
-    pub fn get_models() -> Vec<ModelInfo> {
-        vec![
-            ModelInfo {
-                id: "claude-opus-4-5-20251101".to_string(),
-                name: "Claude Opus 4.5".to_string(),
-                context_window: 200000,
-                max_output_tokens: 32000,
-            },
-            ModelInfo {
-                id: "claude-sonnet-4-5-20250929".to_string(),
-                name: "Claude Sonnet 4.5".to_string(),
-                context_window: 200000,
-                max_output_tokens: 16000,
-            },
-            ModelInfo {
-                id: "claude-haiku-4-5-20251001".to_string(),
-                name: "Claude Haiku 4.5".to_string(),
-                context_window: 200000,
-                max_output_tokens: 8192,
-            },
-        ]
-    }
+// Use a function instead of static array to avoid const initialization issues with String
+fn get_anthropic_models() -> Vec<ModelInfo> {
+    vec![
+        ModelInfo {
+            id: "claude-opus-4-5-20251101".to_string(),
+            name: "Claude Opus 4.5".to_string(),
+            context_window: 200000,
+            max_output_tokens: 32000,
+        },
+        ModelInfo {
+            id: "claude-sonnet-4-5-20250929".to_string(),
+            name: "Claude Sonnet 4.5".to_string(),
+            context_window: 200000,
+            max_output_tokens: 16000,
+        },
+        ModelInfo {
+            id: "claude-haiku-4-5-20251001".to_string(),
+            name: "Claude Haiku 4.5".to_string(),
+            context_window: 200000,
+            max_output_tokens: 8192,
+        },
+    ]
 }
