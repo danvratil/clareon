@@ -23,7 +23,7 @@ Kirigami.ScrollablePage {
             text: qsTr("New Conversation")
             icon.name: "message-new"
             onTriggered: {
-                console.log("Create new conversation")
+                ServiceController.newConversation()
             }
         },
         Kirigami.Action {
@@ -94,6 +94,10 @@ Kirigami.ScrollablePage {
         function onConversationsChanged() {
             conversationDataProvider.refresh()
         }
+
+        function onConversationCreated(id) {
+            pageRoot.openConversation(id)
+        }
     }
 
     function openConversation(conversationId) {
@@ -102,7 +106,7 @@ Kirigami.ScrollablePage {
         })
 
         if (chatView) {
-            if (pageStack.depth > 2) {
+            if (pageStack.depth > 1) {
                 pageStack.replace(chatView)
             } else {
                 pageStack.push(chatView)
