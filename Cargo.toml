@@ -4,6 +4,7 @@ members = [
     "clareon-core",
     "clareon-cli",
     "clareon",
+    "mock-anthropic",
 ]
 
 [workspace.package]

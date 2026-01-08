@@ -41,11 +41,12 @@ cargo clippy --all --locked --tests -- --deny clippy::all --deny warnings
 
 ## Architecture
 
-The project is organized as a Cargo workspace with three main crates:
+The project is organized as a Cargo workspace with four main crates:
 
 - **clareon-core**: Core library containing LLM backends, conversation management, storage, configuration, and tool execution
 - **clareon**: Qt/QML GUI application with KDE Plasma integration
 - **clareon-cli**: Terminal UI for testing and prototyping (not production-ready)
+- **mock-anthropic**: Mock Anthropic API server for development and testing without API costs
 
 ### clareon-core Structure
 
