@@ -344,7 +344,7 @@ async fn main() {
         .init();
 
     // Load models from models-api.json
-    let models_json = include_str!("../../models-api.json");
+    let models_json = include_str!("../models.json");
     let models: ModelsResponse =
         serde_json::from_str(models_json).expect("Failed to parse models-api.json");
 
