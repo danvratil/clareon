@@ -197,19 +197,6 @@ impl ffi::MessageListModel {
 
     /// Add a single message to the end
     pub fn add_message_internal(mut self: Pin<&mut Self>, message: MessageData) {
-        // Insert message in chronological order
-        for pos in (0..self.rust().messages.len() - 1).rev() {
-            if message.created_at < self.rust().messages[pos].created_at {
-                self.as_mut()
-                    .begin_insert_rows(&QModelIndex::default(), pos as i32, pos as i32);
-                self.as_mut()
-                    .rust_mut()
-                    .messages
-                    .insert(pos, Message::from(message));
-                self.as_mut().end_insert_rows();
-                return;
-            }
-        }
         let count = self.rust().messages.len();
         self.as_mut()
             .begin_insert_rows(&QModelIndex::default(), count as i32, count as i32);
@@ -306,11 +293,11 @@ impl ffi::MessageListModel {
         }
     }
 
-    fn row_count(self: &Self, _parent: &QModelIndex) -> i32 {
+    fn row_count(&self, _parent: &QModelIndex) -> i32 {
         self.rust().messages.len() as i32
     }
 
-    fn data(self: &Self, index: &QModelIndex, role: i32) -> QVariant {
+    fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
         let row = index.row();
         if row < 0 || row as usize >= self.rust().messages.len() {
             return QVariant::default();
@@ -338,13 +325,16 @@ impl ffi::MessageListModel {
         }
     }
 
-    fn role_names(self: &Self) -> QHash<QHashPair_i32_QByteArray> {
+    fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
         let mut roles = QHash::default();
         roles.insert(MessageRole::MessageId.into(), QByteArray::from("messageId"));
         roles.insert(MessageRole::Role.into(), QByteArray::from("role"));
         roles.insert(MessageRole::Text.into(), QByteArray::from("textContent"));
         roles.insert(MessageRole::CreatedAt.into(), QByteArray::from("createdAt"));
-        roles.insert(MessageRole::MessageState.into(), QByteArray::from("messageState"));
+        roles.insert(
+            MessageRole::MessageState.into(),
+            QByteArray::from("messageState"),
+        );
         roles
     }
 
@@ -395,13 +385,23 @@ impl ffi::MessageListModel {
         });
 
         // Store the task handle
-        *self.rust().subscription.lock().unwrap() = Some(task);
+        *self
+            .rust()
+            .subscription
+            .lock()
+            .expect("Subscription lock poisoned") = Some(task);
     }
 
     /// Unsubscribe from broadcast events
     fn unsubscribe_from_events(self: Pin<&mut Self>) {
         // Abort the subscription task
-        if let Some(task) = self.rust().subscription.lock().unwrap().take() {
+        if let Some(task) = self
+            .rust()
+            .subscription
+            .lock()
+            .expect("Subscription lock poisoned")
+            .take()
+        {
             debug!(
                 conversation_id = self.conversation_id().to_string(),
                 "Unsubscribing from conversation events for MessageListModel"
@@ -445,7 +445,12 @@ impl ffi::MessageListModel {
 impl Drop for MessageListModelRust {
     fn drop(&mut self) {
         // Abort the subscription task when model is destroyed
-        if let Some(task) = self.subscription.lock().unwrap().take() {
+        if let Some(task) = self
+            .subscription
+            .lock()
+            .expect("Subscription lock poisoned")
+            .take()
+        {
             task.abort();
         }
     }
