@@ -14,6 +14,7 @@ pub mod conversation_list_model;
 pub mod logging;
 pub mod message_list_model;
 pub mod qt;
+pub mod search_result_model;
 pub mod service;
 pub mod service_controller;
 
@@ -55,6 +56,7 @@ fn main() {
     let mut engine = QQmlApplicationEngine::new();
 
     message_list_model::qml_register_type();
+    search_result_model::qml_register_type();
 
     let qml_url = QUrl::from("qrc:/qt/qml/cz/dvratil/clareon/qml/main.qml");
     if let Some(engine) = engine.as_mut() {

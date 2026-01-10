@@ -30,6 +30,9 @@ pub enum Command {
     /// Load messages for a conversation
     LoadMessages { conv_id: ConversationId },
 
+    /// Search across all conversations
+    Search { query: String },
+
     /// Shutdown the service
     Shutdown,
 }

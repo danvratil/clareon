@@ -4,7 +4,7 @@
 
 //! Responses sent from the service worker to the Qt layer
 
-use clareon_core::types::{Conversation, ConversationId, ConversationSummary};
+use clareon_core::types::{Conversation, ConversationId, ConversationSummary, SearchResult};
 
 /// Simplified message data for Qt consumption
 #[derive(Debug, Clone)]
@@ -62,6 +62,10 @@ pub enum Response {
         conv_id: ConversationId,
         message: MessageData,
     },
+
+    // Search responses
+    /// Search results from FTS query
+    SearchResults { results: Vec<SearchResult> },
 
     // Error response
     /// An error occurred while processing a command

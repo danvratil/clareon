@@ -42,6 +42,11 @@ Kirigami.ApplicationWindow {
         onActivated: openConfiguration()
     }
 
+    Shortcut {
+        sequence: "Ctrl+F"
+        onActivated: openSearchPage()
+    }
+
     // Help dialog
     Controls.Dialog {
         id: helpDialog
@@ -56,6 +61,7 @@ Kirigami.ApplicationWindow {
             implicitHeight: contentHeight
             model: ListModel {
                 ListElement { shortcut: "Ctrl+N"; description: "New conversation" }
+                ListElement { shortcut: "Ctrl+F"; description: "Search conversations" }
                 ListElement { shortcut: "Ctrl+O"; description: "Toggle conversation drawer" }
                 ListElement { shortcut: "Ctrl+,"; description: "Open settings" }
                 ListElement { shortcut: "Enter"; description: "Send message" }
@@ -101,6 +107,11 @@ Kirigami.ApplicationWindow {
         ConversationListPage {}
     }
 
+    Component {
+        id: searchResultsPage
+        SearchResultsPage {}
+    }
+
     // Configuration window loader
     Loader {
         id: configWindowLoader
@@ -123,6 +134,15 @@ Kirigami.ApplicationWindow {
         } else {
             // Create the window
             configWindowLoader.active = true
+        }
+    }
+
+    function openSearchPage() {
+        const searchPage = searchResultsPage.createObject(null)
+        if (searchPage) {
+            pageStack.push(searchPage)
+        } else {
+            console.error("Failed to create SearchResultsPage")
         }
     }
 }

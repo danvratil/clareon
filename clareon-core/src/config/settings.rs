@@ -232,7 +232,7 @@ pub struct ToolsConfig {
     pub max_upload_size_mb: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SandboxModeConfig {
     /// No sandboxing (development only)
@@ -240,13 +240,8 @@ pub enum SandboxModeConfig {
     /// Basic sandboxing
     Basic,
     /// Strict sandboxing (recommended)
+    #[default]
     Strict,
-}
-
-impl Default for SandboxModeConfig {
-    fn default() -> Self {
-        Self::Strict
-    }
 }
 
 fn default_tool_timeout() -> u64 {
