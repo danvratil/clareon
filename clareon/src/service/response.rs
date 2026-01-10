@@ -55,6 +55,19 @@ pub enum ErrorCategory {
     Unknown,
 }
 
+/// Simplified artifact data for Qt consumption
+#[derive(Debug, Clone)]
+pub struct ArtifactData {
+    pub id: i64,
+    pub message_id: i64,
+    pub filename: String,
+    pub mime_type: String,
+    pub size_bytes: i64,
+    pub content_hash: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
 /// Responses represent all events and results sent from the service to the UI
 #[derive(Debug, Clone)]
 pub enum Response {
@@ -106,6 +119,24 @@ pub enum Response {
     // Search responses
     /// Search results from FTS query
     SearchResults { results: Vec<SearchResult> },
+
+    // Artifact responses
+    /// Artifacts for a conversation were loaded
+    ArtifactsLoaded {
+        conv_id: ConversationId,
+        artifacts: Vec<ArtifactData>,
+    },
+
+    /// A single artifact's content was loaded
+    ArtifactLoaded {
+        artifact_id: i64,
+        filename: String,
+        mime_type: String,
+        content: Vec<u8>,
+    },
+
+    /// An artifact was saved to a file
+    ArtifactSaved { artifact_id: i64, path: String },
 
     // Error responses
     /// Error occurred while sending a message (before streaming starts)

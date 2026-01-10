@@ -40,6 +40,15 @@ pub enum Command {
     /// This is used for quick input flow
     NewQuickConversation { prompt: String },
 
+    /// Load artifacts for a conversation
+    LoadArtifacts { conv_id: ConversationId },
+
+    /// Load a single artifact's content
+    LoadArtifact { artifact_id: i64 },
+
+    /// Save an artifact to a file
+    SaveArtifact { artifact_id: i64, path: String },
+
     /// Shutdown the service
     Shutdown,
 

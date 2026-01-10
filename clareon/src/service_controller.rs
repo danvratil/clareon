@@ -87,6 +87,22 @@ mod ffi {
         #[qsignal]
         fn search_results_ready(self: Pin<&mut ServiceController>);
 
+        // Artifact signals
+        #[qsignal]
+        fn artifacts_loaded(self: Pin<&mut ServiceController>, conversation_id: QString);
+
+        #[qsignal]
+        fn artifact_loaded(
+            self: Pin<&mut ServiceController>,
+            artifact_id: i64,
+            filename: QString,
+            mime_type: QString,
+            content: QString,
+        );
+
+        #[qsignal]
+        fn artifact_saved(self: Pin<&mut ServiceController>, artifact_id: i64, path: QString);
+
         #[qsignal]
         fn main_window_requested(self: Pin<&mut ServiceController>);
 
@@ -117,6 +133,9 @@ mod ffi {
 
         #[qinvokable]
         fn new_quick_conversation(self: &ServiceController, prompt: &QString);
+
+        #[qinvokable]
+        fn load_artifact(self: &ServiceController, artifact_id: i64);
 
         // System integration
         #[qinvokable]
@@ -276,6 +295,43 @@ impl ffi::ServiceController {
                 self.as_mut().search_results_ready();
             }
 
+            Response::ArtifactsLoaded { conv_id, .. } => {
+                // ArtifactListModel now handles this directly
+                // Emit signal for UI feedback
+                self.as_mut()
+                    .artifacts_loaded(QString::from(&conv_id.to_string()));
+            }
+
+            Response::ArtifactLoaded {
+                artifact_id,
+                filename,
+                mime_type,
+                content,
+            } => {
+                // Convert content to UTF-8 string for text types, or base64 for binary
+                let content_str = if mime_type.starts_with("text/") {
+                    String::from_utf8_lossy(&content).to_string()
+                } else {
+                    // For binary content, encode as base64
+                    use base64::{Engine as _, engine::general_purpose};
+                    general_purpose::STANDARD.encode(&content)
+                };
+
+                // Emit signal
+                self.as_mut().artifact_loaded(
+                    artifact_id,
+                    QString::from(&filename),
+                    QString::from(&mime_type),
+                    QString::from(&content_str),
+                );
+            }
+
+            Response::ArtifactSaved { artifact_id, path } => {
+                // Emit signal for UI feedback
+                self.as_mut()
+                    .artifact_saved(artifact_id, QString::from(&path));
+            }
+
             Response::Error { command, error } => {
                 self.as_mut()
                     .error_occurred(QString::from(&command), QString::from(&error));
@@ -342,6 +398,12 @@ impl ffi::ServiceController {
         let _ = handle.send(Command::Search {
             query: query.to_string(),
         });
+    }
+
+    /// Load a single artifact's content
+    fn load_artifact(&self, artifact_id: i64) {
+        let handle = get_service_handle();
+        let _ = handle.send(Command::LoadArtifact { artifact_id });
     }
 
     /// Set auto-start on login

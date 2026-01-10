@@ -20,7 +20,22 @@ Kirigami.Page {
     title: qsTr("Conversation")
     padding: 0
 
+    // Keyboard shortcut to toggle artifacts drawer
+    Shortcut {
+        sequence: "Ctrl+O"
+        onActivated: artifactDrawer.open()
+    }
+
     actions: [
+        Kirigami.Action {
+            text: qsTr("Artifacts")
+            icon.name: "folder-documents"
+            checkable: true
+            checked: artifactDrawer.drawerOpen
+            onTriggered: {
+                artifactDrawer.open()
+            }
+        },
         Kirigami.Action {
             text: qsTr("Conversation settings")
             icon.name: "settings-configure"
@@ -65,6 +80,23 @@ Kirigami.Page {
                     root.scrollToMessage(root.highlightMessageId)
                 })
             }
+        }
+    }
+
+    ArtifactDrawer {
+        id: artifactDrawer
+        conversationId: root.conversationId
+
+        onPreviewRequested: (id, name, mimeType) => {
+            previewSheet.loadArtifact(id, name, mimeType)
+        }
+    }
+
+    ArtifactPreview {
+        id: previewSheet
+
+        onDownloadRequested: (id, filepath) => {
+            artifactDrawer.saveArtifact(id, filepath)
         }
     }
 

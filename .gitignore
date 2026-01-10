@@ -1,2 +1,22 @@
+# Rust build artifacts
 target
+/target/
+**/target/
+
+# Rust debug files
+**/*.rs.bk
+*.pdb
+
+# QML language server
 .qmlls.ini
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

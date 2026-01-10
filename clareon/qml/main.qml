@@ -99,4 +99,14 @@ Item {
             }
         }
     }
+
+    Shortcut {
+        sequence: "Ctrl+W"
+        onActivated: Qt.quit()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+,"
+        onActivated: mainWindow.openConfiguration()
+    }
 }

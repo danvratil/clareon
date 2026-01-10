@@ -16,6 +16,7 @@ use unique_app::{UniqueResult, try_become_unique};
 
 use crate::service::Command;
 
+pub mod artifact_list_model;
 pub mod config_manager;
 pub mod conversation_list_model;
 pub mod logging;

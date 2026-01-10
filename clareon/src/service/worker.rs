@@ -13,7 +13,7 @@ use clareon_core::{ConversationManager, StreamUpdate};
 
 use super::{
     command::Command,
-    response::{ErrorCategory, ErrorInfo, MessageData, Response},
+    response::{ArtifactData, ErrorCategory, ErrorInfo, MessageData, Response},
 };
 
 /// Service worker that processes commands on the tokio runtime
@@ -87,6 +87,15 @@ impl ServiceWorker {
             }
             Command::NewQuickConversation { prompt } => {
                 self.handle_new_quick_conversation(prompt).await;
+            }
+            Command::LoadArtifacts { conv_id } => {
+                self.handle_load_artifacts(conv_id).await;
+            }
+            Command::LoadArtifact { artifact_id } => {
+                self.handle_load_artifact(artifact_id).await;
+            }
+            Command::SaveArtifact { artifact_id, path } => {
+                self.handle_save_artifact(artifact_id, path).await;
             }
             Command::Shutdown => {
                 // Already handled in run() loop
@@ -450,12 +459,98 @@ impl ServiceWorker {
         }
     }
 
+    async fn handle_load_artifacts(&self, conv_id: ConversationId) {
+        let storage = self.manager.storage();
+        match storage.get_artifacts(&conv_id).await {
+            Ok(artifacts) => {
+                let artifacts: Vec<ArtifactData> =
+                    artifacts.into_iter().map(artifact_to_data).collect();
+                let _ = self
+                    .response_tx
+                    .send(Response::ArtifactsLoaded { conv_id, artifacts });
+            }
+            Err(e) => {
+                error!(
+                    "Failed to load artifacts for conversation {}: {}",
+                    conv_id, e
+                );
+                let _ = self.response_tx.send(Response::Error {
+                    command: format!("LoadArtifacts({})", conv_id),
+                    error: e.to_string(),
+                });
+            }
+        }
+    }
+
+    async fn handle_load_artifact(&self, artifact_id: i64) {
+        let storage = self.manager.storage();
+        match storage.get_artifact_by_id(artifact_id).await {
+            Ok(artifact) => {
+                info!(
+                    "Loaded artifact {} ({} bytes)",
+                    artifact_id,
+                    artifact.content.len()
+                );
+                let _ = self.response_tx.send(Response::ArtifactLoaded {
+                    artifact_id,
+                    filename: artifact.filename,
+                    mime_type: artifact
+                        .mime_type
+                        .unwrap_or_else(|| "application/octet-stream".to_string()),
+                    content: artifact.content,
+                });
+            }
+            Err(e) => {
+                error!("Failed to load artifact {}: {}", artifact_id, e);
+                let _ = self.response_tx.send(Response::Error {
+                    command: format!("LoadArtifact({})", artifact_id),
+                    error: e.to_string(),
+                });
+            }
+        }
+    }
+
     async fn handle_activate_main_window(&self) {
         let _ = self.response_tx.send(Response::ActivateMainWindow);
     }
 
     async fn handle_activate_quick_input(&self) {
         let _ = self.response_tx.send(Response::ActivateQuickInput);
+    }
+
+    async fn handle_save_artifact(&self, artifact_id: i64, path: String) {
+        let storage = self.manager.storage();
+
+        match storage.get_artifact_by_id(artifact_id).await {
+            Ok(artifact) => {
+                // Write the artifact content to the specified path
+                match tokio::fs::write(&path, &artifact.content).await {
+                    Ok(_) => {
+                        info!("Artifact {} saved to {}", artifact_id, path);
+                        let _ = self
+                            .response_tx
+                            .send(Response::ArtifactSaved { artifact_id, path });
+                    }
+                    Err(e) => {
+                        error!(
+                            "Failed to write artifact {} to {}: {}",
+                            artifact_id, path, e
+                        );
+                        let _ = self.response_tx.send(Response::Error {
+                            command: format!("SaveArtifact({}, {})", artifact_id, path),
+                            error: format!("Failed to write file: {}", e),
+                        });
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Failed to get artifact {}: {}", artifact_id, e);
+                let _ = self.response_tx.send(Response::Error {
+                    command: format!("SaveArtifact({}, {})", artifact_id, path),
+                    error: format!("Failed to get artifact: {}", e),
+                });
+            }
+        }
     }
 }
 
@@ -471,6 +566,22 @@ fn message_to_data(message: Message) -> MessageData {
         created_at: message.created_at,
         input_tokens: message.input_tokens,
         output_tokens: message.output_tokens,
+    }
+}
+
+/// Convert an Artifact to ArtifactData for Qt consumption
+fn artifact_to_data(artifact: clareon_core::types::Artifact) -> ArtifactData {
+    ArtifactData {
+        id: artifact.id,
+        message_id: artifact.message_id,
+        filename: artifact.filename,
+        mime_type: artifact
+            .mime_type
+            .unwrap_or_else(|| "application/octet-stream".to_string()),
+        size_bytes: artifact.size_bytes,
+        content_hash: artifact.content_hash,
+        created_at: artifact.created_at,
+        updated_at: artifact.updated_at,
     }
 }
 

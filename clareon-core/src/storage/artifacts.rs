@@ -158,4 +158,32 @@ impl Storage {
 
         Ok(artifacts)
     }
+
+    /// Get a single artifact by ID
+    pub async fn get_artifact_by_id(&self, artifact_id: i64) -> Result<Artifact> {
+        let row = sqlx::query(
+            r#"
+            SELECT id, conversation_id, message_id, filename, mime_type,
+                   size_bytes, content, content_hash, created_at, updated_at
+            FROM artifacts
+            WHERE id = ?
+            "#,
+        )
+        .bind(artifact_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(Artifact {
+            id: row.get("id"),
+            conversation_id: row.get::<String, _>("conversation_id").into(),
+            message_id: row.get("message_id"),
+            filename: row.get("filename"),
+            mime_type: row.get("mime_type"),
+            size_bytes: row.get("size_bytes"),
+            content: row.get("content"),
+            content_hash: row.get("content_hash"),
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
+        })
+    }
 }

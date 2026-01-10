@@ -6,6 +6,7 @@
 #include "qml.hpp"
 #include "clareon/src/message_list_model.cxxqt.h"
 #include "clareon/src/search_result_model.cxxqt.h"
+#include "clareon/src/artifact_list_model.cxxqt.h"
 #include "clareon/config_generated.h"
 
 #include <qqml.h>
@@ -13,6 +14,7 @@
 void registerClareonQmlTypes() {
     qmlRegisterType<MessageListModel>("cc.clareon.core", 1, 0, "MessageListModel");
     qmlRegisterType<SearchResultModel>("cc.clareon.core", 1, 0, "SearchResultModel");
+    qmlRegisterType<ArtifactListModel>("cc.clareon.core", 1, 0, "ArtifactListModel");
     qmlRegisterUncreatableType<ConfigCpp>("cc.clareon.core", 1, 0, "ConfigCpp",
                                       QStringLiteral("ConfigCpp is not creatable from QML"));
     qmlRegisterUncreatableType<BackendsConfigCpp>("cc.clareon.core", 1, 0, "BackendsConfigCpp",

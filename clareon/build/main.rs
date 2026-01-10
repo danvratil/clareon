@@ -45,6 +45,7 @@ fn main() {
         "src/message_list_model.rs",
         "src/search_result_model.rs",
         "src/config_manager.rs",
+        "src/artifact_list_model.rs",
     ])
     .cpp_file("src/cpp/logging.cpp")
     .cpp_file("src/cpp/qml.cpp")

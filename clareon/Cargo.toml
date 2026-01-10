@@ -41,6 +41,9 @@ tracing-subscriber = { workspace = true }
 # Time handling
 chrono = { workspace = true }
 
+# Encoding
+base64 = "0.22"
+
 # XDG Base Directory support
 xdg = "3.0"
 clap.workspace = true
