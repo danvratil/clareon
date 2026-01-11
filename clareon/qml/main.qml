@@ -16,6 +16,8 @@ Kirigami.ApplicationWindow {
     minimumWidth: 800
     minimumHeight: 600
 
+    property string currentConversationId: ""
+
     Kirigami.Action {
         id: newConversationAction
         text: qsTr("New Conversation")
@@ -55,7 +57,7 @@ Kirigami.ApplicationWindow {
     }
 
     pageStack {
-        columnView.columnResizeMode: Kirigami.ColumnView.SingleColumn
+        columnView.columnResizeMode: Kirigami.ColumnView.Dynamic
     }
 
     Component {
@@ -64,8 +66,8 @@ Kirigami.ApplicationWindow {
     }
 
     Component {
-        id: chatViewComponent
-        ChatView {}
+        id: converstationPage
+        ConversationPage {}
     }
 
     // Configuration window loader
@@ -82,15 +84,16 @@ Kirigami.ApplicationWindow {
     }
 
     function openConversation(conversationId) {
-        const chatView = chatViewComponent.createObject(null, {
-            conversationId: conversationId
+        const page = converstationPage.createObject(null, {
+            conversationId: conversationId,
         })
 
-        if (chatView) {
-            pageStack.replace(chatView)
-            globalDrawer.curentConversationId = conversationId
+        if (page) {
+            pageStack.clear()
+            pageStack.replace(page)
+            globalDrawer.currentConversationId = conversationId
         } else {
-            console.error("Failed to create ChatView")
+            console.error("Failed to create ")
         }
     }
 
@@ -109,6 +112,9 @@ Kirigami.ApplicationWindow {
     function openSearchPage() {
         const searchPage = searchResultsPage.createObject(null)
         if (searchPage) {
+            searchPage.onSelectedConversationIdChanged.connect(function() {
+                globalDrawer.currentConversationId = searchPage.selectedConversationId
+            })
             pageStack.replace(searchPage)
         } else {
             console.error("Failed to create SearchResultsPage")

@@ -18,7 +18,6 @@ Controls.ItemDelegate {
             Layout.fillWidth: true
 
             title: item.text
-            subtitle: item.subtitle
             icon: icon.fromControlsIcon(item.icon)
 
             selected: item.highlighted || item.pressed
