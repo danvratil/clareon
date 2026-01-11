@@ -29,13 +29,15 @@ fn main() {
             .depend("QtQuick"),
     )
     .files([
+        "src/qml.rs",
         "src/logging.rs",
         "src/service_controller.rs",
         "src/conversation_list_model.rs",
         "src/message_list_model.rs",
+        "src/search_result_model.rs",
     ])
     .cpp_file("src/cpp/logging.cpp")
-    .cpp_file("src/cpp/message_list_model.cpp")
+    .cpp_file("src/cpp/qml.cpp")
     .qt_module("Quick")
     .qt_module("Qml")
     .build();

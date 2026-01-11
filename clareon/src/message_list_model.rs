@@ -42,12 +42,6 @@ mod ffi {
         type QAbstractListModel;
     }
 
-    unsafe extern "C++" {
-        include!("src/cpp/message_list_model.hpp");
-        #[cxx_name = "qmlRegisterMessageList"]
-        fn qml_register_message_list();
-    }
-
     #[auto_cxx_name]
     unsafe extern "RustQt" {
         #[qobject]
@@ -114,8 +108,6 @@ mod ffi {
 
     impl cxx_qt::Threading for MessageListModel {}
 }
-
-pub use ffi::qml_register_message_list as qml_register_type;
 
 /// Custom roles for the model
 #[repr(i32)]
