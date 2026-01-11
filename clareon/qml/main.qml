@@ -16,100 +16,56 @@ Kirigami.ApplicationWindow {
     minimumWidth: 800
     minimumHeight: 600
 
-    // ServiceController singleton is automatically available
-    Component.onCompleted: {
-        console.log("Clareon initialized")
-    }
-
-    // Keyboard shortcuts
-    Shortcut {
-        sequence: "Ctrl+N"
-        onActivated: ServiceController.newConversation()
-    }
-
-    Shortcut {
-        sequence: "Ctrl+Q"
-        onActivated: Qt.quit()
-    }
-
-    Shortcut {
-        sequence: "Ctrl+W"
-        onActivated: Qt.quit()
-    }
-
-    Shortcut {
-        sequence: "Ctrl+,"
-        onActivated: openConfiguration()
-    }
-
-    Shortcut {
-        sequence: "Ctrl+F"
-        onActivated: openSearchPage()
-    }
-
-    // Help dialog
-    Controls.Dialog {
-        id: helpDialog
-        title: "Keyboard Shortcuts"
-        modal: true
-        standardButtons: Controls.Dialog.Close
-
-        anchors.centerIn: parent
-        width: 400
-
-        contentItem: ListView {
-            implicitHeight: contentHeight
-            model: ListModel {
-                ListElement { shortcut: "Ctrl+N"; description: "New conversation" }
-                ListElement { shortcut: "Ctrl+F"; description: "Search conversations" }
-                ListElement { shortcut: "Ctrl+O"; description: "Toggle conversation drawer" }
-                ListElement { shortcut: "Ctrl+,"; description: "Open settings" }
-                ListElement { shortcut: "Enter"; description: "Send message" }
-                ListElement { shortcut: "Shift+Enter"; description: "New line in message" }
-                ListElement { shortcut: "Esc"; description: "Clear message input" }
-                ListElement { shortcut: "Ctrl+Q"; description: "Quit application" }
-            }
-
-            delegate: Controls.ItemDelegate {
-                width: ListView.view.width
-                contentItem: RowLayout {
-                    Controls.Label {
-                        text: model.shortcut
-                        font.family: "monospace"
-                        Layout.preferredWidth: 120
-                    }
-                    Controls.Label {
-                        text: model.description
-                        Layout.fillWidth: true
-                    }
-                }
-            }
+    Kirigami.Action {
+        id: newConversationAction
+        text: qsTr("New Conversation")
+        shortcut: "Ctrl+N"
+        icon.name: "message-new"
+        onTriggered: {
+            ServiceController.newConversation()
         }
     }
 
-    Shortcut {
-        sequence: "F1"
-        onActivated: helpDialog.open()
+    Kirigami.Action {
+        id: settingsAction
+        text: qsTr("Settings")
+        shortcut: "Ctrl+,"
+        icon.name: "settings-configure"
+        onTriggered: {
+            openConfiguration()
+        }
     }
 
-    Shortcut {
-        sequence: "Ctrl+H"
-        onActivated: helpDialog.open()
+    Kirigami.Action {
+        id: searchConversationsAction
+        text: qsTr("Search Conversations")
+        shortcut: "Ctrl+F"
+        icon.name: "edit-find"
+        onTriggered: {
+            openSearchPage()
+        }
+    }
+
+    globalDrawer: Drawer {
+        id: drawer
+
+        onConversationSelected: {
+            root.openConversation(conversationId)
+        }
     }
 
     pageStack {
-        initialPage: conversationListPage
-        columnView.columnResizeMode: pageStack.wideMode ? Kirigami.ColumnView.DynamicColumns : Kirigami.ColumnView.SingleColumn
-    }
-
-    Component {
-        id: conversationListPage
-        ConversationListPage {}
+        columnView.columnResizeMode: Kirigami.ColumnView.SingleColumn
     }
 
     Component {
         id: searchResultsPage
         SearchResultsPage {}
+    }
+
+    Component {
+        id: chatViewComponent
+        ChatView {}
     }
 
     // Configuration window loader
@@ -122,6 +78,19 @@ Kirigami.ApplicationWindow {
             item.show()
             item.raise()
             item.requestActivate()
+        }
+    }
+
+    function openConversation(conversationId) {
+        const chatView = chatViewComponent.createObject(null, {
+            conversationId: conversationId
+        })
+
+        if (chatView) {
+            pageStack.replace(chatView)
+            globalDrawer.curentConversationId = conversationId
+        } else {
+            console.error("Failed to create ChatView")
         }
     }
 
@@ -140,7 +109,7 @@ Kirigami.ApplicationWindow {
     function openSearchPage() {
         const searchPage = searchResultsPage.createObject(null)
         if (searchPage) {
-            pageStack.push(searchPage)
+            pageStack.replace(searchPage)
         } else {
             console.error("Failed to create SearchResultsPage")
         }

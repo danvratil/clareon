@@ -6,7 +6,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as Controls
 import org.kde.kirigami as Kirigami
-import cz.dvratil.clareon 1.0
+import cc.clareon.core 1.0
 
 Kirigami.Page {
     id: pageRoot

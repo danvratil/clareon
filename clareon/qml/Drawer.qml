@@ -1,4 +1,4 @@
-// SPDX-FileContributor: Daniel Vrátil <me@dvratil.cz>
+// SPDX-FileCopyrightText: 2026 Daniel Vrátil <me@dvratil.cz>
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -7,53 +7,48 @@ import QtQuick.Layouts
 import QtQuick.Controls as Controls
 import org.kde.kirigami as Kirigami
 import org.kde.kitemmodels as KItemModels
+import cc.clareon.core 1.0
 import cz.dvratil.clareon 1.0
 
-Kirigami.ScrollablePage {
-    id: pageRoot
 
-    implicitWidth: Kirigami.Units.gridUnit * 20
+Kirigami.GlobalDrawer {
+    id: drawer
+
+    signal conversationSelected(string conversationId)
 
     property string currentConversationId: ""
 
-    title: qsTr("Clareon")
+    interactiveResizeEnabled: true
+    modal: false
+    padding: 0
 
-    actions: [
-        Kirigami.Action {
-            text: qsTr("New Conversation")
-            icon.name: "message-new"
-            onTriggered: {
-                ServiceController.newConversation()
+    header: Kirigami.AbstractApplicationHeader {
+        contentItem: Kirigami.SearchField {
+            id: searchField
+            anchors {
+                left: parent.left
+                right: parent.right
             }
+        }
+    }
+
+    topContent: [
+        GlobalActionItem {
+            action: newConversationAction
         },
-        Kirigami.Action {
-            text: qsTr("Settings")
-            icon.name: "settings-configure"
-            onTriggered: {
-                console.log("Open settings")
-            }
+        GlobalActionItem {
+            action: settingsAction
+        },
+        GlobalActionItem {
+            action: searchConversationsAction
+        },
+        Kirigami.Separator { 
+            Layout.fillWidth: true
+            Layout.topMargin: Kirigami.Units.smallSpacing
+            Layout.leftMargin: Kirigami.Units.largeSpacing
+            Layout.rightMargin: Kirigami.Units.largeSpacing
         }
     ]
-
-    header: Controls.ToolBar {
-        id: toolbar
-        RowLayout {
-            anchors.fill: parent
-            Kirigami.SearchField {
-                id: searchField
-
-                Layout.alignment: Qt.AlignHCenter
-                Layout.fillWidth: true
-                Layout.maximumWidth: Kirigami.Units.gridUnit * 30
-            }
-        }
-    }
-
-    background: Rectangle {
-        anchors.fill: parent
-        Kirigami.Theme.colorSet: Kirigami.Theme.View
-        color: Kirigami.Theme.backgroundColor
-    }
 
     ConversationListModel {
         id: conversationDataProvider
@@ -96,46 +91,24 @@ Kirigami.ScrollablePage {
         }
 
         function onConversationCreated(id) {
-            pageRoot.openConversation(id)
+            drawer.conversationSelected(id)
         }
-    }
-
-    function openConversation(conversationId) {
-        const chatView = chatViewComponent.createObject(null, {
-            conversationId: conversationId
-        })
-
-        if (chatView) {
-            if (pageStack.depth > 1) {
-                pageStack.replace(chatView)
-            } else {
-                pageStack.push(chatView)
-            }
-
-            pageRoot.currentConversationId = conversationId
-
-        } else {
-            console.error("Failed to create ChatView")
-        }
-    }
-
-    Component {
-        id: chatViewComponent
-        ChatView {}
     }
 
     ListView {
         id: conversationListView
-        anchors.fill: parent
         clip: true
+
+        Layout.fillWidth: true
+        Layout.fillHeight: true
 
         model: filteredModel
 
         delegate: ConversationItemDelegate {
             id: delegate
             width: conversationListView.width
-            highlighted: delegate.conversationId === pageRoot.currentConversationId
-            onClicked: pageRoot.openConversation(delegate.conversationId)
+            highlighted: delegate.conversationId === drawer.currentConversationId
+            onClicked: drawer.conversationSelected(delegate.conversationId)
         }
 
         // Empty state
