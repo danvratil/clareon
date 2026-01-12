@@ -48,10 +48,6 @@ pub struct Config {
     #[serde(default)]
     pub backends: BackendsConfig,
 
-    /// UI configuration
-    #[serde(default)]
-    pub ui: UiConfig,
-
     /// System prompt configuration
     #[serde(default)]
     pub system_prompt: SystemPromptConfig,
@@ -131,34 +127,15 @@ fn default_true() -> bool {
     true
 }
 
-/// UI configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UiConfig {
-    /// Color theme
-    #[serde(default = "default_theme")]
-    pub theme: String,
-
-    /// Whether to enable streaming responses
-    #[serde(default = "default_true")]
-    pub streaming: bool,
-}
-
-fn default_theme() -> String {
-    "dark".to_string()
-}
-
-impl Default for UiConfig {
-    fn default() -> Self {
-        Self {
-            theme: default_theme(),
-            streaming: true,
-        }
-    }
-}
-
 /// System prompt configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemPromptConfig {
+    /// User's name for personalization
+    pub user_name: Option<String>,
+
+    /// User's personal preferences (tone, style, verbosity)
+    pub personal_preferences: Option<String>,
+
     /// Whether to use the default system prompt
     #[serde(default = "default_true")]
     pub use_default: bool,
@@ -173,6 +150,8 @@ pub struct SystemPromptConfig {
 impl Default for SystemPromptConfig {
     fn default() -> Self {
         Self {
+            user_name: None,
+            personal_preferences: None,
             use_default: true,
             custom_prompt: None,
             custom_instructions: None,
@@ -345,7 +324,6 @@ impl Default for Config {
             default_backend: Backend::default(),
             default_model: default_model(),
             backends: BackendsConfig::default(),
-            ui: UiConfig::default(),
             system_prompt: SystemPromptConfig::default(),
             models: ModelsConfig::default(),
             tools: ToolsConfig::default(),
@@ -458,6 +436,9 @@ impl Config {
 
     /// Get the effective system prompt based on configuration
     pub fn get_system_prompt(&self) -> String {
+        let mut prompt_parts = Vec::new();
+
+        // Base prompt
         let base_prompt = if self.system_prompt.use_default {
             if let Some(custom) = &self.system_prompt.custom_prompt {
                 custom.clone()
@@ -467,13 +448,33 @@ impl Config {
         } else {
             self.system_prompt.custom_prompt.clone().unwrap_or_default()
         };
+        prompt_parts.push(base_prompt);
+
+        // Add user identity section if configured
+        let mut user_section = Vec::new();
+        if let Some(name) = &self.system_prompt.user_name
+            && !name.is_empty()
+        {
+            user_section.push(format!("The user's name is {}.", name));
+        }
+        if let Some(prefs) = &self.system_prompt.personal_preferences
+            && !prefs.is_empty()
+        {
+            user_section.push(format!("User preferences for responses: {}", prefs));
+        }
+        if !user_section.is_empty() {
+            prompt_parts.push(format!(
+                "\n## User Information\n{}",
+                user_section.join("\n")
+            ));
+        }
 
         // Append custom instructions if present
         if let Some(instructions) = &self.system_prompt.custom_instructions {
-            format!("{}\n\n{}", base_prompt, instructions)
-        } else {
-            base_prompt
+            prompt_parts.push(instructions.clone());
         }
+
+        prompt_parts.join("\n\n")
     }
 }
 
@@ -485,7 +486,6 @@ mod tests {
     fn test_default_config() {
         let config = Config::default();
         assert_eq!(config.default_backend, Backend::Bedrock);
-        assert!(config.ui.streaming);
     }
 
     #[test]
@@ -502,7 +502,6 @@ mod tests {
         let json = r#"{"default_backend": "anthropic"}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.default_backend, Backend::Anthropic);
-        assert!(config.ui.streaming); // Should use default
     }
 
     #[test]

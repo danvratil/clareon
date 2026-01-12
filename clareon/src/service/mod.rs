@@ -17,7 +17,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
-use clareon_core::{Config, ConversationManager, Error, Result, Storage};
+use clareon_core::{Config, ConfigManager, ConversationManager, Error, Result, Storage};
 
 /// Handle for sending commands to the service and receiving responses
 #[derive(Clone)]
@@ -52,12 +52,17 @@ impl ClareonService {
     ///
     /// This initializes the async runtime, storage, backend, and conversation manager.
     /// It also starts the background worker task.
-    pub fn new(config: Config) -> Result<Self> {
+    ///
+    /// Configuration is accessed via the global ConfigManager singleton.
+    pub fn new() -> Result<Self> {
         // Create tokio runtime
         let runtime = Runtime::new()?;
 
         // Initialize core components on the runtime
         let manager = runtime.block_on(async {
+            // Get config from singleton
+            let config = ConfigManager::get().config();
+
             // Initialize storage
             let storage = Storage::new(&Config::database_url()?).await?;
 

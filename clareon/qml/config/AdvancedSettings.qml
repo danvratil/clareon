@@ -6,22 +6,19 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as Controls
 import org.kde.kirigami as Kirigami
+import cz.dvratil.clareon
 
-Controls.ScrollView {
+Kirigami.ScrollablePage {
     id: root
 
-    contentWidth: availableWidth
+    title: qsTr("Advanced Settings")
+
+    property var config
+    property bool isDirty: false
 
     ColumnLayout {
         width: root.width
         spacing: Kirigami.Units.largeSpacing
-
-        // Page header
-        Kirigami.Heading {
-            text: qsTr("Advanced Settings")
-            level: 1
-            Layout.fillWidth: true
-        }
 
         // Warning banner
         Kirigami.InlineMessage {
@@ -43,8 +40,14 @@ Controls.ScrollView {
             Controls.ComboBox {
                 id: globalLogLevelCombo
                 Kirigami.FormData.label: qsTr("Global log level:")
-                model: ["Error", "Warn", "Info", "Debug", "Trace"]
-                currentIndex: 2  // Info
+                model: ["error", "warn", "info", "debug", "trace"]
+                currentIndex: {
+                    let level = root.config.logging.global || "info"
+                    return model.indexOf(level) >= 0 ? model.indexOf(level) : 2
+                }
+                onActivated: {
+                    root.config.logging.global = model[currentIndex]
+                }
             }
 
             Controls.Label {
@@ -59,15 +62,18 @@ Controls.ScrollView {
                 id: logToFileCheckBox
                 Kirigami.FormData.label: qsTr("Log to file:")
                 text: qsTr("Save logs to file")
-                checked: false
+                checked: root.config.logging.log_to_file || false
+                onToggled: {
+                    root.config.logging.log_to_file = checked
+                }
             }
 
-            Controls.TextField {
-                id: logFilePathField
-                Kirigami.FormData.label: qsTr("Log file path:")
-                placeholderText: "~/.local/share/clareon/clareon.log"
-                enabled: logToFileCheckBox.checked
+            Controls.Label {
+                text: qsTr("When enabled, logs are saved to ~/.local/share/clareon/clareon.log")
+                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                color: Kirigami.Theme.disabledTextColor
                 Layout.fillWidth: true
+                wrapMode: Text.WordWrap
             }
         }
 
@@ -93,7 +99,14 @@ Controls.ScrollView {
                 wrapMode: Text.WordWrap
             }
 
-            // Module log levels list
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                type: Kirigami.MessageType.Information
+                text: qsTr("Module-specific log level configuration will be available in a future version")
+                visible: true
+            }
+
+            // Module log levels list (placeholder for now)
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 150
@@ -108,36 +121,36 @@ Controls.ScrollView {
                     anchors.margins: Kirigami.Units.smallSpacing
                     clip: true
 
-                    model: ListModel {
-                        ListElement { module: "clareon_core"; level: "debug" }
-                        ListElement { module: "aws_sdk"; level: "warn" }
-                        ListElement { module: "sqlx"; level: "warn" }
+                    // Display current module levels from config
+                    model: {
+                        let modules = root.config.logging.modules || {}
+                        let list = []
+                        for (let module in modules) {
+                            list.push({module: module, level: modules[module]})
+                        }
+                        return list
                     }
 
                     delegate: Controls.ItemDelegate {
                         width: ListView.view.width
                         contentItem: RowLayout {
                             Controls.Label {
-                                text: model.module
+                                text: modelData.module
                                 Layout.fillWidth: true
                                 font.family: "monospace"
                             }
-                            Controls.ComboBox {
-                                model: ["error", "warn", "info", "debug", "trace"]
-                                currentIndex: {
-                                    const levels = ["error", "warn", "info", "debug", "trace"]
-                                    return Math.max(0, levels.indexOf(model.level))
-                                }
-                                Layout.preferredWidth: 120
-                            }
-                            Controls.Button {
-                                icon.name: "list-remove"
-                                flat: true
-                                onClicked: {
-                                    moduleLogLevelsList.model.remove(index)
-                                }
+                            Controls.Label {
+                                text: modelData.level
+                                color: Kirigami.Theme.disabledTextColor
                             }
                         }
+                    }
+
+                    Controls.Label {
+                        anchors.centerIn: parent
+                        text: qsTr("Default module log levels")
+                        visible: moduleLogLevelsList.count === 0
+                        color: Kirigami.Theme.disabledTextColor
                     }
                 }
             }
@@ -146,11 +159,30 @@ Controls.ScrollView {
                 Layout.fillWidth: true
 
                 Controls.Button {
-                    //: Add logging module button
                     text: qsTr("Add Module")
                     icon.name: "list-add"
+                    enabled: false
                     onClicked: {
                         // TODO: Open dialog to add module
+                    }
+                }
+
+                Controls.Button {
+                    text: qsTr("Reset to Defaults")
+                    icon.name: "edit-undo"
+                    onClicked: {
+                        // Reset modules to default
+                        root.config.logging.modules = {
+                            "clareon": "debug",
+                            "clareon_core": "debug",
+                            "clareon_cli": "debug",
+                            "aws_sdk": "warn",
+                            "aws_smithy": "warn",
+                            "aws_config": "warn",
+                            "sqlx": "warn",
+                            "hyper": "warn",
+                            "h2": "warn"
+                        }
                     }
                 }
 
@@ -159,64 +191,5 @@ Controls.ScrollView {
                 }
             }
         }
-
-        // Network & Performance
-        Kirigami.FormLayout {
-            Layout.fillWidth: true
-
-            Kirigami.Separator {
-                Kirigami.FormData.isSection: true
-                Kirigami.FormData.label: qsTr("Network & Performance")
-            }
-
-            Controls.SpinBox {
-                id: requestTimeoutSpinBox
-                Kirigami.FormData.label: qsTr("Request timeout:")
-                from: 30
-                to: 600
-                value: 120
-                stepSize: 10
-            }
-
-            Controls.Label {
-                text: qsTr("Maximum time (in seconds) to wait for API responses")
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
-                color: Kirigami.Theme.disabledTextColor
-                Layout.fillWidth: true
-                wrapMode: Text.WordWrap
-            }
-
-            Controls.SpinBox {
-                id: maxRetriesSpinBox
-                Kirigami.FormData.label: qsTr("Max retries:")
-                from: 0
-                to: 10
-                value: 3
-                stepSize: 1
-            }
-
-            Controls.Label {
-                text: qsTr("Number of retry attempts for failed requests")
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
-                color: Kirigami.Theme.disabledTextColor
-                Layout.fillWidth: true
-                wrapMode: Text.WordWrap
-            }
-
-            Controls.TextField {
-                id: httpProxyField
-                Kirigami.FormData.label: qsTr("HTTP proxy:")
-                placeholderText: "http://proxy.example.com:8080"
-                Layout.fillWidth: true
-            }
-
-            Controls.Label {
-                text: qsTr("HTTP/HTTPS proxy for API requests (leave empty for system default)")
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
-                color: Kirigami.Theme.disabledTextColor
-                Layout.fillWidth: true
-                wrapMode: Text.WordWrap
-            }
-        }
-   }
+    }
 }

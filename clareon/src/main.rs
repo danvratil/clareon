@@ -5,19 +5,20 @@
 use std::sync::{Mutex, OnceLock};
 use tokio::runtime::Runtime;
 
-use clareon_core::Config;
+use clareon_core::ConfigManager;
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
 
 use service::ClareonService;
 
+pub mod config_manager_qt;
 pub mod conversation_list_model;
 pub mod logging;
 pub mod message_list_model;
+pub mod qml;
 pub mod qt;
 pub mod search_result_model;
 pub mod service;
 pub mod service_controller;
-pub mod qml;
 
 // Global service instance
 static SERVICE: OnceLock<Mutex<ClareonService>> = OnceLock::new();
@@ -33,16 +34,16 @@ pub fn get_runtime() -> &'static Runtime {
 }
 
 fn main() {
-    // Load configuration
-    let config = Config::load().expect("Failed to load config");
+    // Initialize ConfigManager singleton (loads config on first access)
+    let config = ConfigManager::get().config();
 
     // Initialize logging
     let _guard =
         clareon_core::logging::init_logging(&config).expect("Failed to initialize logging");
     logging::init_qt_logging();
 
-    // Create the service
-    let service = ClareonService::new(config).expect("Failed to create service");
+    // Create the service (will use ConfigManager internally)
+    let service = ClareonService::new().expect("Failed to create service");
 
     // Get the service handle before storing service
     let handle = service.handle();

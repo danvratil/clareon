@@ -6,22 +6,20 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as Controls
 import org.kde.kirigami as Kirigami
+import cz.dvratil.clareon
 
-Controls.ScrollView {
+Kirigami.ScrollablePage {
     id: root
 
-    contentWidth: availableWidth
+    title: qsTr("Tools & MCP")
+
+    // Local config state - loaded from ConfigManagerQt
+    property var config
+    property bool isDirty: false
 
     ColumnLayout {
         width: root.width
         spacing: Kirigami.Units.largeSpacing
-
-        // Page header
-        Kirigami.Heading {
-            text: qsTr("Tools & MCP")
-            level: 1
-            Layout.fillWidth: true
-        }
 
         // Tool Execution Settings
         Kirigami.FormLayout {
@@ -36,15 +34,21 @@ Controls.ScrollView {
                 id: enableToolsCheckBox
                 Kirigami.FormData.label: qsTr("Enable tools:")
                 text: qsTr("Allow Claude to use tools")
-                checked: true
+                checked: root.config.tools?.enabled || true
+                onToggled: {
+                    root.config.tools.enabled = checked
+                }
             }
 
             Controls.CheckBox {
                 id: autoExecuteCheckBox
                 Kirigami.FormData.label: qsTr("Auto-execute:")
                 text: qsTr("Automatically execute tools without approval")
-                checked: true
+                checked: root.config.tools?.auto_execute || true
                 enabled: enableToolsCheckBox.checked
+                onToggled: {
+                    root.config.tools.auto_execute = checked
+                }
             }
 
             Controls.Label {
@@ -60,9 +64,14 @@ Controls.ScrollView {
                 Kirigami.FormData.label: qsTr("Tool timeout:")
                 from: 5
                 to: 300
-                value: 30
+                value: root.config.tools?.default_timeout || 30
                 stepSize: 5
                 enabled: enableToolsCheckBox.checked
+                onValueChanged: {
+                    if (value !== root.config.tools?.default_timeout) {
+                        root.config.tools.default_timeout = value
+                    }
+                }
             }
 
             Controls.Label {
@@ -86,9 +95,23 @@ Controls.ScrollView {
             Controls.ComboBox {
                 id: sandboxModeCombo
                 Kirigami.FormData.label: qsTr("Sandbox mode:")
-                model: [qsTr("Strict (Recommended)"), qsTr("Basic"), qsTr("None (dangerous)")]
-                currentIndex: 0
+                model: ["strict", "basic", "none"]
+                displayText: {
+                    const modeNames = {
+                        "strict": qsTr("Strict (Recommended)"),
+                        "basic": qsTr("Basic"),
+                        "none": qsTr("None (dangerous)")
+                    }
+                    return modeNames[currentValue] || currentValue
+                }
+                currentIndex: {
+                    let mode = root.config.tools?.sandbox_mode || "strict"
+                    return model.indexOf(mode) >= 0 ? model.indexOf(mode) : 0
+                }
                 enabled: enableToolsCheckBox.checked
+                onActivated: {
+                    root.config.tools.sandbox_mode = model[currentIndex]
+                }
             }
 
             Controls.Label {
@@ -99,40 +122,6 @@ Controls.ScrollView {
                 color: Kirigami.Theme.disabledTextColor
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-            }
-        }
-
-        // Built-in Tools
-        Kirigami.FormLayout {
-            Layout.fillWidth: true
-
-            Kirigami.Separator {
-                Kirigami.FormData.isSection: true
-                Kirigami.FormData.label: qsTr("Built-in Tools")
-            }
-
-            Controls.CheckBox {
-                id: enableReadFileCheckBox
-                Kirigami.FormData.label: qsTr("read_file:")
-                text: qsTr("Allow reading files")
-                checked: true
-                enabled: enableToolsCheckBox.checked
-            }
-
-            Controls.CheckBox {
-                id: enableWriteFileCheckBox
-                Kirigami.FormData.label: qsTr("write_file:")
-                text: qsTr("Allow writing files")
-                checked: true
-                enabled: enableToolsCheckBox.checked
-            }
-
-            Controls.CheckBox {
-                id: enableListDirectoryCheckBox
-                Kirigami.FormData.label: qsTr("list_directory:")
-                text: qsTr("Allow listing directories")
-                checked: true
-                enabled: enableToolsCheckBox.checked
             }
         }
 
@@ -150,9 +139,14 @@ Controls.ScrollView {
                 Kirigami.FormData.label: qsTr("Max workspace size:")
                 from: 50
                 to: 5000
-                value: 500
+                value: root.config.tools?.max_workspace_size_mb || 500
                 stepSize: 50
                 enabled: enableToolsCheckBox.checked
+                onValueChanged: {
+                    if (value !== root.config.tools?.max_workspace_size_mb) {
+                        root.config.tools.max_workspace_size_mb = value
+                    }
+                }
             }
 
             Controls.Label {
@@ -168,9 +162,14 @@ Controls.ScrollView {
                 Kirigami.FormData.label: qsTr("Max upload size:")
                 from: 10
                 to: 1000
-                value: 100
+                value: root.config.tools?.max_upload_size_mb || 100
                 stepSize: 10
                 enabled: enableToolsCheckBox.checked
+                onValueChanged: {
+                    if (value !== root.config.tools?.max_upload_size_mb) {
+                        root.config.tools.max_upload_size_mb = value
+                    }
+                }
             }
 
             Controls.Label {
@@ -186,9 +185,14 @@ Controls.ScrollView {
                 Kirigami.FormData.label: qsTr("Workspace retention:")
                 from: 1
                 to: 365
-                value: 30
+                value: root.config.tools?.workspace_retention_days || 30
                 stepSize: 1
                 enabled: enableToolsCheckBox.checked
+                onValueChanged: {
+                    if (value !== root.config.tools?.workspace_retention_days) {
+                        root.config.tools.workspace_retention_days = value
+                    }
+                }
             }
 
             Controls.Label {
@@ -207,7 +211,6 @@ Controls.ScrollView {
 
             Kirigami.Separator {
                 Layout.fillWidth: true
-                Kirigami.FormData.isSection: true
             }
 
             Kirigami.Heading {
@@ -223,7 +226,14 @@ Controls.ScrollView {
                 wrapMode: Text.WordWrap
             }
 
-            // MCP Server List
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                type: Kirigami.MessageType.Information
+                text: qsTr("MCP server configuration is not yet implemented")
+                visible: true
+            }
+
+            // MCP Server List (placeholder)
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 200
@@ -254,7 +264,7 @@ Controls.ScrollView {
                 Controls.Button {
                     text: qsTr("Add Server")
                     icon.name: "list-add"
-                    enabled: enableToolsCheckBox.checked
+                    enabled: false
                     onClicked: {
                         // TODO: Open MCP server configuration dialog
                     }
@@ -263,7 +273,7 @@ Controls.ScrollView {
                 Controls.Button {
                     text: qsTr("Import from File")
                     icon.name: "document-open"
-                    enabled: enableToolsCheckBox.checked
+                    enabled: false
                     onClicked: {
                         // TODO: Import MCP server configuration
                     }

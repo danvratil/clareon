@@ -6,24 +6,28 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as Controls
 import org.kde.kirigami as Kirigami
+import cz.dvratil.clareon
 
-Controls.ScrollView {
+Kirigami.ScrollablePage {
     id: root
 
-    contentWidth: availableWidth
+    title: qsTr("Notifications Settings")
+
+    property var config
+    property bool isDirty: false
 
     ColumnLayout {
         width: root.width
         spacing: Kirigami.Units.largeSpacing
 
-        // Page header
-        Kirigami.Heading {
-            text: qsTr("Notifications")
-            level: 1
+        Kirigami.InlineMessage {
             Layout.fillWidth: true
+            type: Kirigami.MessageType.Information
+            text: qsTr("Notification settings are not yet implemented. This page is a placeholder for future functionality.")
+            visible: true
         }
 
-        // General Notification Settings
+        // General Notification Settings (Disabled placeholder)
         Kirigami.FormLayout {
             Layout.fillWidth: true
 
@@ -37,6 +41,7 @@ Controls.ScrollView {
                 Kirigami.FormData.label: qsTr("Enable notifications:")
                 text: qsTr("Show desktop notifications")
                 checked: true
+                enabled: false
             }
 
             Controls.CheckBox {
@@ -44,11 +49,11 @@ Controls.ScrollView {
                 Kirigami.FormData.label: qsTr("When minimized:")
                 text: qsTr("Only notify when window is minimized")
                 checked: false
-                enabled: enableNotificationsCheckBox.checked
+                enabled: false
             }
         }
 
-        // Response Notifications
+        // Response Notifications (Disabled placeholder)
         Kirigami.FormLayout {
             Layout.fillWidth: true
 
@@ -62,7 +67,7 @@ Controls.ScrollView {
                 Kirigami.FormData.label: qsTr("Response complete:")
                 text: qsTr("Notify when Claude finishes responding")
                 checked: true
-                enabled: enableNotificationsCheckBox.checked
+                enabled: false
             }
 
             Controls.CheckBox {
@@ -70,11 +75,11 @@ Controls.ScrollView {
                 Kirigami.FormData.label: qsTr("Errors:")
                 text: qsTr("Notify when an error occurs")
                 checked: true
-                enabled: enableNotificationsCheckBox.checked
+                enabled: false
             }
         }
 
-        // Tool Execution Notifications
+        // Tool Execution Notifications (Disabled placeholder)
         Kirigami.FormLayout {
             Layout.fillWidth: true
 
@@ -88,7 +93,7 @@ Controls.ScrollView {
                 Kirigami.FormData.label: qsTr("Tool requests:")
                 text: qsTr("Notify when Claude wants to use a tool")
                 checked: false
-                enabled: enableNotificationsCheckBox.checked
+                enabled: false
             }
 
             Controls.CheckBox {
@@ -96,7 +101,7 @@ Controls.ScrollView {
                 Kirigami.FormData.label: qsTr("Tool completion:")
                 text: qsTr("Notify when tool execution completes")
                 checked: false
-                enabled: enableNotificationsCheckBox.checked
+                enabled: false
             }
 
             Controls.CheckBox {
@@ -104,11 +109,11 @@ Controls.ScrollView {
                 Kirigami.FormData.label: qsTr("Tool errors:")
                 text: qsTr("Notify when tool execution fails")
                 checked: true
-                enabled: enableNotificationsCheckBox.checked
+                enabled: false
             }
         }
 
-        // Notification Appearance
+        // Notification Appearance (Disabled placeholder)
         Kirigami.FormLayout {
             Layout.fillWidth: true
 
@@ -122,7 +127,7 @@ Controls.ScrollView {
                 Kirigami.FormData.label: qsTr("Preview:")
                 text: qsTr("Show message preview in notifications")
                 checked: true
-                enabled: enableNotificationsCheckBox.checked
+                enabled: false
             }
 
             Controls.SpinBox {
@@ -132,7 +137,7 @@ Controls.ScrollView {
                 to: 500
                 value: 150
                 stepSize: 50
-                enabled: enableNotificationsCheckBox.checked && showPreviewCheckBox.checked
+                enabled: false
             }
 
             Controls.Label {
