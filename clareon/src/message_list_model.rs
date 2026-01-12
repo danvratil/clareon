@@ -17,7 +17,7 @@ use tokio::task::JoinHandle;
 
 use clareon_core::types::ConversationId;
 
-use crate::service::{Command, MessageData, Response};
+use crate::service::{Command, ErrorInfo, MessageData, Response};
 use crate::service_controller::try_get_service_handle;
 
 #[cxx_qt::bridge]
@@ -126,6 +126,14 @@ enum MessageRole {
     Text,
     CreatedAt,
     MessageState,
+    // Error-related roles
+    IsError,
+    ErrorMessage,
+    ErrorDetails,
+    ErrorCategory,
+    IsRetryable,
+    RetryAfterSecs,
+    PartialContent,
 }
 
 #[derive(Default, Debug)]
@@ -134,6 +142,7 @@ pub enum MessageState {
     Streaming,
     #[default]
     Complete,
+    Error,
 }
 
 impl From<MessageRole> for i32 {
@@ -149,6 +158,9 @@ struct Message {
     text: String,
     created_at: i64,
     state: MessageState,
+    // Error-related fields
+    error_info: Option<ErrorInfo>,
+    partial_content: Option<String>,
 }
 
 impl Message {
@@ -159,6 +171,20 @@ impl Message {
             text: data.text,
             created_at: data.created_at,
             state,
+            error_info: None,
+            partial_content: None,
+        }
+    }
+
+    fn from_error(error_info: ErrorInfo, partial_content: Option<String>) -> Self {
+        Self {
+            id: -2, // Special ID for error messages
+            role: "error".to_string(),
+            text: error_info.message.clone(),
+            created_at: chrono::Local::now().timestamp(),
+            state: MessageState::Error,
+            error_info: Some(error_info),
+            partial_content,
         }
     }
 }
@@ -254,6 +280,8 @@ impl ffi::MessageListModel {
             text: String::new(),
             created_at: DateTime::<chrono::Local>::default().timestamp(),
             state: MessageState::Thinking,
+            error_info: None,
+            partial_content: None,
         });
         self.as_mut().end_insert_rows();
     }
@@ -293,6 +321,34 @@ impl ffi::MessageListModel {
         }
     }
 
+    fn add_error_message(mut self: Pin<&mut Self>, error_info: ErrorInfo, partial: Option<String>) {
+        let count = self.rust().messages.len();
+        self.as_mut()
+            .begin_insert_rows(&QModelIndex::default(), count as i32, count as i32);
+        self.as_mut()
+            .rust_mut()
+            .messages
+            .push(Message::from_error(error_info, partial));
+        self.as_mut().end_insert_rows();
+    }
+
+    fn replace_streaming_with_error(
+        mut self: Pin<&mut Self>,
+        error_info: ErrorInfo,
+        partial: Option<String>,
+    ) {
+        if let Some(last_message) = self.as_mut().rust_mut().messages.last_mut()
+            && last_message.id == -1
+        {
+            // Replace streaming placeholder with error
+            *last_message = Message::from_error(error_info, partial);
+            let row = (self.rust().messages.len() - 1) as i32;
+            let index = self.as_ref().index(row, 0, &QModelIndex::default());
+            // Notify all roles changed
+            self.as_mut().data_changed(&index, &index, QList::default());
+        }
+    }
+
     fn row_count(&self, _parent: &QModelIndex) -> i32 {
         self.rust().messages.len() as i32
     }
@@ -318,8 +374,56 @@ impl ffi::MessageListModel {
                 MessageState::Thinking => "thinking",
                 MessageState::Streaming => "streaming",
                 MessageState::Complete => "complete",
+                MessageState::Error => "error",
             };
             QVariant::from(&QString::from(state_str))
+        } else if role == MessageRole::IsError as i32 {
+            QVariant::from(&message.error_info.is_some())
+        } else if role == MessageRole::ErrorMessage as i32 {
+            if let Some(ref info) = message.error_info {
+                QVariant::from(&QString::from(&info.message))
+            } else {
+                QVariant::default()
+            }
+        } else if role == MessageRole::ErrorDetails as i32 {
+            if let Some(ref info) = message.error_info {
+                QVariant::from(&QString::from(&info.details))
+            } else {
+                QVariant::default()
+            }
+        } else if role == MessageRole::ErrorCategory as i32 {
+            if let Some(ref info) = message.error_info {
+                let category_str = match info.category {
+                    crate::service::ErrorCategory::Network => "network",
+                    crate::service::ErrorCategory::RateLimit => "ratelimit",
+                    crate::service::ErrorCategory::Authentication => "authentication",
+                    crate::service::ErrorCategory::ServerError => "servererror",
+                    crate::service::ErrorCategory::ClientError => "clienterror",
+                    crate::service::ErrorCategory::ContextLimit => "contextlimit",
+                    crate::service::ErrorCategory::Unknown => "unknown",
+                };
+                QVariant::from(&QString::from(category_str))
+            } else {
+                QVariant::default()
+            }
+        } else if role == MessageRole::IsRetryable as i32 {
+            if let Some(ref info) = message.error_info {
+                QVariant::from(&info.is_retryable)
+            } else {
+                QVariant::from(&false)
+            }
+        } else if role == MessageRole::RetryAfterSecs as i32 {
+            if let Some(ref info) = message.error_info {
+                QVariant::from(&(info.retry_after_secs.unwrap_or(0) as i32))
+            } else {
+                QVariant::from(&0i32)
+            }
+        } else if role == MessageRole::PartialContent as i32 {
+            if let Some(ref partial) = message.partial_content {
+                QVariant::from(&QString::from(partial))
+            } else {
+                QVariant::default()
+            }
         } else {
             QVariant::default()
         }
@@ -334,6 +438,32 @@ impl ffi::MessageListModel {
         roles.insert(
             MessageRole::MessageState.into(),
             QByteArray::from("messageState"),
+        );
+        // Error-related roles
+        roles.insert(MessageRole::IsError.into(), QByteArray::from("isError"));
+        roles.insert(
+            MessageRole::ErrorMessage.into(),
+            QByteArray::from("errorMessage"),
+        );
+        roles.insert(
+            MessageRole::ErrorDetails.into(),
+            QByteArray::from("errorDetails"),
+        );
+        roles.insert(
+            MessageRole::ErrorCategory.into(),
+            QByteArray::from("errorCategory"),
+        );
+        roles.insert(
+            MessageRole::IsRetryable.into(),
+            QByteArray::from("isRetryable"),
+        );
+        roles.insert(
+            MessageRole::RetryAfterSecs.into(),
+            QByteArray::from("retryAfterSecs"),
+        );
+        roles.insert(
+            MessageRole::PartialContent.into(),
+            QByteArray::from("partialContent"),
         );
         roles
     }
@@ -370,6 +500,8 @@ impl ffi::MessageListModel {
                     Response::StreamingStarted { conv_id: id } => *id == conv_id,
                     Response::StreamingChunk { conv_id: id, .. } => *id == conv_id,
                     Response::StreamingComplete { conv_id: id, .. } => *id == conv_id,
+                    Response::SendMessageError { conv_id: id, .. } => *id == conv_id,
+                    Response::StreamingError { conv_id: id, .. } => *id == conv_id,
                     _ => false,
                 };
 
@@ -434,6 +566,36 @@ impl ffi::MessageListModel {
             }
             Response::StreamingComplete { message, .. } => {
                 self.as_mut().complete_streaming_message(message);
+            }
+            Response::SendMessageError {
+                error_info,
+                user_message_id: _,
+                ..
+            } => {
+                // Remove "thinking" placeholder if present
+                if let Some(last) = self.rust().messages.last()
+                    && last.id == -1
+                {
+                    let count = self.rust().messages.len();
+                    self.as_mut().begin_remove_rows(
+                        &QModelIndex::default(),
+                        (count - 1) as i32,
+                        (count - 1) as i32,
+                    );
+                    self.as_mut().rust_mut().messages.pop();
+                    self.as_mut().end_remove_rows();
+                }
+                // Add error message
+                self.as_mut().add_error_message(error_info, None);
+            }
+            Response::StreamingError {
+                error_info,
+                partial_text,
+                ..
+            } => {
+                // Replace streaming message with error showing partial content
+                self.as_mut()
+                    .replace_streaming_with_error(error_info, Some(partial_text));
             }
             _ => {
                 // Ignore other response types

@@ -13,7 +13,7 @@ use clareon_core::{ConversationManager, StreamUpdate};
 
 use super::{
     command::Command,
-    response::{MessageData, Response},
+    response::{ErrorCategory, ErrorInfo, MessageData, Response},
 };
 
 /// Service worker that processes commands on the tokio runtime
@@ -78,6 +78,9 @@ impl ServiceWorker {
             }
             Command::LoadMessages { conv_id } => {
                 self.handle_load_messages(conv_id).await;
+            }
+            Command::RetryLastMessage { conv_id } => {
+                self.handle_retry_last_message(conv_id).await;
             }
             Command::Shutdown => {
                 // Already handled in run() loop
@@ -182,25 +185,29 @@ impl ServiceWorker {
 
     async fn handle_send_message(&self, conv_id: ConversationId, text: String) {
         // First store the user message to the conversation
-        match self
+        let user_msg_id = match self
             .manager
             .append_user_message(conv_id.clone(), &text)
             .await
         {
             Ok(msg) => {
+                let msg_id = msg.id;
                 let _ = self.response_tx.send(Response::MessageSent {
                     conv_id: conv_id.clone(),
                     message: message_to_data(msg),
                 });
+                Some(msg_id)
             }
             Err(e) => {
                 error!(
                     "Failed to append user message to conversation {}: {}",
                     conv_id, e
                 );
-                let _ = self.response_tx.send(Response::Error {
-                    command: format!("SendMessage({})", conv_id),
-                    error: format!("Failed to append user message: {}", e),
+                let error_info = error_to_info(&e);
+                let _ = self.response_tx.send(Response::SendMessageError {
+                    conv_id,
+                    error_info,
+                    user_message_id: None,
                 });
                 return;
             }
@@ -214,9 +221,11 @@ impl ServiceWorker {
                     "Failed to load conversation {} for sending message: {}",
                     conv_id, e
                 );
-                let _ = self.response_tx.send(Response::Error {
-                    command: format!("SendMessage({})", conv_id),
-                    error: format!("Failed to load conversation: {}", e),
+                let error_info = error_to_info(&e);
+                let _ = self.response_tx.send(Response::SendMessageError {
+                    conv_id,
+                    error_info,
+                    user_message_id: user_msg_id,
                 });
                 return;
             }
@@ -248,9 +257,11 @@ impl ServiceWorker {
                         }
                         Err(e) => {
                             error!("Streaming error for conversation {}: {}", conv_id, e);
-                            let _ = self.response_tx.send(Response::Error {
-                                command: format!("SendMessage({})", conv_id),
-                                error: format!("Streaming error: {}", e),
+                            let error_info = error_to_info(&e);
+                            let _ = self.response_tx.send(Response::StreamingError {
+                                conv_id,
+                                error_info,
+                                partial_text: accumulated,
                             });
                             return;
                         }
@@ -280,9 +291,100 @@ impl ServiceWorker {
                     "Failed to start streaming for conversation {}: {}",
                     conv_id, e
                 );
-                let _ = self.response_tx.send(Response::Error {
-                    command: format!("SendMessage({})", conv_id),
-                    error: e.to_string(),
+                let error_info = error_to_info(&e);
+                let _ = self.response_tx.send(Response::SendMessageError {
+                    conv_id,
+                    error_info,
+                    user_message_id: user_msg_id,
+                });
+            }
+        }
+    }
+
+    async fn handle_retry_last_message(&self, conv_id: ConversationId) {
+        // Load the conversation to get the last user message
+        let mut conversation = match self.manager.load_conversation(&conv_id).await {
+            Ok(conv) => conv,
+            Err(e) => {
+                error!("Failed to load conversation for retry: {}", e);
+                let error_info = error_to_info(&e);
+                let _ = self.response_tx.send(Response::SendMessageError {
+                    conv_id,
+                    error_info,
+                    user_message_id: None,
+                });
+                return;
+            }
+        };
+
+        // Start streaming (the conversation already has the user message)
+        let _ = self.response_tx.send(Response::StreamingStarted {
+            conv_id: conv_id.clone(),
+        });
+
+        // Send message with streaming
+        match self.manager.send_message_stream(&mut conversation).await {
+            Ok(mut stream) => {
+                let mut accumulated = String::new();
+
+                // Process stream events
+                while let Some(result) = stream.next().await {
+                    match result {
+                        Ok(update) => {
+                            if let Some(text_delta) = extract_text_delta(&update) {
+                                accumulated.push_str(&text_delta);
+
+                                let _ = self.response_tx.send(Response::StreamingChunk {
+                                    conv_id: conv_id.clone(),
+                                    delta: text_delta,
+                                    accumulated: accumulated.clone(),
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            error!(
+                                "Streaming error during retry for conversation {}: {}",
+                                conv_id, e
+                            );
+                            let error_info = error_to_info(&e);
+                            let _ = self.response_tx.send(Response::StreamingError {
+                                conv_id,
+                                error_info,
+                                partial_text: accumulated,
+                            });
+                            return;
+                        }
+                    }
+                }
+
+                // Streaming complete - reload messages to get the final message
+                match self.manager.get_messages(&conv_id).await {
+                    Ok(messages) => {
+                        if let Some(last_message) = messages.last() {
+                            let message_data = message_to_data(last_message.clone());
+                            let _ = self.response_tx.send(Response::StreamingComplete {
+                                conv_id,
+                                message: message_data,
+                            });
+                        } else {
+                            warn!("No messages found after retry streaming completed");
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to reload messages after retry streaming: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Failed to start streaming for retry in conversation {}: {}",
+                    conv_id, e
+                );
+                let error_info = error_to_info(&e);
+                let _ = self.response_tx.send(Response::SendMessageError {
+                    conv_id,
+                    error_info,
+                    user_message_id: None,
                 });
             }
         }
@@ -315,5 +417,94 @@ fn extract_text_delta(update: &StreamUpdate) -> Option<String> {
             }
         }
         _ => None,
+    }
+}
+
+/// Convert a clareon_core Error to ErrorInfo for UI display
+fn error_to_info(error: &clareon_core::Error) -> ErrorInfo {
+    match error {
+        clareon_core::Error::Backend(backend_err) => backend_error_to_info(backend_err),
+        _ => ErrorInfo {
+            message: "An unexpected error occurred".to_string(),
+            details: error.to_string(),
+            category: ErrorCategory::Unknown,
+            is_retryable: false,
+            retry_after_secs: None,
+        },
+    }
+}
+
+/// Convert a BackendError to ErrorInfo
+fn backend_error_to_info(error: &clareon_core::error::BackendError) -> ErrorInfo {
+    use clareon_core::error::BackendError;
+
+    match error {
+        BackendError::Http(e) => ErrorInfo {
+            message: "Network error occurred".to_string(),
+            details: e.to_string(),
+            category: ErrorCategory::Network,
+            is_retryable: true,
+            retry_after_secs: None,
+        },
+        BackendError::RateLimited { retry_after_secs } => ErrorInfo {
+            message: if let Some(secs) = retry_after_secs {
+                format!("Rate limited. Please try again in {} seconds", secs)
+            } else {
+                "Rate limited. Please try again later".to_string()
+            },
+            details: error.to_string(),
+            category: ErrorCategory::RateLimit,
+            is_retryable: true,
+            retry_after_secs: *retry_after_secs,
+        },
+        BackendError::ServiceUnavailable => ErrorInfo {
+            message: "Service temporarily unavailable".to_string(),
+            details: error.to_string(),
+            category: ErrorCategory::ServerError,
+            is_retryable: true,
+            retry_after_secs: None,
+        },
+        BackendError::Timeout => ErrorInfo {
+            message: "Request timed out".to_string(),
+            details: error.to_string(),
+            category: ErrorCategory::Network,
+            is_retryable: true,
+            retry_after_secs: None,
+        },
+        BackendError::Authentication(msg) => ErrorInfo {
+            message: "Authentication failed".to_string(),
+            details: msg.clone(),
+            category: ErrorCategory::Authentication,
+            is_retryable: false,
+            retry_after_secs: None,
+        },
+        BackendError::ModelNotAvailable(model) => ErrorInfo {
+            message: format!("Model '{}' is not available", model),
+            details: error.to_string(),
+            category: ErrorCategory::ClientError,
+            is_retryable: false,
+            retry_after_secs: None,
+        },
+        BackendError::ContextLengthExceeded { max_tokens } => ErrorInfo {
+            message: format!("Context length exceeded (max: {} tokens)", max_tokens),
+            details: "Try starting a new conversation or removing some messages".to_string(),
+            category: ErrorCategory::ContextLimit,
+            is_retryable: false,
+            retry_after_secs: None,
+        },
+        BackendError::Api { status, message } if *status >= 500 => ErrorInfo {
+            message: "Server error occurred".to_string(),
+            details: format!("HTTP {}: {}", status, message),
+            category: ErrorCategory::ServerError,
+            is_retryable: true,
+            retry_after_secs: None,
+        },
+        _ => ErrorInfo {
+            message: "An error occurred".to_string(),
+            details: error.to_string(),
+            category: ErrorCategory::Unknown,
+            is_retryable: false,
+            retry_after_secs: None,
+        },
     }
 }

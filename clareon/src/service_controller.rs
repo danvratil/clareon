@@ -94,6 +94,9 @@ mod ffi {
         fn load_messages(self: &ServiceController, conversation_id: &QString);
 
         #[qinvokable]
+        fn retry_last_message(self: &ServiceController, conversation_id: &QString);
+
+        #[qinvokable]
         fn delete_conversation(self: &ServiceController, conversation_id: &QString);
 
         #[qinvokable]
@@ -219,6 +222,32 @@ impl ffi::ServiceController {
                 // Currently not used, but could be used for loading individual conversations
             }
 
+            Response::SendMessageError {
+                conv_id,
+                error_info,
+                user_message_id: _,
+            } => {
+                // For now, emit error_occurred signal
+                // Later, MessageListModel will handle this directly
+                self.as_mut().error_occurred(
+                    QString::from(&format!("SendMessage({})", conv_id)),
+                    QString::from(&error_info.message),
+                );
+            }
+
+            Response::StreamingError {
+                conv_id,
+                error_info,
+                partial_text: _,
+            } => {
+                // For now, emit error_occurred signal
+                // Later, MessageListModel will handle this directly
+                self.as_mut().error_occurred(
+                    QString::from(&format!("StreamingError({})", conv_id)),
+                    QString::from(&error_info.message),
+                );
+            }
+
             Response::Error { command, error } => {
                 self.as_mut()
                     .error_occurred(QString::from(&command), QString::from(&error));
@@ -245,6 +274,14 @@ impl ffi::ServiceController {
     fn load_messages(&self, conversation_id: &QString) {
         let handle = get_service_handle();
         let _ = handle.send(Command::LoadMessages {
+            conv_id: ConversationId::from(conversation_id.to_string()),
+        });
+    }
+
+    /// Retry the last failed message in a conversation
+    fn retry_last_message(&self, conversation_id: &QString) {
+        let handle = get_service_handle();
+        let _ = handle.send(Command::RetryLastMessage {
             conv_id: ConversationId::from(conversation_id.to_string()),
         });
     }

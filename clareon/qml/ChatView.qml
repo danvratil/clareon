@@ -98,6 +98,7 @@ Kirigami.Page {
 
                     MessageDelegate {
                         width: parent.width
+                        conversationId: root.conversationId
                         // Role names from MessageListModel are automatically set as properties
                     }
                 }

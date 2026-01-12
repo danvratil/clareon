@@ -30,6 +30,9 @@ pub enum Command {
     /// Load messages for a conversation
     LoadMessages { conv_id: ConversationId },
 
+    /// Retry the last failed message in a conversation
+    RetryLastMessage { conv_id: ConversationId },
+
     /// Shutdown the service
     Shutdown,
 }

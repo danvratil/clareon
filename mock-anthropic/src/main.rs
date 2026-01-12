@@ -106,7 +106,10 @@ enum StreamEvent {
     #[serde(rename = "content_block_stop")]
     ContentBlockStop { index: u32 },
     #[serde(rename = "message_delta")]
-    MessageDelta { delta: MessageDeltaData },
+    MessageDelta {
+        delta: MessageDeltaData,
+        usage: Usage,
+    },
     #[serde(rename = "message_stop")]
     MessageStop,
     #[serde(rename = "ping")]
@@ -156,6 +159,135 @@ async fn list_models(State(state): State<Arc<AppState>>) -> Json<ModelsResponse>
     Json(state.models.clone())
 }
 
+/// Extract user message text from the request
+fn extract_user_message_text(request: &MessageRequest) -> String {
+    request
+        .messages
+        .iter()
+        .filter(|m| m.role == "user")
+        .filter_map(|m| match &m.content {
+            ContentOrString::String(s) => Some(s.clone()),
+            ContentOrString::Array(blocks) => {
+                let text: Vec<String> = blocks
+                    .iter()
+                    .map(|b| match b {
+                        ContentBlock::Text { text } => text.clone(),
+                    })
+                    .collect();
+                if text.is_empty() {
+                    None
+                } else {
+                    Some(text.join(" "))
+                }
+            }
+        })
+        .collect::<Vec<String>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+/// Check for error trigger keywords in user message and return appropriate error response
+fn check_error_triggers(text: &str) -> Option<Response> {
+    // Rate limit error
+    if text.contains("trigger rate limit") || text.contains("trigger ratelimit") {
+        return Some(
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                [("retry-after", "60")],
+                Json(serde_json::json!({
+                    "error": {
+                        "type": "rate_limit_error",
+                        "message": "Rate limit exceeded. Please try again later."
+                    }
+                })),
+            )
+                .into_response(),
+        );
+    }
+
+    // Server error (service unavailable)
+    if text.contains("trigger server error") || text.contains("trigger service unavailable") {
+        return Some(
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "error": {
+                        "type": "api_error",
+                        "message": "Service temporarily unavailable"
+                    }
+                })),
+            )
+                .into_response(),
+        );
+    }
+
+    // Internal server error
+    if text.contains("trigger internal error") {
+        return Some(
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": {
+                        "type": "api_error",
+                        "message": "Internal server error occurred"
+                    }
+                })),
+            )
+                .into_response(),
+        );
+    }
+
+    // Authentication error
+    if text.contains("trigger auth error") || text.contains("trigger authentication") {
+        return Some(
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({
+                    "error": {
+                        "type": "authentication_error",
+                        "message": "Invalid authentication credentials"
+                    }
+                })),
+            )
+                .into_response(),
+        );
+    }
+
+    // Context length exceeded
+    if text.contains("trigger context limit") || text.contains("trigger context length") {
+        return Some(
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": {
+                        "type": "invalid_request_error",
+                        "message": "Request exceeds maximum context length of 200000 tokens"
+                    }
+                })),
+            )
+                .into_response(),
+        );
+    }
+
+    // Invalid request error
+    if text.contains("trigger invalid request") {
+        return Some(
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": {
+                        "type": "invalid_request_error",
+                        "message": "Invalid request parameters"
+                    }
+                })),
+            )
+                .into_response(),
+        );
+    }
+
+    None
+}
+
 async fn create_message(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -200,6 +332,12 @@ async fn create_message(
             })),
         )
             .into_response();
+    }
+
+    // Check for error triggers in user messages
+    let user_message_text = extract_user_message_text(&request);
+    if let Some(error_response) = check_error_triggers(&user_message_text) {
+        return error_response;
     }
 
     let message_id = format!("msg_{}", Uuid::new_v4().simple());
@@ -300,6 +438,10 @@ fn create_streaming_response(
                             stop_reason: "end_turn".to_string(),
                             stop_sequence: None,
                         },
+                        usage: Usage {
+                            input_tokens: 100,
+                            output_tokens: words.len() as u32,
+                        }
                     }
                 } else {
                     // message_stop
@@ -366,14 +508,14 @@ async fn main() {
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:8081")
         .await
         .expect("Failed to bind to port 8080");
 
-    tracing::info!("Mock Anthropic API server listening on http://127.0.0.1:8080");
+    tracing::info!("Mock Anthropic API server listening on http://127.0.0.1:8081");
     tracing::info!("Endpoints:");
-    tracing::info!("  GET  http://127.0.0.1:8080/v1/models");
-    tracing::info!("  POST http://127.0.0.1:8080/v1/messages");
+    tracing::info!("  GET  http://127.0.0.1:8081/v1/models");
+    tracing::info!("  POST http://127.0.0.1:8081/v1/messages");
 
     axum::serve(listener, app)
         .await

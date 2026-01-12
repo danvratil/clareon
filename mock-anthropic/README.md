@@ -105,13 +105,59 @@ cargo run -p mock-anthropic
 
 Now run Clareon and it will connect to the mock server instead of the real Anthropic API!
 
+## Error Triggering for Testing
+
+The mock server can simulate various API errors by detecting trigger keywords in user messages. This is useful for testing error handling without network issues or real API failures.
+
+### Available Error Triggers
+
+Include any of these phrases (case-insensitive) in your message to trigger the corresponding error:
+
+| Trigger Phrase | HTTP Status | Error Type | Description |
+|---------------|-------------|------------|-------------|
+| `trigger rate limit` or `trigger ratelimit` | 429 | `rate_limit_error` | Rate limit exceeded (60s retry-after) |
+| `trigger server error` or `trigger service unavailable` | 503 | `api_error` | Service temporarily unavailable |
+| `trigger internal error` | 500 | `api_error` | Internal server error |
+| `trigger auth error` or `trigger authentication` | 401 | `authentication_error` | Invalid authentication credentials |
+| `trigger context limit` or `trigger context length` | 400 | `invalid_request_error` | Context length exceeded (200000 tokens) |
+| `trigger invalid request` | 400 | `invalid_request_error` | Invalid request parameters |
+
+### Example Usage
+
+To test rate limiting:
+```bash
+curl http://127.0.0.1:8080/v1/messages \
+  -H 'Content-Type: application/json' \
+  -H 'x-api-key: test-key' \
+  -d '{
+    "model": "claude-sonnet-4-5-20250929",
+    "max_tokens": 1024,
+    "messages": [
+      {"role": "user", "content": "Can you help me? trigger rate limit"}
+    ]
+  }'
+```
+
+Response:
+```json
+{
+  "error": {
+    "type": "rate_limit_error",
+    "message": "Rate limit exceeded. Please try again later."
+  }
+}
+```
+
+Messages without trigger keywords receive the standard Lorem Ipsum response.
+
 ## Implementation Notes
 
 - **Model Data**: The server loads real Claude model data from `models-api.json` in the workspace root
-- **Response Content**: All message responses return the same Lorem Ipsum text
+- **Response Content**: All message responses return the same Lorem Ipsum text (unless an error is triggered)
 - **Token Counts**: Input/output token counts are fixed (100 input, 50 output) and don't reflect actual usage
 - **Authentication**: Any non-empty API key is accepted
 - **Streaming Delay**: Word-by-word streaming has a 50ms delay between chunks to simulate real API behavior
+- **Error Triggers**: Error detection is case-insensitive and searches all user messages in the request
 
 ## Development
 

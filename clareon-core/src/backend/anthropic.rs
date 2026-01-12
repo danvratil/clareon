@@ -278,6 +278,17 @@ impl AnthropicBackend {
                 // These don't map to our events - skip them
                 Ok(None)
             }
+            AnthropicStreamEvent::Error { error } => match error.r#type.as_str() {
+                "authentication_error" => Err(BackendError::Authentication(error.message)),
+                "rate_limit_error" => Err(BackendError::RateLimited {
+                    retry_after_secs: None,
+                }),
+                "service_unavailable_error" => Err(BackendError::ServiceUnavailable),
+                _ => Err(BackendError::Api {
+                    status: 0,
+                    message: error.message,
+                }),
+            },
         }
     }
 }
@@ -309,7 +320,7 @@ impl LlmBackend for AnthropicBackend {
 
         let response = self
             .client
-            .post(&self.base_url)
+            .post(format!("{}/v1/messages", self.base_url))
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("content-type", "application/json")
@@ -385,7 +396,7 @@ impl LlmBackend for AnthropicBackend {
         // Send the request
         let response = self
             .client
-            .post(&self.base_url)
+            .post(format!("{}/v1/messages", self.base_url))
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("content-type", "application/json")
@@ -396,17 +407,28 @@ impl LlmBackend for AnthropicBackend {
         // Check status before starting to stream
         let status = response.status();
         if !status.is_success() {
+            let headers = response.headers().clone();
             let error_text = response.text().await.unwrap_or_default();
+            let error = match serde_json::from_str::<ErrorResponse>(&error_text) {
+                Ok(error) => error.error,
+                Err(_) => ErrorShape {
+                    r#type: "unknown".to_string(),
+                    message: format!("Failed to parse error response: {error_text}"),
+                },
+            };
 
             return match status.as_u16() {
-                401 => Err(BackendError::Authentication(error_text)),
+                401 => Err(BackendError::Authentication(error.message)),
                 429 => Err(BackendError::RateLimited {
-                    retry_after_secs: None,
+                    retry_after_secs: headers
+                        .get("retry-after")
+                        .and_then(|h| h.to_str().ok())
+                        .and_then(|s| s.parse().ok()),
                 }),
                 500..=599 => Err(BackendError::ServiceUnavailable),
                 _ => Err(BackendError::Api {
                     status: status.as_u16(),
-                    message: error_text,
+                    message: error.message,
                 }),
             };
         }
@@ -558,16 +580,23 @@ struct AnthropicUsage {
 #[serde(tag = "type")]
 enum AnthropicStreamEvent {
     #[serde(rename = "message_start")]
-    MessageStart { message: MessageStart },
+    MessageStart {
+        message: MessageStart,
+    },
     #[serde(rename = "content_block_start")]
     ContentBlockStart {
         index: usize,
         content_block: ContentBlockStart,
     },
     #[serde(rename = "content_block_delta")]
-    ContentBlockDelta { index: usize, delta: Delta },
+    ContentBlockDelta {
+        index: usize,
+        delta: Delta,
+    },
     #[serde(rename = "content_block_stop")]
-    ContentBlockStop { index: usize },
+    ContentBlockStop {
+        index: usize,
+    },
     #[serde(rename = "message_delta")]
     MessageDelta {
         delta: MessageDeltaContent,
@@ -578,6 +607,21 @@ enum AnthropicStreamEvent {
     MessageStop {},
     #[serde(rename = "ping")]
     Ping {},
+    Error {
+        error: ErrorShape,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+struct ErrorShape {
+    // TODO: turn this into an enum
+    r#type: String,
+    message: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ErrorResponse {
+    error: ErrorShape,
 }
 
 #[derive(Debug, Deserialize)]
