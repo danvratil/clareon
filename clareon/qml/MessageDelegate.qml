@@ -30,8 +30,24 @@ Item {
     required property bool isRetryable
     required property int retryAfterSecs
     required property string partialContent
+    // Highlighting property (set externally)
+    property bool highlighted: false
 
     height: messageLayout.implicitHeight + Kirigami.Units.largeSpacing * 2
+
+    // Highlight animation timer
+    Timer {
+        id: highlightTimer
+        interval: 3000
+        onTriggered: root.highlighted = false
+    }
+
+    // Watch for highlight changes and start timer
+    onHighlightedChanged: {
+        if (highlighted) {
+            highlightTimer.restart()
+        }
+    }
 
     RowLayout {
         id: messageLayout
@@ -141,11 +157,21 @@ Item {
                 color: root.role === "user"
                     ? Kirigami.Theme.highlightColor
                     : Kirigami.Theme.backgroundColor
-                border.color: root.role === "user"
-                    ? Qt.darker(Kirigami.Theme.highlightColor, 1.1)
-                    : Kirigami.Theme.alternateBackgroundColor
-                border.width: 1
+                border.color: root.highlighted
+                    ? Kirigami.Theme.focusColor
+                    : (root.role === "user"
+                        ? Qt.darker(Kirigami.Theme.highlightColor, 1.1)
+                        : Kirigami.Theme.alternateBackgroundColor)
+                border.width: root.highlighted ? 3 : 1
                 radius: Kirigami.Units.cornerRadius
+
+                // Highlight animation
+                Behavior on border.color {
+                    ColorAnimation { duration: 200 }
+                }
+                Behavior on border.width {
+                    NumberAnimation { duration: 200 }
+                }
             }
 
             contentItem: TextEdit {

@@ -4,4 +4,4 @@
 
 #pragma once
 
-void qmlRegisterMessageList();
+void registerClareonQmlTypes();

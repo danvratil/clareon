@@ -16,89 +16,58 @@ Kirigami.ApplicationWindow {
     minimumWidth: 800
     minimumHeight: 600
 
-    // ServiceController singleton is automatically available
-    Component.onCompleted: {
-        console.log("Clareon initialized")
-    }
+    property string currentConversationId: ""
 
-    // Keyboard shortcuts
-    Shortcut {
-        sequence: "Ctrl+N"
-        onActivated: ServiceController.newConversation()
-    }
-
-    Shortcut {
-        sequence: "Ctrl+Q"
-        onActivated: Qt.quit()
-    }
-
-    Shortcut {
-        sequence: "Ctrl+W"
-        onActivated: Qt.quit()
-    }
-
-    Shortcut {
-        sequence: "Ctrl+,"
-        onActivated: openConfiguration()
-    }
-
-    // Help dialog
-    Controls.Dialog {
-        id: helpDialog
-        title: "Keyboard Shortcuts"
-        modal: true
-        standardButtons: Controls.Dialog.Close
-
-        anchors.centerIn: parent
-        width: 400
-
-        contentItem: ListView {
-            implicitHeight: contentHeight
-            model: ListModel {
-                ListElement { shortcut: "Ctrl+N"; description: "New conversation" }
-                ListElement { shortcut: "Ctrl+O"; description: "Toggle conversation drawer" }
-                ListElement { shortcut: "Ctrl+,"; description: "Open settings" }
-                ListElement { shortcut: "Enter"; description: "Send message" }
-                ListElement { shortcut: "Shift+Enter"; description: "New line in message" }
-                ListElement { shortcut: "Esc"; description: "Clear message input" }
-                ListElement { shortcut: "Ctrl+Q"; description: "Quit application" }
-            }
-
-            delegate: Controls.ItemDelegate {
-                width: ListView.view.width
-                contentItem: RowLayout {
-                    Controls.Label {
-                        text: model.shortcut
-                        font.family: "monospace"
-                        Layout.preferredWidth: 120
-                    }
-                    Controls.Label {
-                        text: model.description
-                        Layout.fillWidth: true
-                    }
-                }
-            }
+    Kirigami.Action {
+        id: newConversationAction
+        text: qsTr("New Conversation")
+        shortcut: "Ctrl+N"
+        icon.name: "message-new"
+        onTriggered: {
+            ServiceController.newConversation()
         }
     }
 
-    Shortcut {
-        sequence: "F1"
-        onActivated: helpDialog.open()
+    Kirigami.Action {
+        id: settingsAction
+        text: qsTr("Settings")
+        shortcut: "Ctrl+,"
+        icon.name: "settings-configure"
+        onTriggered: {
+            openConfiguration()
+        }
     }
 
-    Shortcut {
-        sequence: "Ctrl+H"
-        onActivated: helpDialog.open()
+    Kirigami.Action {
+        id: searchConversationsAction
+        text: qsTr("Search Conversations")
+        shortcut: "Ctrl+F"
+        icon.name: "edit-find"
+        onTriggered: {
+            openSearchPage()
+        }
+    }
+
+    globalDrawer: Drawer {
+        id: drawer
+
+        onConversationSelected: {
+            root.openConversation(conversationId)
+        }
     }
 
     pageStack {
-        initialPage: conversationListPage
-        columnView.columnResizeMode: pageStack.wideMode ? Kirigami.ColumnView.DynamicColumns : Kirigami.ColumnView.SingleColumn
+        columnView.columnResizeMode: Kirigami.ColumnView.Dynamic
     }
 
     Component {
-        id: conversationListPage
-        ConversationListPage {}
+        id: searchResultsPage
+        SearchResultsPage {}
+    }
+
+    Component {
+        id: converstationPage
+        ConversationPage {}
     }
 
     // Configuration window loader
@@ -114,6 +83,20 @@ Kirigami.ApplicationWindow {
         }
     }
 
+    function openConversation(conversationId) {
+        const page = converstationPage.createObject(null, {
+            conversationId: conversationId,
+        })
+
+        if (page) {
+            pageStack.clear()
+            pageStack.replace(page)
+            globalDrawer.currentConversationId = conversationId
+        } else {
+            console.error("Failed to create ")
+        }
+    }
+
     function openConfiguration() {
         if (configWindowLoader.item) {
             // Window already exists, just show it
@@ -123,6 +106,18 @@ Kirigami.ApplicationWindow {
         } else {
             // Create the window
             configWindowLoader.active = true
+        }
+    }
+
+    function openSearchPage() {
+        const searchPage = searchResultsPage.createObject(null)
+        if (searchPage) {
+            searchPage.onSelectedConversationIdChanged.connect(function() {
+                globalDrawer.currentConversationId = searchPage.selectedConversationId
+            })
+            pageStack.replace(searchPage)
+        } else {
+            console.error("Failed to create SearchResultsPage")
         }
     }
 }

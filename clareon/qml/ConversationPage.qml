@@ -14,6 +14,9 @@ Kirigami.Page {
 
     required property string conversationId
 
+    // Optional property to highlight a specific message (used for search results)
+    property int highlightMessageId: -1
+
     title: qsTr("Conversation")
     padding: 0
 
@@ -53,6 +56,16 @@ Kirigami.Page {
     MessageListModel {
         id: messageListModel
         conversationId: root.conversationId
+
+        // When messages are loaded, scroll to highlighted message if set
+        onRowsInserted: {
+            if (root.highlightMessageId >= 0) {
+                // Delay scrolling slightly to ensure delegates are rendered
+                Qt.callLater(function() {
+                    root.scrollToMessage(root.highlightMessageId)
+                })
+            }
+        }
     }
 
     ColumnLayout {
@@ -94,12 +107,14 @@ Kirigami.Page {
                 // is that for very long (or large) conversations, this will impact memory usage and initial
                 // load times - we will likely need to revisit this in the future.
                 Repeater {
+                    id: messageRepeater
                     model: messageListModel
 
                     MessageDelegate {
                         width: parent.width
                         conversationId: root.conversationId
                         // Role names from MessageListModel are automatically set as properties
+                        highlighted: root.highlightMessageId === messageId
                     }
                 }
 
@@ -118,6 +133,32 @@ Kirigami.Page {
             function scrollToBottom() {
                 if (contentHeight > height) {
                     contentItem.contentY = contentHeight - height
+                }
+            }
+
+            // Scroll to specific message helper
+            function scrollToMessageItem(item) {
+                if (item) {
+                    // Calculate position to center the message in the view
+                    var itemY = item.mapToItem(messageView.contentItem, 0, 0).y
+                    var targetY = itemY - (messageView.height / 2) + (item.height / 2)
+
+                    // Clamp to valid range
+                    targetY = Math.max(0, Math.min(targetY, contentHeight - messageView.height))
+
+                    contentItem.contentY = targetY
+                }
+            }
+        }
+
+        // Helper function to scroll to a specific message by ID
+        function scrollToMessage(messageId) {
+            // Find the message delegate with the given ID
+            for (var i = 0; i < messageRepeater.count; i++) {
+                var item = messageRepeater.itemAt(i)
+                if (item && item.messageId === messageId) {
+                    messageView.scrollToMessageItem(item)
+                    return
                 }
             }
         }

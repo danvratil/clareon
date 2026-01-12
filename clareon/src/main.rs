@@ -14,8 +14,10 @@ pub mod conversation_list_model;
 pub mod logging;
 pub mod message_list_model;
 pub mod qt;
+pub mod search_result_model;
 pub mod service;
 pub mod service_controller;
+pub mod qml;
 
 // Global service instance
 static SERVICE: OnceLock<Mutex<ClareonService>> = OnceLock::new();
@@ -54,7 +56,7 @@ fn main() {
     let mut app = QGuiApplication::new();
     let mut engine = QQmlApplicationEngine::new();
 
-    message_list_model::qml_register_type();
+    qml::register_clareon_qml_types();
 
     let qml_url = QUrl::from("qrc:/qt/qml/cz/dvratil/clareon/qml/main.qml");
     if let Some(engine) = engine.as_mut() {

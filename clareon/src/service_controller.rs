@@ -83,6 +83,10 @@ mod ffi {
         #[qsignal]
         fn error_occurred(self: Pin<&mut ServiceController>, command: QString, error: QString);
 
+        // Search signal
+        #[qsignal]
+        fn search_results_ready(self: Pin<&mut ServiceController>);
+
         // Actions (invokable from QML)
         #[qinvokable]
         fn new_conversation(self: &ServiceController);
@@ -101,6 +105,9 @@ mod ffi {
 
         #[qinvokable]
         fn refresh_conversations(self: &ServiceController);
+
+        #[qinvokable]
+        fn search(self: &ServiceController, query: &QString);
 
         // Data access (synchronous, reads from cache)
         #[qinvokable]
@@ -248,6 +255,14 @@ impl ffi::ServiceController {
                 );
             }
 
+            Response::SearchResults { results } => {
+                // Update cache
+                *crate::qt::search_results_cache().lock().unwrap() = results;
+
+                // Emit signal
+                self.as_mut().search_results_ready();
+            }
+
             Response::Error { command, error } => {
                 self.as_mut()
                     .error_occurred(QString::from(&command), QString::from(&error));
@@ -298,6 +313,14 @@ impl ffi::ServiceController {
     fn refresh_conversations(&self) {
         let handle = get_service_handle();
         let _ = handle.send(Command::RefreshConversations);
+    }
+
+    /// Search across all conversations
+    fn search(&self, query: &QString) {
+        let handle = get_service_handle();
+        let _ = handle.send(Command::Search {
+            query: query.to_string(),
+        });
     }
 
     /// Get the number of conversations

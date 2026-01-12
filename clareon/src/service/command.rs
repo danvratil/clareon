@@ -33,6 +33,9 @@ pub enum Command {
     /// Retry the last failed message in a conversation
     RetryLastMessage { conv_id: ConversationId },
 
+    /// Search across all conversations
+    Search { query: String },
+
     /// Shutdown the service
     Shutdown,
 }

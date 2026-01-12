@@ -82,6 +82,9 @@ impl ServiceWorker {
             Command::RetryLastMessage { conv_id } => {
                 self.handle_retry_last_message(conv_id).await;
             }
+            Command::Search { query } => {
+                self.handle_search(query).await;
+            }
             Command::Shutdown => {
                 // Already handled in run() loop
             }
@@ -177,6 +180,22 @@ impl ServiceWorker {
                 );
                 let _ = self.response_tx.send(Response::Error {
                     command: format!("LoadMessages({})", conv_id),
+                    error: e.to_string(),
+                });
+            }
+        }
+    }
+
+    async fn handle_search(&self, query: String) {
+        match self.manager.search(&query).await {
+            Ok(results) => {
+                debug!("Search for '{}' returned {} results", query, results.len());
+                let _ = self.response_tx.send(Response::SearchResults { results });
+            }
+            Err(e) => {
+                error!("Failed to search for '{}': {}", query, e);
+                let _ = self.response_tx.send(Response::Error {
+                    command: format!("Search({})", query),
                     error: e.to_string(),
                 });
             }
