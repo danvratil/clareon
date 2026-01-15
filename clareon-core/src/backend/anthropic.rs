@@ -91,8 +91,7 @@ impl AnthropicBackend {
 
     /// Create a new Anthropic backend with the given API key
     ///
-    /// This is a convenience constructor for testing. Use `from_config` in production.
-    #[cfg(test)]
+    /// This is a convenience constructor for testing and CLI. Use `from_config` in production.
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
             client: Client::new(),
@@ -104,8 +103,7 @@ impl AnthropicBackend {
 
     /// Create a new Anthropic backend with a custom base URL
     ///
-    /// This is a convenience constructor for testing. Use `from_config` in production.
-    #[cfg(test)]
+    /// This is a convenience constructor for testing and CLI. Use `from_config` in production.
     pub fn with_base_url(api_key: impl Into<String>, base_url: impl Into<String>) -> Self {
         Self {
             client: Client::new(),

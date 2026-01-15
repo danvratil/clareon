@@ -13,11 +13,11 @@ use service::ClareonService;
 pub mod conversation_list_model;
 pub mod logging;
 pub mod message_list_model;
+pub mod qml;
 pub mod qt;
 pub mod search_result_model;
 pub mod service;
 pub mod service_controller;
-pub mod qml;
 
 // Global service instance
 static SERVICE: OnceLock<Mutex<ClareonService>> = OnceLock::new();

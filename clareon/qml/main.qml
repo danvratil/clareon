@@ -24,7 +24,7 @@ Kirigami.ApplicationWindow {
         shortcut: "Ctrl+N"
         icon.name: "message-new"
         onTriggered: {
-            ServiceController.newConversation()
+            openTitlePage()
         }
     }
 
@@ -48,6 +48,18 @@ Kirigami.ApplicationWindow {
         }
     }
 
+    // Listen for conversation deletion events
+    Connections {
+        target: ServiceController
+
+        function onConversationDeleted(conversationId) {
+            // If the currently open conversation was deleted, navigate to title page
+            if (root.currentConversationId === conversationId) {
+                root.openTitlePage()
+            }
+        }
+    }
+
     globalDrawer: Drawer {
         id: drawer
 
@@ -58,6 +70,11 @@ Kirigami.ApplicationWindow {
 
     pageStack {
         columnView.columnResizeMode: Kirigami.ColumnView.Dynamic
+    }
+
+    Component {
+        id: titlePage
+        TitlePage {}
     }
 
     Component {
@@ -91,6 +108,7 @@ Kirigami.ApplicationWindow {
         if (page) {
             pageStack.clear()
             pageStack.replace(page)
+            root.currentConversationId = conversationId
             globalDrawer.currentConversationId = conversationId
         } else {
             console.error("Failed to create ")
@@ -119,5 +137,25 @@ Kirigami.ApplicationWindow {
         } else {
             console.error("Failed to create SearchResultsPage")
         }
+    }
+
+    function openTitlePage() {
+        const page = titlePage.createObject(null)
+        if (page) {
+            page.conversationStarted.connect(function(conversationId) {
+                openConversation(conversationId)
+            })
+            pageStack.clear()
+            pageStack.replace(page)
+            root.currentConversationId = ""
+            globalDrawer.currentConversationId = ""
+        } else {
+            console.error("Failed to create TitlePage")
+        }
+    }
+
+    Component.onCompleted: {
+        // Show the title page on startup
+        openTitlePage()
     }
 }
