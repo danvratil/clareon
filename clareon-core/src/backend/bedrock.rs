@@ -544,12 +544,12 @@ impl LlmBackend for BedrockBackend {
     }
 
     fn default_model(&self) -> &ModelInfo {
-        // Return Claude Opus 4 as the default model
+        // Return Claude Sonnet 4 as the default model
         static DEFAULT_MODEL: LazyLock<ModelInfo> = LazyLock::new(|| ModelInfo {
-            id: "anthropic.claude-sonnet-4-20250514-v1:0".to_string(),
+            id: "eu.anthropic.claude-sonnet-4-5-20250929-v1:0".to_string(),
             name: "Claude Sonnet 4 (Bedrock)".to_string(),
             context_window: 200000,
-            max_output_tokens: 32000,
+            max_output_tokens: 16000,
         });
 
         &DEFAULT_MODEL
@@ -678,7 +678,7 @@ impl BedrockBackend {
                 max_output_tokens: 32000,
             },
             ModelInfo {
-                id: "anthropic.claude-sonnet-4-20250514-v1:0".to_string(),
+                id: "eu.anthropic.claude-sonnet-4-5-20250929-v1:0".to_string(),
                 name: "Claude Sonnet 4 (Bedrock)".to_string(),
                 context_window: 200000,
                 max_output_tokens: 16000,
