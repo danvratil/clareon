@@ -46,6 +46,17 @@ Kirigami.Page {
                 width: Math.min(parent.width * 0.6, 800)
                 spacing: Kirigami.Units.gridUnit * 2
 
+                // Application icon
+                Image {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.preferredWidth: 256
+                    Layout.preferredHeight: 256
+                    source: "qrc:/clareon.svg"
+                    sourceSize.width: 256
+                    sourceSize.height: 256
+                    smooth: true
+                }
+
                 // Greeting text
                 Kirigami.Heading {
                     Layout.alignment: Qt.AlignHCenter

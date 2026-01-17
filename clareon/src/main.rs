@@ -6,7 +6,9 @@ use std::sync::{Mutex, OnceLock};
 use tokio::runtime::Runtime;
 
 use clareon_core::ConfigManager;
-use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
+use clareon_qt::{QApplicationExt, QIcon};
+use cxx_qt_lib::{QQmlApplicationEngine, QString, QUrl};
+use cxx_qt_lib_extras::QApplication;
 
 use service::ClareonService;
 
@@ -54,7 +56,20 @@ fn main() {
     // Initialize Qt - pass handle
     qt::init_service_handle(handle);
 
-    let mut app = QGuiApplication::new();
+    let mut app = QApplication::new();
+    app.pin_mut()
+        .set_application_name(&QString::from("Clareon"));
+    app.pin_mut()
+        .set_organization_domain(&QString::from("clareon.cc"));
+
+    // Set window icon (Qt will automatically select appropriate size)
+    let mut icon = QIcon::new();
+    icon.add_file(&QString::from(":/clareon-16.png"));
+    icon.add_file(&QString::from(":/clareon-32.png"));
+    icon.add_file(&QString::from(":/clareon-48.png"));
+    icon.add_file(&QString::from(":/clareon-256.png"));
+    app.pin_mut().set_window_icon(&icon);
+
     let mut engine = QQmlApplicationEngine::new();
 
     qml::register_clareon_qml_types();

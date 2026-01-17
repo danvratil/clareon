@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2026 Daniel Vrátil <me@dvratil.cz>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[package]
+name = "clareon-qt"
+description = "Custom Qt bindings for Clareon (types not yet in cxx-qt upstream)"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+build = "build.rs"
+
+[dependencies]
+cxx = { workspace = true }
+cxx-qt = { workspace = true }
+cxx-qt-lib = { workspace = true }
+cxx-qt-lib-extras = { workspace = true }
+
+[build-dependencies]
+cxx-qt-build = { workspace = true }

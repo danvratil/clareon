@@ -6,6 +6,7 @@
 resolver = "2"
 members = [
     "clareon-core",
+    "clareon-qt",
     "clareon",
     "mock-anthropic",
 ]
@@ -73,4 +74,5 @@ chrono = { version = "0.4", features = ["serde"] }
 cxx = "1.0"
 cxx-qt = "0.8"
 cxx-qt-lib = { version = "0.8", features = ["qt_full"] }
+cxx-qt-lib-extras = "0.8"
 cxx-qt-build = { version = "0.8", features = ["link_qt_object_files"] }

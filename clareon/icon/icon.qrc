@@ -1,0 +1,10 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource prefix="/">
+    <file>clareon.svg</file>
+    <file>clareon-16.png</file>
+    <file>clareon-32.png</file>
+    <file>clareon-48.png</file>
+    <file>clareon-256.png</file>
+  </qresource>
+</RCC>

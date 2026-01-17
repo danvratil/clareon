@@ -36,6 +36,7 @@ fn main() {
             .qml_files(find_qml_files())
             .depend("QtQuick"),
     )
+    .qrc("icon/icon.qrc")
     .files([
         "src/qml.rs",
         "src/logging.rs",

@@ -16,10 +16,14 @@ build = "build/main.rs"
 # Core library
 clareon-core = { path = "../clareon-core" }
 
+# Qt bindings
+clareon-qt = { path = "../clareon-qt" }
+
 # CXX-Qt bridge
 cxx = { workspace = true }
 cxx-qt = { workspace = true }
 cxx-qt-lib = { workspace = true }
+cxx-qt-lib-extras = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true, features = ["rt-multi-thread", "sync"] }

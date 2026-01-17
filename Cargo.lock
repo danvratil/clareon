@@ -845,10 +845,12 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clareon-core",
+ "clareon-qt",
  "cxx",
  "cxx-qt",
  "cxx-qt-build",
  "cxx-qt-lib",
+ "cxx-qt-lib-extras",
  "futures",
  "glob",
  "quote",
@@ -890,6 +892,17 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "which",
+]
+
+[[package]]
+name = "clareon-qt"
+version = "0.1.0"
+dependencies = [
+ "cxx",
+ "cxx-qt",
+ "cxx-qt-build",
+ "cxx-qt-lib",
+ "cxx-qt-lib-extras",
 ]
 
 [[package]]
@@ -1138,6 +1151,18 @@ dependencies = [
  "cxx-qt",
  "cxx-qt-build",
  "qt-build-utils",
+]
+
+[[package]]
+name = "cxx-qt-lib-extras"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a3e7ef576fd5516a80bb739f42842f9843bf4f031ce5eef28c93a82e89642e6"
+dependencies = [
+ "cxx",
+ "cxx-qt",
+ "cxx-qt-build",
+ "cxx-qt-lib",
 ]
 
 [[package]]

@@ -32,7 +32,7 @@ ColumnLayout {
 
             Controls.TextArea {
                 id: messageInput
-                placeholderText: "Message Claude..."
+                placeholderText: "Message Clareon..."
                 wrapMode: TextEdit.Wrap
                 selectByMouse: true
                 focus: true
