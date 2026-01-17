@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 Daniel Vrátil <me@dvratil.cz>
+
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
 # mock-anthropic
 
 A simple HTTP/2 server that implements the Anthropic API for development and testing purposes. It returns Lorem Ipsum text instead of real inference, allowing you to develop and test Anthropic API integration without incurring costs.

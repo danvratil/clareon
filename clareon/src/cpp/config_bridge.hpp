@@ -1,8 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Daniel Vrátil <me@dvratil.cz>
 // SPDX-FileContributor: Daniel Vrátil <me@dvratil.cz>
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
-//
-// Helper functions for Config JSON <-> C++ conversion
 
 #pragma once
 

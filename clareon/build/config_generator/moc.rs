@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Daniel Vrátil <me@dvratil.cz>
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use std::path::PathBuf;
 
 pub fn run_moc(header_path: &PathBuf, output_path: &PathBuf) -> Result<(), String> {

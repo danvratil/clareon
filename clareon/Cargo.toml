@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Daniel Vrátil <me@dvratil.cz>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 [package]
 name = "clareon"
 description = "Qt/QML GUI for Clareon - Claude assistant for Linux"
