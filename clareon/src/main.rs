@@ -10,7 +10,7 @@ use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
 
 use service::ClareonService;
 
-pub mod config_manager_qt;
+pub mod config_manager;
 pub mod conversation_list_model;
 pub mod logging;
 pub mod message_list_model;

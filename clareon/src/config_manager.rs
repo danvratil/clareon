@@ -2,8 +2,6 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! ConfigManagerQt - QML bridge to Rust ConfigManager
-
 #[cxx_qt::bridge]
 mod ffi {
     unsafe extern "C++" {
@@ -41,30 +39,30 @@ mod ffi {
         #[qobject]
         #[qml_element]
         #[qml_singleton]
-        type ConfigManagerQt = super::ConfigManagerQtRust;
+        type ConfigManager = super::ConfigManagerRust;
 
         /// Get the current configuration as ConfigCpp object
         #[qinvokable]
         #[rust_name = "get_config"]
-        fn getConfig(self: &ConfigManagerQt) -> *mut ConfigCpp;
+        fn getConfig(self: &ConfigManager) -> *mut ConfigCpp;
 
         /// Save configuration from ConfigCpp object
         /// Returns true on success, false on error
         #[qinvokable]
         #[rust_name = "save_config"]
-        fn saveConfig(self: &ConfigManagerQt, config: *mut ConfigCpp) -> bool;
+        fn saveConfig(self: &ConfigManager, config: *mut ConfigCpp) -> bool;
 
         /// Reload configuration from disk, discarding any unsaved changes
         #[qinvokable]
-        fn reload(self: &ConfigManagerQt) -> bool;
+        fn reload(self: &ConfigManager) -> bool;
     }
 }
 
 /// Rust implementation of ConfigManagerQt
 #[derive(Default)]
-pub struct ConfigManagerQtRust {}
+pub struct ConfigManagerRust {}
 
-impl ffi::ConfigManagerQt {
+impl ffi::ConfigManager {
     /// Get the current configuration as ConfigCpp
     fn get_config(&self) -> *mut ffi::ConfigCpp {
         // Get config from Rust ConfigManager

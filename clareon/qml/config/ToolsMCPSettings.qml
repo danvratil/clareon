@@ -13,7 +13,6 @@ Kirigami.ScrollablePage {
 
     title: qsTr("Tools & MCP")
 
-    // Local config state - loaded from ConfigManagerQt
     property var config
     property bool isDirty: false
 

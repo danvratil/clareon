@@ -7,12 +7,12 @@ import QtQuick.Layouts
 import QtQuick.Controls as Controls
 import org.kde.kirigami as Kirigami
 import org.kde.kirigami.primitives as KP
-import cz.dvratil.clareon // for ConfigManagerQt
+import cz.dvratil.clareon // for ConfigManager
 
 Kirigami.ApplicationWindow {
     id: root
 
-    property var _config: ConfigManagerQt.getConfig()
+    property var _config: ConfigManager.getConfig()
 
     title: qsTr("Clareon Settings")
     width: 900
@@ -26,14 +26,8 @@ Kirigami.ApplicationWindow {
     }
 
     // Save all settings pages that have changes
-    function saveAllSettings() {
-        ConfigManagerQt.saveConfig(root._config)
-        return true
-    }
-
-    // Discard changes on all settings pages
-    function discardAllChanges() {
-        root._config = ConfigManagerQt.getConfig()
+    function saveSettings() {
+        ConfigManager.saveConfig(root._config)
     }
 
     globalDrawer: Kirigami.GlobalDrawer {
@@ -92,9 +86,8 @@ Kirigami.ApplicationWindow {
     }
 
     Component.onCompleted: {
+        // Load the initial page
         generalAction.trigger()
-        console.log("Loaded config:", root._config)
-        console.log("New Config:", ConfigManagerQt.getConfig())
     }
 
     footer: Item {
@@ -130,9 +123,8 @@ Kirigami.ApplicationWindow {
             standardButtons: Controls.DialogButtonBox.Ok | Controls.DialogButtonBox.Cancel | Controls.DialogButtonBox.Apply
 
             onAccepted: {
-                if (root.saveAllSettings()) {
-                    root.close()
-                }
+                root.saveSettings()
+                root.close()
             }
 
             onRejected: {
@@ -140,7 +132,7 @@ Kirigami.ApplicationWindow {
             }
 
             onApplied: {
-                root.saveAllSettings()
+                root.saveSettings()
             }
         }
     }

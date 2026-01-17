@@ -43,7 +43,7 @@ fn main() {
         "src/conversation_list_model.rs",
         "src/message_list_model.rs",
         "src/search_result_model.rs",
-        "src/config_manager_qt.rs",
+        "src/config_manager.rs",
     ])
     .cpp_file("src/cpp/logging.cpp")
     .cpp_file("src/cpp/qml.cpp")
