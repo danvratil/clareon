@@ -441,7 +441,7 @@ fn create_streaming_response(
                         usage: Usage {
                             input_tokens: 100,
                             output_tokens: words.len() as u32,
-                        }
+                        },
                     }
                 } else {
                     // message_stop
