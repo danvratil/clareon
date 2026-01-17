@@ -10,3 +10,7 @@
 void installMessageHandler() {
     qInstallMessageHandler(tracingMessageHandler);
 }
+
+void installDefaultMessageHandler() {
+    qInstallMessageHandler(nullptr);
+}   

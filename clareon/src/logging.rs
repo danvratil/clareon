@@ -34,6 +34,7 @@ mod ffi {
 
         include!("cpp/logging.hpp");
         fn installMessageHandler();
+        fn installDefaultMessageHandler();
     }
 
     extern "Rust" {
@@ -155,4 +156,8 @@ fn tracing_message_handler<'a>(
 pub fn init_qt_logging() {
     ffi::installMessageHandler();
     info!("Initialized Qt logging");
+}
+
+pub fn clear_qt_logging() {
+    ffi::installDefaultMessageHandler();
 }
