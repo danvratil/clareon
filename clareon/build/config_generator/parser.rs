@@ -6,7 +6,7 @@ use std::{fs, path::Path};
 
 use syn::{Fields, File, Item, ItemStruct, Type};
 
-use super::{ConfigStruct, ConfigField};
+use super::{ConfigField, ConfigStruct};
 
 pub fn parse_config_structs(settings_rs_path: &Path) -> (Vec<ConfigStruct>, Vec<String>) {
     let content = fs::read_to_string(settings_rs_path).expect("Failed to read settings.rs");
@@ -86,4 +86,3 @@ fn extract_type_info(ty: &Type) -> (String, bool) {
         _ => ("unknown".to_string(), false),
     }
 }
-

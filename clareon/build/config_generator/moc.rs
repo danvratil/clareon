@@ -44,4 +44,3 @@ pub fn run_moc(header_path: &PathBuf, output_path: &PathBuf) -> Result<(), Strin
     println!("Generated MOC file: {}", output_path.display());
     Ok(())
 }
-
