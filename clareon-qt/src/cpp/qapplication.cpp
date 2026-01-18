@@ -10,4 +10,8 @@ void qapplicationSetWindowIcon(QApplication& app, const QIcon& icon) {
     app.setWindowIcon(icon);
 }
 
+void qapplicationSetDesktopFileName(QApplication& app, const QString& desktopFileName) {
+    app.setDesktopFileName(desktopFileName);
+}
+
 } // namespace rust::clareon_qt

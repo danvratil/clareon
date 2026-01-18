@@ -4,11 +4,15 @@
 
 use core::pin::Pin;
 
+use cxx_qt_lib::QString;
+
 #[cxx::bridge]
 mod ffi {
     unsafe extern "C++" {
         include!("cxx-qt-lib-extras/gui/qapplication.h");
         type QApplication = cxx_qt_lib_extras::QApplication;
+        include!("cxx-qt-lib/core/qstring.h");
+        type QString = cxx_qt_lib::QString;
 
         include!("clareon-qt/qicon.h");
         type QIcon = crate::qicon::QIcon;
@@ -21,6 +25,10 @@ mod ffi {
         /// Sets the default window icon
         #[rust_name = "qapplication_set_window_icon"]
         fn qapplicationSetWindowIcon(app: Pin<&mut QApplication>, icon: &QIcon);
+
+        /// Sets the desktop file name for the application
+        #[rust_name = "qapplication_set_desktop_file_name"]
+        fn qapplicationSetDesktopFileName(app: Pin<&mut QApplication>, desktopFileName: &QString);
     }
 }
 
@@ -28,10 +36,17 @@ mod ffi {
 pub trait QApplicationExt {
     /// Sets the default window icon for the application
     fn set_window_icon(self: Pin<&mut Self>, icon: &crate::QIcon);
+
+    /// Sets the desktop file name for the application
+    fn set_desktop_file_name(self: Pin<&mut Self>, desktop_file_name: &QString);
 }
 
 impl QApplicationExt for cxx_qt_lib_extras::QApplication {
     fn set_window_icon(self: Pin<&mut Self>, icon: &crate::QIcon) {
         ffi::qapplication_set_window_icon(self, icon);
+    }
+
+    fn set_desktop_file_name(self: Pin<&mut Self>, desktop_file_name: &QString) {
+        ffi::qapplication_set_desktop_file_name(self, desktop_file_name);
     }
 }
