@@ -38,4 +38,7 @@ pub enum Command {
 
     /// Shutdown the service
     Shutdown,
+
+    /// Activate main window
+    ActivateMainWindow,
 }

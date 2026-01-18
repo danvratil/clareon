@@ -854,6 +854,7 @@ dependencies = [
  "futures",
  "glob",
  "quote",
+ "serde",
  "serde_json",
  "syn",
  "tokio",

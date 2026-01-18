@@ -11,6 +11,9 @@ use cxx_qt_lib::{QQmlApplicationEngine, QString, QUrl};
 use cxx_qt_lib_extras::QApplication;
 
 use service::ClareonService;
+use unique_app::{try_become_unique, UniqueResult};
+
+use crate::service::Command;
 
 pub mod config_manager;
 pub mod conversation_list_model;
@@ -21,6 +24,7 @@ pub mod qt;
 pub mod search_result_model;
 pub mod service;
 pub mod service_controller;
+pub mod unique_app;
 
 // Global service instance
 static SERVICE: OnceLock<Mutex<ClareonService>> = OnceLock::new();
@@ -36,6 +40,23 @@ pub fn get_runtime() -> &'static Runtime {
 }
 
 fn main() {
+    // Try to become the unique instance first, before initializing anything else
+    // This ensures we exit quickly if another instance is already running
+    let unique_handle = match try_become_unique() {
+        Ok(UniqueResult::Primary(server)) => Some(server),
+        Ok(UniqueResult::Secondary) => {
+            // Another instance is running, activation sent, exit
+            eprintln!("Another instance of Clareon is already running, activating it");
+            std::process::exit(0);
+        }
+        Err(e) => {
+            eprintln!("FATAL: Failed to establish unique instance: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // If we acquired the unique handle, we can proceed with initialization.
+
     // Initialize ConfigManager singleton (loads config on first access)
     let config = ConfigManager::get().config();
 
@@ -52,6 +73,18 @@ fn main() {
 
     // Store service in global
     SERVICE.set(Mutex::new(service)).ok();
+
+   // Spawn the unique server listener in the background if we have one
+    if let Some(unique_server) = unique_handle {
+        get_runtime().spawn(async move {
+            unique_server.listen(|activation| {
+                tracing::info!("Received activation from another instance: {:?}", activation);
+                let handle = SERVICE.get().expect("Service not initialized").lock().expect("Service lock poisoned").handle();
+                let _ = handle.send(Command::ActivateMainWindow);
+            }).await;
+        });
+    }
+
 
     // Initialize Qt - pass handle
     qt::init_service_handle(handle);

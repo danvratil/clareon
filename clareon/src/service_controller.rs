@@ -87,6 +87,9 @@ mod ffi {
         #[qsignal]
         fn search_results_ready(self: Pin<&mut ServiceController>);
 
+        #[qsignal]
+        fn main_window_requested(self: Pin<&mut ServiceController>);
+
         // Actions (invokable from QML)
         #[qinvokable]
         fn new_conversation(self: &ServiceController);
@@ -266,6 +269,10 @@ impl ffi::ServiceController {
             Response::Error { command, error } => {
                 self.as_mut()
                     .error_occurred(QString::from(&command), QString::from(&error));
+            }
+
+            Response::ActivateMainWindow => {
+                self.as_mut().main_window_requested();
             }
         }
     }

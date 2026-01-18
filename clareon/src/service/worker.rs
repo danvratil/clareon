@@ -88,6 +88,9 @@ impl ServiceWorker {
             Command::Shutdown => {
                 // Already handled in run() loop
             }
+            Command::ActivateMainWindow => {
+                self.handle_activate_main_window().await;
+            }
         }
     }
 
@@ -407,6 +410,10 @@ impl ServiceWorker {
                 });
             }
         }
+    }
+
+    async fn handle_activate_main_window(&self) {
+        let _ = self.response_tx.send(Response::ActivateMainWindow);
     }
 }
 
