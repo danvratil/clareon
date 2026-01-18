@@ -29,12 +29,23 @@ pub struct GeneratedConfig {
 }
 
 pub fn generate_config_cpp() -> GeneratedConfig {
-    let root_path = PathBuf::from(
-        std::env::var("CARGO_MANIFEST_DIR")
-            .expect("CARGO_MANIFEST_DIR is not set")
-            .as_str(),
-    );
+    let root_path =
+        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is not set"));
     let settings_rs_path = root_path.join("../clareon-core/src/config/settings.rs");
+
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not set"));
+    let header_path = out_dir.join("config_generated.h");
+    let impl_path = out_dir.join("config_generated.cpp");
+    let moc_path = out_dir.join("moc_config_generated.cpp");
+
+    if !needs_to_regenerate(&settings_rs_path, &header_path, &impl_path) {
+        println!("Config generation skipped, files are up to date");
+        return GeneratedConfig {
+            header_path,
+            impl_path,
+            moc_path,
+        };
+    }
 
     // Parse config structs and enums from settings.rs
     let (config_structs, config_enums) = parser::parse_config_structs(&settings_rs_path);
@@ -52,13 +63,6 @@ pub fn generate_config_cpp() -> GeneratedConfig {
     // Generate C++ code
     let header_code = generator::generate_cpp_header(&config_structs, &config_enums);
     let impl_code = generator::generate_cpp_implementation(&config_structs, &config_enums);
-
-    // Use OUT_DIR for generated files
-    let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not set"));
-
-    let header_path = out_dir.join("config_generated.h");
-    let impl_path = out_dir.join("config_generated.cpp");
-    let moc_path = out_dir.join("moc_config_generated.cpp");
 
     // Write generated files
     fs::write(&header_path, header_code).expect("Failed to write config_generated.h");
@@ -79,4 +83,31 @@ pub fn generate_config_cpp() -> GeneratedConfig {
         impl_path,
         moc_path,
     }
+}
+
+fn needs_to_regenerate(
+    settings_path: &PathBuf,
+    header_path: &PathBuf,
+    impl_path: &PathBuf,
+) -> bool {
+    if !header_path.exists() || !impl_path.exists() {
+        return true;
+    }
+
+    let settings_metadata =
+        fs::metadata(settings_path).expect("Failed to get settings.rs metadata");
+    let header_metadata = fs::metadata(header_path).expect("Failed to get header metadata");
+    let impl_metadata = fs::metadata(impl_path).expect("Failed to get impl metadata");
+
+    let settings_modified = settings_metadata
+        .modified()
+        .expect("Failed to get settings.rs modified time");
+    let header_modified = header_metadata
+        .modified()
+        .expect("Failed to get header modified time");
+    let impl_modified = impl_metadata
+        .modified()
+        .expect("Failed to get impl modified time");
+
+    settings_modified > header_modified || settings_modified > impl_modified
 }
