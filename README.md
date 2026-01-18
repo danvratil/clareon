@@ -10,5 +10,39 @@ Clareon is an attempt at building a desktop AI assistant powered by Anthropic's 
 
 ## Goals
 
+Those are the main goals of the project:
+
 * Native application
 * Global shortcut to start a new conversation
+* Multiplatform (Linux, Windows, macOS)
+* Support for alternative model providers (AWS Bedrock)
+* Local conversation history
+
+## Out-of-scope for now
+
+The following features are out of scope for now, but I may be added later as the project matures:
+
+* Alternative models (non-Anthropic)
+* Additional backends (local models, OpenAI, etc.)
+
+## Non-goals
+
+This project is not intended to be:
+
+* A coding tool like Claude Code
+
+# Technology
+
+The core logic is written purely in Rust. The UI is built using QML and the [Kirigami](https://develop.kde.org/frameworks/kirigami/) framework. The bridge between Rust and Qt (QML) is provided by the [`cxx-qt`](https://github.com/KDAB/cxx-qt) crate with some customizations on top.
+
+For platform integration (notifications, global shortcuts), we try to use crates that natively support all platforms.
+
+# Development
+
+Don't let the presence of `CMakeLists.txt` confuse you, for local development you can just use `cargo` like with any other Rust project.
+
+The CMake build is present to make installing and packaging the application easier, since Cargo doesn't support any of that. The `CMakeLists.txt` will compile the Rust code (through [`corrosion`](https://github.com/corrosion-rs/corrosion)), generate a `.desktop` file and install it alongside the main binary and icons to appropriate locations. It is also used to enforce QML runtime dependencies, which again, makes it easier especially for packagers to ensure all the required QML modules are present on the system.
+
+# License
+
+This project is licensed under the GNU General Public License v3.0 or later. See the [LICENSE](LICENSE) file for details.
