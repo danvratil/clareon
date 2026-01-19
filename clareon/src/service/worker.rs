@@ -85,11 +85,17 @@ impl ServiceWorker {
             Command::Search { query } => {
                 self.handle_search(query).await;
             }
+            Command::NewQuickConversation { prompt } => {
+                self.handle_new_quick_conversation(prompt).await;
+            }
             Command::Shutdown => {
                 // Already handled in run() loop
             }
             Command::ActivateMainWindow => {
                 self.handle_activate_main_window().await;
+            }
+            Command::ActivateQuickInput => {
+                self.handle_activate_quick_input().await;
             }
         }
     }
@@ -203,6 +209,38 @@ impl ServiceWorker {
                 });
             }
         }
+    }
+
+    async fn handle_new_quick_conversation(&self, prompt: String) {
+        // First create a new conversation
+        let conversation = match self.manager.new_conversation().await {
+            Ok(conv) => conv,
+            Err(e) => {
+                error!("Failed to create quick conversation: {}", e);
+                let _ = self.response_tx.send(Response::Error {
+                    command: "NewQuickConversation".to_string(),
+                    error: e.to_string(),
+                });
+                return;
+            }
+        };
+
+        let conv_id = conversation.id.clone();
+
+        // Notify UI that conversation was created
+        let summary = ConversationSummary {
+            id: conv_id.clone(),
+            title: conversation.title.clone(),
+            updated_at: conversation.updated_at,
+            model: conversation.model.clone(),
+            message_count: 0,
+        };
+        let _ = self.response_tx.send(Response::ConversationCreated {
+            conversation: summary,
+        });
+
+        // Now send the message (reuse the existing send message logic)
+        self.handle_send_message(conv_id, prompt).await;
     }
 
     async fn handle_send_message(&self, conv_id: ConversationId, text: String) {
@@ -414,6 +452,10 @@ impl ServiceWorker {
 
     async fn handle_activate_main_window(&self) {
         let _ = self.response_tx.send(Response::ActivateMainWindow);
+    }
+
+    async fn handle_activate_quick_input(&self) {
+        let _ = self.response_tx.send(Response::ActivateQuickInput);
     }
 }
 

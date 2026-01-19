@@ -43,6 +43,7 @@ chrono = { workspace = true }
 
 # XDG Base Directory support
 xdg = "3.0"
+clap.workspace = true
 
 [build-dependencies]
 cxx-qt-build = { workspace = true }

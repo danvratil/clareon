@@ -90,6 +90,9 @@ mod ffi {
         #[qsignal]
         fn main_window_requested(self: Pin<&mut ServiceController>);
 
+        #[qsignal]
+        fn quick_input_requested(self: Pin<&mut ServiceController>);
+
         // Actions (invokable from QML)
         #[qinvokable]
         fn new_conversation(self: &ServiceController);
@@ -111,6 +114,9 @@ mod ffi {
 
         #[qinvokable]
         fn search(self: &ServiceController, query: &QString);
+
+        #[qinvokable]
+        fn new_quick_conversation(self: &ServiceController, prompt: &QString);
 
         // System integration
         #[qinvokable]
@@ -278,6 +284,10 @@ impl ffi::ServiceController {
             Response::ActivateMainWindow => {
                 self.as_mut().main_window_requested();
             }
+
+            Response::ActivateQuickInput => {
+                self.as_mut().quick_input_requested();
+            }
         }
     }
 
@@ -369,6 +379,14 @@ X-LXQt-Need-Tray=true"#).unwrap_or_else(|e| {
                 tracing::error!("Failed to remove autostart desktop file: {}", e);
             });
         }
+    }
+    /// Create a new conversation and immediately send a message
+    /// Used for quick input flow
+    fn new_quick_conversation(&self, prompt: &QString) {
+        let handle = get_service_handle();
+        let _ = handle.send(Command::NewQuickConversation {
+            prompt: prompt.to_string(),
+        });
     }
 
     /// Get the number of conversations

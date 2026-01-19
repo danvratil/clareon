@@ -128,4 +128,7 @@ pub enum Response {
 
     /// Main window activation was requested
     ActivateMainWindow,
+
+    /// Quick input window activation was requested
+    ActivateQuickInput,
 }

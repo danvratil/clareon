@@ -22,9 +22,33 @@ Item {
         }
     }
 
+    QuickInputPopup {
+        id: quickInput
+        visible: false
+
+        onPromptSubmitted: function(prompt) {
+            // Mark that we're waiting for the conversation to be created
+            // Create conversation with the prompt
+            ServiceController.newQuickConversation(prompt)
+            // Show and activate main window
+            mainWindow.open()
+            mainWindow.pendingQuickConversationId = "pending"
+        }
+
+        function open() {
+            quickInput.show()
+            quickInput.raise()
+            quickInput.requestActivate()
+        }
+    }
+
     Component.onCompleted: {
         ServiceController.onMainWindowRequested.connect(function() {
             mainWindow.open()
+        })
+
+        ServiceController.onQuickInputRequested.connect(function() {
+            quickInput.open()
         })
 
         // Show window on startup if not configured to start minimized
@@ -48,6 +72,10 @@ Item {
             Platform.MenuItem {
                 text: qsTr("Show Clareon")
                 onTriggered: mainWindow.open()
+            }
+            Platform.MenuItem {
+                text: qsTr("Quick Input...")
+                onTriggered: quickInput.open()
             }
             Platform.MenuSeparator {}
             Platform.MenuItem {

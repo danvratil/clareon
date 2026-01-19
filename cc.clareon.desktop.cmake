@@ -8,10 +8,10 @@ Exec=${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/clareon %U
 Icon=clareon
 Type=Application
 StartupNotify=false
-Actions=NewConversation
+Actions=QuickInput
 DBusActivatable=false
-X-KDE-Shortcuts=Meta+C
 
-[Desktop Action NewConversation]
-Name=New Conversation
-Exec=${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/clareon --new-conversation
+[Desktop Action QuickInput]
+Name=Quick Input
+Exec=${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/clareon --quick-input
+X-KDE-Shortcuts=Meta+C

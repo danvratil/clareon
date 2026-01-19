@@ -9,9 +9,10 @@ use clareon_core::ConfigManager;
 use clareon_qt::{QApplicationExt, QIcon};
 use cxx_qt_lib::{QQmlApplicationEngine, QString, QUrl};
 use cxx_qt_lib_extras::QApplication;
+use clap::Parser;
 
 use service::ClareonService;
-use unique_app::{try_become_unique, UniqueResult};
+use unique_app::{UniqueResult, try_become_unique};
 
 use crate::service::Command;
 
@@ -39,7 +40,16 @@ pub fn get_runtime() -> &'static Runtime {
     }
 }
 
+#[derive(Parser, Debug)]
+#[command(version, about = "Clareon - AI-powered chat application")]
+pub struct Args {
+    #[arg(short, long, action = clap::ArgAction::SetTrue, help = "Show a quick input window to start a new conversation")]
+    pub quick_input: bool,
+}
+
 fn main() {
+    let args = Args::parse();
+
     // Try to become the unique instance first, before initializing anything else
     // This ensures we exit quickly if another instance is already running
     let unique_handle = match try_become_unique() {
@@ -56,6 +66,7 @@ fn main() {
     };
 
     // If we acquired the unique handle, we can proceed with initialization.
+
 
     // Initialize ConfigManager singleton (loads config on first access)
     let config = ConfigManager::get().config();
@@ -74,17 +85,36 @@ fn main() {
     // Store service in global
     SERVICE.set(Mutex::new(service)).ok();
 
-   // Spawn the unique server listener in the background if we have one
+    // Spawn the unique server listener in the background if we have one
     if let Some(unique_server) = unique_handle {
         get_runtime().spawn(async move {
-            unique_server.listen(|activation| {
-                tracing::info!("Received activation from another instance: {:?}", activation);
-                let handle = SERVICE.get().expect("Service not initialized").lock().expect("Service lock poisoned").handle();
-                let _ = handle.send(Command::ActivateMainWindow);
-            }).await;
+            unique_server
+                .listen(|activation| {
+                    tracing::info!(
+                        "Received activation from another instance: {:?}",
+                        activation
+                    );
+                    let handle = SERVICE
+                        .get()
+                        .expect("Service not initialized")
+                        .lock()
+                        .expect("Service lock poisoned")
+                        .handle();
+
+                    let args = Args::parse_from(activation.args);
+                    if args.quick_input {
+                        let _ = handle.send(Command::ActivateQuickInput);
+                    } else {
+                        let _ = handle.send(Command::ActivateMainWindow);
+                    }
+                })
+                .await;
         });
     }
 
+    if args.quick_input {
+        let _ = handle.send(Command::ActivateQuickInput);
+    }
 
     // Initialize Qt - pass handle
     qt::init_service_handle(handle);
@@ -94,6 +124,8 @@ fn main() {
         .set_application_name(&QString::from("Clareon"));
     app.pin_mut()
         .set_organization_domain(&QString::from("clareon.cc"));
+    app.pin_mut()
+        .set_desktop_file_name(&QString::from("cc.clareon"));
 
     // Set window icon (Qt will automatically select appropriate size)
     let mut icon = QIcon::new();

@@ -36,9 +36,16 @@ pub enum Command {
     /// Search across all conversations
     Search { query: String },
 
+    /// Create a new conversation and immediately send a message
+    /// This is used for quick input flow
+    NewQuickConversation { prompt: String },
+
     /// Shutdown the service
     Shutdown,
 
     /// Activate main window
     ActivateMainWindow,
+
+    /// Activate quick input window
+    ActivateQuickInput,
 }
