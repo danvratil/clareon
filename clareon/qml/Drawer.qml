@@ -21,6 +21,7 @@ Kirigami.GlobalDrawer {
     interactiveResizeEnabled: true
     modal: false
     padding: 0
+    minimumSize: Kirigami.Units.gridUnit * 20
 
     header: Kirigami.AbstractApplicationHeader {
         contentItem: Kirigami.SearchField {
