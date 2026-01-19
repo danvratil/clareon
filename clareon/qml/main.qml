@@ -70,16 +70,22 @@ Item {
 
         menu: Platform.Menu {
             Platform.MenuItem {
-                text: qsTr("Show Clareon")
+                text: qsTr("&Show Clareon")
+                icon.name: "window-restore"
                 onTriggered: mainWindow.open()
             }
             Platform.MenuItem {
-                text: qsTr("Quick Input...")
+                text: qsTr("Quick &Input...")
+                // FIXME: This needs to be synced with the shortcut as currently configured
+                // by user in KGlobalAccel/XDG Global Shortcuts
+                shortcut: "Meta+C"
+                icon.name: "quickopen"
                 onTriggered: quickInput.open()
             }
             Platform.MenuSeparator {}
             Platform.MenuItem {
-                text: qsTr("New Conversation")
+                text: qsTr("&New Conversation")
+                icon.name: "message-new"
                 onTriggered: {
                     mainWindow.open()
                     mainWindow.openTitlePage()
@@ -87,7 +93,8 @@ Item {
             }
             Platform.MenuSeparator {}
             Platform.MenuItem {
-                text: qsTr("Quit")
+                text: qsTr("&Quit")
+                icon.name: "application-exit"
                 onTriggered: Qt.quit()
             }
         }
