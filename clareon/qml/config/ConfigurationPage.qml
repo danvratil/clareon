@@ -13,6 +13,7 @@ Kirigami.ApplicationWindow {
     id: root
 
     property var _config: ConfigManager.getConfig()
+    property bool _previousAutoStart: _config.ui.autoStart || false
 
     title: qsTr("Clareon Settings")
     width: 900
@@ -28,6 +29,12 @@ Kirigami.ApplicationWindow {
     // Save all settings pages that have changes
     function saveSettings() {
         ConfigManager.saveConfig(root._config)
+
+        // Apply autostart configuration if it changed
+        if (root._config.ui.autoStart !== root._previousAutoStart) {
+            ServiceController.setAutoStart(root._config.ui.autoStart)
+            root._previousAutoStart = root._config.ui.autoStart
+        }
     }
 
     globalDrawer: Kirigami.GlobalDrawer {

@@ -63,5 +63,51 @@ Kirigami.ScrollablePage {
                 }
             }
         }
+
+        // System Integration Section
+        Kirigami.FormLayout {
+            Layout.fillWidth: true
+
+            Kirigami.Separator {
+                Kirigami.FormData.isSection: true
+                Kirigami.FormData.label: qsTr("System Integration")
+            }
+
+            Controls.CheckBox {
+                id: minimizeToTrayCheckbox
+                Kirigami.FormData.label: qsTr("Minimize to tray:")
+                text: qsTr("Minimize to tray instead of closing")
+                checked: root.config.ui.minimizeToTray || false
+                onCheckedChanged: {
+                    if (checked !== root.config.ui.minimizeToTray) {
+                        root.config.ui.minimizeToTray = checked
+                    }
+                }
+            }
+
+            Controls.CheckBox {
+                id: startMinimizedCheckbox
+                Kirigami.FormData.label: qsTr("Start minimized:")
+                text: qsTr("Start minimized to tray")
+                checked: root.config.ui.startMinimized || false
+                onCheckedChanged: {
+                    if (checked !== root.config.ui.startMinimized) {
+                        root.config.ui.startMinimized = checked
+                    }
+                }
+            }
+
+            Controls.CheckBox {
+                id: autoStartCheckbox
+                Kirigami.FormData.label: qsTr("Auto-start:")
+                text: qsTr("Auto-start on login")
+                checked: root.config.ui.autoStart || false
+                onCheckedChanged: {
+                    if (checked !== root.config.ui.autoStart) {
+                        root.config.ui.autoStart = checked
+                    }
+                }
+            }
+        }
     }
 }

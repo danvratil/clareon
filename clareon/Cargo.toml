@@ -41,6 +41,9 @@ tracing-subscriber = { workspace = true }
 # Time handling
 chrono = { workspace = true }
 
+# XDG Base Directory support
+xdg = "3.0"
+
 [build-dependencies]
 cxx-qt-build = { workspace = true }
 glob = "0.3"

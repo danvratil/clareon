@@ -112,6 +112,10 @@ mod ffi {
         #[qinvokable]
         fn search(self: &ServiceController, query: &QString);
 
+        // System integration
+        #[qinvokable]
+        fn set_auto_start(self: &ServiceController, enabled: bool);
+
         // Data access (synchronous, reads from cache)
         #[qinvokable]
         fn get_conversation_count(self: &ServiceController) -> i32;
@@ -328,6 +332,43 @@ impl ffi::ServiceController {
         let _ = handle.send(Command::Search {
             query: query.to_string(),
         });
+    }
+
+    /// Set auto-start on login
+    fn set_auto_start(&self, enabled: bool) {
+        let xdg_dirs = xdg::BaseDirectories::new();
+
+        if enabled {
+            let desktop_file = match xdg_dirs.place_config_file("autostart/cc.clareon.desktop") {
+                Ok(path) => path,
+                Err(e) => {
+                    tracing::error!("Failed to determine autostart desktop file path: {}", e);
+                    return;
+                }
+            };
+
+            std::fs::write(desktop_file, r#"
+[Desktop Entry]
+Name=Clareon
+GenericName=Clareon
+Exec=clareon
+Icon=clareon
+StartupNotify=true
+Terminal=false
+Type=Application
+Version=1.0
+Categories=Utility;Qt
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=2
+X-KDE-autostart-after=panel
+X-LXQt-Need-Tray=true"#).unwrap_or_else(|e| {
+                tracing::error!("Failed to write autostart desktop file: {}", e);
+            });
+        } else if let Some(desktop_file) = xdg_dirs.get_config_file("autostart/cc.clareon.desktop") {
+            std::fs::remove_file(&desktop_file).unwrap_or_else(|e| {
+                tracing::error!("Failed to remove autostart desktop file: {}", e);
+            });
+        }
     }
 
     /// Get the number of conversations

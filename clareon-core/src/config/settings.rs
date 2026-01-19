@@ -63,6 +63,10 @@ pub struct Config {
     /// Logging configuration
     #[serde(default)]
     pub logging: LoggingConfig,
+
+    /// UI configuration
+    #[serde(default)]
+    pub ui: UiConfig,
 }
 
 fn default_model() -> String {
@@ -318,6 +322,22 @@ impl LoggingConfig {
     }
 }
 
+/// UI configuration
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct UiConfig {
+    /// Minimize to tray instead of closing the window
+    #[serde(default = "default_true")]
+    pub minimize_to_tray: bool,
+
+    /// Start the application minimized to tray
+    #[serde(default)]
+    pub start_minimized: bool,
+
+    /// Auto-start the application on login
+    #[serde(default)]
+    pub auto_start: bool,
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -328,6 +348,7 @@ impl Default for Config {
             models: ModelsConfig::default(),
             tools: ToolsConfig::default(),
             logging: LoggingConfig::default(),
+            ui: UiConfig::default(),
         }
     }
 }

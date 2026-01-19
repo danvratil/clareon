@@ -9,6 +9,8 @@ import cz.dvratil.clareon 1.0
 Item {
     id: app
 
+    property var config: ConfigManager.getConfig()
+
     MainWindow {
         id: mainWindow
         visible: false
@@ -24,12 +26,17 @@ Item {
         ServiceController.onMainWindowRequested.connect(function() {
             mainWindow.open()
         })
+
+        // Show window on startup if not configured to start minimized
+        if (!config.ui.startMinimized) {
+            mainWindow.open()
+        }
     }
 
-    // System tray icon
+    // System tray icon - only visible if minimize to tray is enabled
     Platform.SystemTrayIcon {
         id: systemTray
-        visible: true
+        visible: config.ui.minimizeToTray || config.ui.startMinimized
         icon.name: ":/clareon-256.png"
         tooltip: "Clareon Assistant"
 

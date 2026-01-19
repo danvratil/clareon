@@ -18,13 +18,14 @@ Kirigami.ApplicationWindow {
     minimumHeight: 600
 
     property string currentConversationId: ""
+    property var config: ConfigManager.getConfig()
 
-    
-
-    // Override close event to hide instead of quit
+    // Override close event to hide instead of quit (if minimize to tray is enabled)
     onClosing: function(close) {
-        close.accepted = false
-        root.hide()
+        if (config.ui.minimizeToTray) {
+            close.accepted = false
+            root.hide()
+        }
     }
 
     Kirigami.Action {
