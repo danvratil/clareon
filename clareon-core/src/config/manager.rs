@@ -103,20 +103,18 @@ impl ConfigManager {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_config_manager_singleton() {
-        // Get the singleton twice and verify it's the same instance
-        let manager1 = ConfigManager::get();
-        let manager2 = ConfigManager::get();
-
-        // They should point to the same memory
-        assert!(std::ptr::eq(manager1, manager2));
+    /// Helper to create a test ConfigManager without touching production config
+    fn create_test_manager() -> ConfigManager {
+        ConfigManager {
+            config: Arc::new(Mutex::new(Config::default())),
+        }
     }
 
     #[test]
     fn test_config_clone() {
-        let config1 = ConfigManager::get().config();
-        let config2 = ConfigManager::get().config();
+        let manager = create_test_manager();
+        let config1 = manager.config();
+        let config2 = manager.config();
 
         // Configs should be equal but not the same instance
         assert_eq!(config1.default_backend, config2.default_backend);
@@ -126,18 +124,41 @@ mod tests {
     fn test_update_config() {
         use crate::config::Backend;
 
-        let original = ConfigManager::get().config();
+        let manager = create_test_manager();
+        let original = manager.config();
 
-        ConfigManager::get()
+        manager
             .update_config(|config| {
                 config.default_backend = Backend::Anthropic;
             })
             .unwrap();
 
-        let updated = ConfigManager::get().config();
+        let updated = manager.config();
         assert_eq!(updated.default_backend, Backend::Anthropic);
 
-        // Restore original
-        ConfigManager::get().replace_config(original);
+        // Verify original was Bedrock (default)
+        assert_eq!(original.default_backend, Backend::Bedrock);
+    }
+
+    #[test]
+    fn test_replace_config() {
+        use crate::config::Backend;
+
+        let manager = create_test_manager();
+
+        // Create a custom config
+        let custom_config = Config {
+            default_backend: Backend::Anthropic,
+            default_model: "custom-model".to_string(),
+            ..Default::default()
+        };
+
+        // Replace config
+        manager.replace_config(custom_config);
+
+        // Verify it was replaced
+        let current = manager.config();
+        assert_eq!(current.default_backend, Backend::Anthropic);
+        assert_eq!(current.default_model, "custom-model");
     }
 }

@@ -938,6 +938,7 @@ dependencies = [
  "eventsource-stream",
  "futures",
  "mime_guess",
+ "mock-anthropic",
  "reqwest",
  "secret-service",
  "serde",
@@ -2364,6 +2365,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "futures",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",
