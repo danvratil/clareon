@@ -357,7 +357,9 @@ impl ffi::ServiceController {
                 }
             };
 
-            std::fs::write(desktop_file, r#"
+            std::fs::write(
+                desktop_file,
+                r#"
 [Desktop Entry]
 Name=Clareon
 GenericName=Clareon
@@ -371,10 +373,13 @@ Categories=Utility;Qt
 X-GNOME-Autostart-enabled=true
 X-GNOME-Autostart-Delay=2
 X-KDE-autostart-after=panel
-X-LXQt-Need-Tray=true"#).unwrap_or_else(|e| {
+X-LXQt-Need-Tray=true"#,
+            )
+            .unwrap_or_else(|e| {
                 tracing::error!("Failed to write autostart desktop file: {}", e);
             });
-        } else if let Some(desktop_file) = xdg_dirs.get_config_file("autostart/cc.clareon.desktop") {
+        } else if let Some(desktop_file) = xdg_dirs.get_config_file("autostart/cc.clareon.desktop")
+        {
             std::fs::remove_file(&desktop_file).unwrap_or_else(|e| {
                 tracing::error!("Failed to remove autostart desktop file: {}", e);
             });

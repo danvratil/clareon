@@ -48,6 +48,8 @@ mod ffi {
         #[qml_element]
         #[base = QAbstractListModel]
         #[qproperty(QString, conversation_id, READ, WRITE = set_conversation_id, NOTIFY)]
+        #[qproperty(i64, total_input_tokens, READ, NOTIFY)]
+        #[qproperty(i64, total_output_tokens, READ, NOTIFY)]
         type MessageListModel = super::MessageListModelRust;
 
         fn set_conversation_id(self: Pin<&mut MessageListModel>, id: QString);
@@ -153,6 +155,9 @@ struct Message {
     // Error-related fields
     error_info: Option<ErrorInfo>,
     partial_content: Option<String>,
+    // Token usage fields
+    input_tokens: Option<i64>,
+    output_tokens: Option<i64>,
 }
 
 impl Message {
@@ -165,6 +170,8 @@ impl Message {
             state,
             error_info: None,
             partial_content: None,
+            input_tokens: data.input_tokens,
+            output_tokens: data.output_tokens,
         }
     }
 
@@ -177,6 +184,8 @@ impl Message {
             state: MessageState::Error,
             error_info: Some(error_info),
             partial_content,
+            input_tokens: None,
+            output_tokens: None,
         }
     }
 }
@@ -192,6 +201,8 @@ pub struct MessageListModelRust {
     conversation_id: QString,
     messages: Vec<Message>,
     subscription: Arc<Mutex<Option<JoinHandle<()>>>>,
+    total_input_tokens: i64,
+    total_output_tokens: i64,
 }
 
 impl Default for MessageListModelRust {
@@ -200,6 +211,8 @@ impl Default for MessageListModelRust {
             conversation_id: QString::default(),
             messages: Vec::new(),
             subscription: Arc::new(Mutex::new(None)),
+            total_input_tokens: 0,
+            total_output_tokens: 0,
         }
     }
 }
@@ -211,6 +224,7 @@ impl ffi::MessageListModel {
         self.as_mut().begin_reset_model();
         self.as_mut().rust_mut().messages = messages.into_iter().map(Message::from).collect();
         self.as_mut().end_reset_model();
+        self.as_mut().recalculate_token_totals();
     }
 
     /// Add a single message to the end
@@ -218,10 +232,9 @@ impl ffi::MessageListModel {
         let count = self.rust().messages.len();
         self.as_mut()
             .begin_insert_rows(&QModelIndex::default(), count as i32, count as i32);
-        self.as_mut()
-            .rust_mut()
-            .messages
-            .push(Message::from(message));
+        let msg = Message::from(message);
+        self.as_mut().add_to_token_totals(&msg);
+        self.as_mut().rust_mut().messages.push(msg);
         self.as_mut().end_insert_rows();
     }
 
@@ -232,7 +245,43 @@ impl ffi::MessageListModel {
         }
         self.as_mut().begin_reset_model();
         self.as_mut().rust_mut().messages.clear();
+        self.as_mut().reset_token_totals();
         self.as_mut().end_reset_model();
+    }
+
+    /// Recalculate token totals from all messages
+    fn recalculate_token_totals(mut self: Pin<&mut Self>) {
+        let (input_total, output_total) =
+            self.rust()
+                .messages
+                .iter()
+                .fold((0i64, 0i64), |(input_acc, output_acc), msg| {
+                    (
+                        input_acc + msg.input_tokens.unwrap_or(0),
+                        output_acc + msg.output_tokens.unwrap_or(0),
+                    )
+                });
+
+        self.as_mut().rust_mut().total_input_tokens = input_total;
+        self.as_mut().rust_mut().total_output_tokens = output_total;
+        self.as_mut().total_input_tokens_changed();
+        self.as_mut().total_output_tokens_changed();
+    }
+
+    /// Reset token totals to zero
+    fn reset_token_totals(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().total_input_tokens = 0;
+        self.as_mut().rust_mut().total_output_tokens = 0;
+        self.as_mut().total_input_tokens_changed();
+        self.as_mut().total_output_tokens_changed();
+    }
+
+    /// Add token counts from a message to the totals
+    fn add_to_token_totals(mut self: Pin<&mut Self>, message: &Message) {
+        self.as_mut().rust_mut().total_input_tokens += message.input_tokens.unwrap_or(0);
+        self.as_mut().rust_mut().total_output_tokens += message.output_tokens.unwrap_or(0);
+        self.as_mut().total_input_tokens_changed();
+        self.as_mut().total_output_tokens_changed();
     }
 
     fn set_conversation_id(mut self: Pin<&mut Self>, id: QString) {
@@ -274,6 +323,8 @@ impl ffi::MessageListModel {
             state: MessageState::Thinking,
             error_info: None,
             partial_content: None,
+            input_tokens: None,
+            output_tokens: None,
         });
         self.as_mut().end_insert_rows();
     }
@@ -294,9 +345,19 @@ impl ffi::MessageListModel {
     }
 
     fn complete_streaming_message(mut self: Pin<&mut Self>, message: MessageData) {
-        if let Some(last_message) = self.as_mut().rust_mut().messages.last_mut() {
-            assert!(last_message.id == -1); // Ensure it's the streaming placeholder
-            *last_message = message.into();
+        if self
+            .rust()
+            .messages
+            .last()
+            .map(|m| m.id == -1)
+            .unwrap_or(false)
+        {
+            let completed_msg = Message::from(message);
+            self.as_mut().add_to_token_totals(&completed_msg);
+            // Now update the last message after token totals are updated
+            if let Some(last_message) = self.as_mut().rust_mut().messages.last_mut() {
+                *last_message = completed_msg;
+            }
             let row = (self.rust().messages.len() - 1) as i32;
             let index = self.as_ref().index(row, 0, &QModelIndex::default());
             self.as_mut().data_changed(

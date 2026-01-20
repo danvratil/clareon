@@ -168,5 +168,12 @@ Kirigami.Page {
             Layout.fillWidth: true
             conversationId: root.conversationId
         }
+
+        // Token usage display
+        TokenUsageDisplay {
+            Layout.fillWidth: true
+            totalInputTokens: messageListModel.totalInputTokens
+            totalOutputTokens: messageListModel.totalOutputTokens
+        }
     }
 }

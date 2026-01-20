@@ -13,6 +13,8 @@ pub struct MessageData {
     pub role: String, // "user" or "assistant"
     pub text: String,
     pub created_at: i64,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
 }
 
 /// Information about an error that can be displayed to the user
@@ -124,7 +126,6 @@ pub enum Response {
 
     /// Generic error for non-conversation operations
     Error { command: String, error: String },
-
 
     /// Main window activation was requested
     ActivateMainWindow,

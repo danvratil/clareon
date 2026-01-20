@@ -469,6 +469,8 @@ fn message_to_data(message: Message) -> MessageData {
         },
         text: message.text().unwrap_or("").to_string(),
         created_at: message.created_at,
+        input_tokens: message.input_tokens,
+        output_tokens: message.output_tokens,
     }
 }
 
