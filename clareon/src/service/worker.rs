@@ -273,6 +273,11 @@ impl ServiceWorker {
             }
         };
 
+        // Start streaming immediately to show thinking indicator
+        let _ = self.response_tx.send(Response::StreamingStarted {
+            conv_id: conv_id.clone(),
+        });
+
         // Then load the conversation
         let mut conversation = match self.manager.load_conversation(&conv_id).await {
             Ok(conv) => conv,
@@ -290,11 +295,6 @@ impl ServiceWorker {
                 return;
             }
         };
-
-        // Start streaming
-        let _ = self.response_tx.send(Response::StreamingStarted {
-            conv_id: conv_id.clone(),
-        });
 
         // Send message with streaming
         match self.manager.send_message_stream(&mut conversation).await {
