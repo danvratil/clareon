@@ -244,7 +244,21 @@ impl ServiceWorker {
     }
 
     async fn handle_send_message(&self, conv_id: ConversationId, text: String) {
-        // First store the user message to the conversation
+        // Show the user message immediately with optimistic update
+        // Use -2 as temporary ID (distinct from streaming placeholder's -1)
+        let optimistic_message = MessageData {
+            id: -2,
+            role: "user".to_string(),
+            text: text.clone(),
+            created_at: chrono::Local::now().timestamp(),
+        };
+
+        let _ = self.response_tx.send(Response::MessageSent {
+            conv_id: conv_id.clone(),
+            message: optimistic_message,
+        });
+
+        // Then store the user message to the conversation
         let user_msg_id = match self
             .manager
             .append_user_message(conv_id.clone(), &text)
@@ -252,10 +266,8 @@ impl ServiceWorker {
         {
             Ok(msg) => {
                 let msg_id = msg.id;
-                let _ = self.response_tx.send(Response::MessageSent {
-                    conv_id: conv_id.clone(),
-                    message: message_to_data(msg),
-                });
+                // Message already displayed, we could emit an update with real ID
+                // but it's not necessary for the current UI implementation
                 Some(msg_id)
             }
             Err(e) => {

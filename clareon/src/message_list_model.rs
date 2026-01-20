@@ -564,9 +564,9 @@ impl ffi::MessageListModel {
                 user_message_id: _,
                 ..
             } => {
-                // Remove "thinking" placeholder if present
+                // Remove any temporary messages (optimistic user message with id -2, or thinking placeholder with id -1)
                 if let Some(last) = self.rust().messages.last()
-                    && last.id == -1
+                    && (last.id == -1 || last.id == -2)
                 {
                     let count = self.rust().messages.len();
                     self.as_mut().begin_remove_rows(
