@@ -125,7 +125,6 @@ pub enum Response {
     /// Generic error for non-conversation operations
     Error { command: String, error: String },
 
-
     /// Main window activation was requested
     ActivateMainWindow,
 

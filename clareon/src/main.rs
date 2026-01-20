@@ -5,11 +5,11 @@
 use std::sync::{Mutex, OnceLock};
 use tokio::runtime::Runtime;
 
+use clap::Parser;
 use clareon_core::ConfigManager;
 use clareon_qt::{QApplicationExt, QIcon};
 use cxx_qt_lib::{QQmlApplicationEngine, QString, QUrl};
 use cxx_qt_lib_extras::QApplication;
-use clap::Parser;
 
 use service::ClareonService;
 use unique_app::{UniqueResult, try_become_unique};
@@ -66,7 +66,6 @@ fn main() {
     };
 
     // If we acquired the unique handle, we can proceed with initialization.
-
 
     // Initialize ConfigManager singleton (loads config on first access)
     let config = ConfigManager::get().config();
