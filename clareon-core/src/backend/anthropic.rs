@@ -328,12 +328,16 @@ impl LlmBackend for AnthropicBackend {
 
         let status = response.status();
         if !status.is_success() {
+            let headers = response.headers().clone();
             let error_text = response.text().await.unwrap_or_default();
 
             return match status.as_u16() {
                 401 => Err(BackendError::Authentication(error_text)),
                 429 => Err(BackendError::RateLimited {
-                    retry_after_secs: None,
+                    retry_after_secs: headers
+                        .get("retry-after")
+                        .and_then(|h| h.to_str().ok())
+                        .and_then(|s| s.parse().ok()),
                 }),
                 500..=599 => Err(BackendError::ServiceUnavailable),
                 _ => Err(BackendError::Api {
