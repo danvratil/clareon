@@ -318,7 +318,7 @@ impl LlmBackend for AnthropicBackend {
 
         let response = self
             .client
-            .post(format!("{}/v1/messages", self.base_url))
+            .post(&self.base_url)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("content-type", "application/json")
@@ -394,7 +394,7 @@ impl LlmBackend for AnthropicBackend {
         // Send the request
         let response = self
             .client
-            .post(format!("{}/v1/messages", self.base_url))
+            .post(&self.base_url)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("content-type", "application/json")

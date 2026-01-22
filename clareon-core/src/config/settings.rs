@@ -124,11 +124,23 @@ pub struct AnthropicConfig {
     pub api_key_in_keyring: bool,
 
     /// Base URL for the API (for custom endpoints)
+    #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
     pub base_url: Option<String>,
 }
 
 fn default_true() -> bool {
     true
+}
+
+/// Deserialize an empty string as None
+fn deserialize_empty_string_as_none<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s: Option<String> = Option::deserialize(deserializer)?;
+    Ok(s.filter(|s| !s.is_empty()))
 }
 
 /// System prompt configuration
@@ -579,5 +591,43 @@ mod tests {
         assert_eq!(logging.global, "debug");
         assert_eq!(logging.modules.get("my_app"), Some(&"trace".to_string()));
         assert_eq!(logging.modules.get("aws_sdk"), Some(&"warn".to_string()));
+    }
+
+    #[test]
+    fn test_anthropic_config_empty_base_url() {
+        // Test that empty string base_url is deserialized as None
+        let json = r#"{
+            "api_key_in_keyring": false,
+            "base_url": ""
+        }"#;
+        let config: AnthropicConfig = serde_json::from_str(json).unwrap();
+        assert!(!config.api_key_in_keyring);
+        assert_eq!(config.base_url, None);
+    }
+
+    #[test]
+    fn test_anthropic_config_with_base_url() {
+        // Test that non-empty base_url is preserved
+        let json = r#"{
+            "api_key_in_keyring": true,
+            "base_url": "https://api.example.com/v1/messages"
+        }"#;
+        let config: AnthropicConfig = serde_json::from_str(json).unwrap();
+        assert!(config.api_key_in_keyring);
+        assert_eq!(
+            config.base_url,
+            Some("https://api.example.com/v1/messages".to_string())
+        );
+    }
+
+    #[test]
+    fn test_anthropic_config_missing_base_url() {
+        // Test that missing base_url is deserialized as None
+        let json = r#"{
+            "api_key_in_keyring": false
+        }"#;
+        let config: AnthropicConfig = serde_json::from_str(json).unwrap();
+        assert!(!config.api_key_in_keyring);
+        assert_eq!(config.base_url, None);
     }
 }
