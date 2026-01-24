@@ -17,7 +17,13 @@ use tokio::runtime::Runtime;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
-use clareon_core::{Config, ConfigManager, ConversationManager, Error, Result, Storage};
+use clareon_core::{
+    Config, ConfigManager, ConversationManager, Error, Result, Storage,
+    tools::{
+        ArtifactManager, BubblewrapSandbox, NoneSandbox, SandboxMode, ToolExecutor, ToolRegistry,
+        WorkspaceManager, register_builtin_tools,
+    },
+};
 
 /// Handle for sending commands to the service and receiving responses
 #[derive(Clone)]
@@ -64,7 +70,7 @@ impl ClareonService {
             let config = ConfigManager::get().config();
 
             // Initialize storage
-            let storage = Storage::new(&Config::database_url()?).await?;
+            let storage = Arc::new(Storage::new(&Config::database_url()?).await?);
 
             // Create backends
             let backend = clareon_core::backend::create_backend_from_config(&config)
@@ -74,13 +80,57 @@ impl ClareonService {
                 .await
                 .map_err(std::io::Error::other)?;
 
+            // Create tool executor if tools are enabled
+            let tool_executor = if config.tools.enabled {
+                // Create tool registry with built-in tools
+                let mut registry = ToolRegistry::default();
+                register_builtin_tools(&mut registry);
+                let registry = Arc::new(registry);
+
+                // Create sandbox based on config
+                use clareon_core::config::SandboxModeConfig;
+                let sandbox: Arc<dyn clareon_core::tools::Sandbox> = match config.tools.sandbox_mode
+                {
+                    SandboxModeConfig::Strict => {
+                        Arc::new(BubblewrapSandbox::new(SandboxMode::Strict))
+                    }
+                    SandboxModeConfig::Basic => {
+                        Arc::new(BubblewrapSandbox::new(SandboxMode::Basic))
+                    }
+                    SandboxModeConfig::None => Arc::new(NoneSandbox),
+                };
+
+                // Get workspace cache directory
+                let workspace_dir = Config::workspace_cache_dir().map_err(std::io::Error::other)?;
+
+                // Create workspace manager
+                let workspace_manager =
+                    Arc::new(WorkspaceManager::new(workspace_dir, Arc::clone(&storage)));
+
+                // Create artifact manager (shares storage with workspace manager)
+                let artifact_manager = Arc::new(ArtifactManager::new(Arc::clone(&storage)));
+
+                // Create tool executor
+                let executor =
+                    ToolExecutor::new(registry, sandbox, workspace_manager, artifact_manager);
+
+                Some(Arc::new(executor))
+            } else {
+                None
+            };
+
             // Create conversation manager
-            let manager = ConversationManager::new(
-                storage,
+            let mut manager = ConversationManager::new(
+                Arc::clone(&storage),
                 Arc::clone(&backend),
                 Arc::clone(&title_backend),
                 config,
             );
+
+            // Add tool executor if available
+            if let Some(executor) = tool_executor {
+                manager = manager.with_tools(executor);
+            }
 
             Ok::<_, Error>(manager)
         })?;

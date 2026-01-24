@@ -663,102 +663,158 @@ fn create_streaming_tool_use_response(
     let input = generate_tool_input(&tool_name);
     let input_json = serde_json::to_string(&input).unwrap();
 
+    // Thinking text chunks to stream before tool use
+    let tool_name_chunk = format!("{} ", tool_name);
+    let thinking_chunks = vec![
+        "Let me ".to_string(),
+        "help ".to_string(),
+        "you ".to_string(),
+        "with ".to_string(),
+        "that. ".to_string(),
+        "I'll ".to_string(),
+        "use ".to_string(),
+        "the ".to_string(),
+        tool_name_chunk,
+        "tool.".to_string(),
+    ];
+
     // Split input JSON into chunks for streaming
-    let chunks: Vec<String> = input_json
+    let json_chunks: Vec<String> = input_json
         .chars()
         .collect::<Vec<_>>()
         .chunks(10)
         .map(|c| c.iter().collect())
         .collect();
-    let num_chunks = chunks.len();
 
-    let stream = stream::iter(0..num_chunks + 5)
-        .enumerate()
-        .then(move |(_idx, i)| {
-            let message_id = message_id.clone();
-            let model = model.clone();
-            let tool_id = tool_id.clone();
-            let tool_name = tool_name.clone();
-            let chunks = chunks.clone();
+    let num_thinking = thinking_chunks.len();
+    let num_json = json_chunks.len();
+    // Total events: message_start + text_block_start + thinking_deltas + text_block_stop +
+    //              tool_block_start + json_deltas + tool_block_stop + message_delta + message_stop
+    let total_events = 1 + 1 + num_thinking + 1 + 1 + num_json + 1 + 1 + 1;
 
-            async move {
-                if i > 0 {
-                    tokio::time::sleep(Duration::from_millis(20)).await;
-                }
+    let stream = stream::iter(0..total_events).then(move |i| {
+        let message_id = message_id.clone();
+        let model = model.clone();
+        let tool_id = tool_id.clone();
+        let tool_name = tool_name.clone();
+        let thinking_chunks = thinking_chunks.clone();
+        let json_chunks = json_chunks.clone();
 
-                let event = if i == 0 {
-                    // message_start
-                    StreamEvent::MessageStart {
-                        message: MessageStartData {
-                            id: message_id.clone(),
-                            type_: "message".to_string(),
-                            role: "assistant".to_string(),
-                            content: vec![],
-                            model: model.clone(),
-                            stop_reason: None,
-                            stop_sequence: None,
-                            usage: Usage {
-                                input_tokens: 100,
-                                output_tokens: 0,
-                            },
-                        },
-                    }
-                } else if i == 1 {
-                    // content_block_start for tool_use
-                    StreamEvent::ToolUseStart {
-                        index: 0,
-                        id: tool_id.clone(),
-                        name: tool_name.clone(),
-                    }
-                } else if i < num_chunks + 2 {
-                    // content_block_delta with partial JSON
-                    let chunk_idx = i - 2;
-                    StreamEvent::ContentBlockDelta {
-                        index: 0,
-                        delta: Delta::InputJsonDelta {
-                            partial_json: chunks[chunk_idx].clone(),
-                        },
-                    }
-                } else if i == num_chunks + 2 {
-                    // content_block_stop
-                    StreamEvent::ContentBlockStop { index: 0 }
-                } else if i == num_chunks + 3 {
-                    // message_delta
-                    StreamEvent::MessageDelta {
-                        delta: MessageDeltaData {
-                            stop_reason: "tool_use".to_string(),
-                            stop_sequence: None,
-                        },
+        async move {
+            if i > 0 {
+                tokio::time::sleep(Duration::from_millis(30)).await;
+            }
+
+            // Event sequence:
+            // 0: message_start
+            // 1: content_block_start (text)
+            // 2..2+num_thinking: content_block_delta (text)
+            // 2+num_thinking: content_block_stop (text)
+            // 3+num_thinking: content_block_start (tool_use)
+            // 4+num_thinking..4+num_thinking+num_json: content_block_delta (tool JSON)
+            // 4+num_thinking+num_json: content_block_stop (tool)
+            // 5+num_thinking+num_json: message_delta
+            // 6+num_thinking+num_json: message_stop
+
+            let text_stop_idx = 2 + num_thinking;
+            let tool_start_idx = text_stop_idx + 1;
+            let tool_deltas_start = tool_start_idx + 1;
+            let tool_stop_idx = tool_deltas_start + num_json;
+            let msg_delta_idx = tool_stop_idx + 1;
+
+            let event = if i == 0 {
+                // message_start
+                StreamEvent::MessageStart {
+                    message: MessageStartData {
+                        id: message_id.clone(),
+                        type_: "message".to_string(),
+                        role: "assistant".to_string(),
+                        content: vec![],
+                        model: model.clone(),
+                        stop_reason: None,
+                        stop_sequence: None,
                         usage: Usage {
                             input_tokens: 100,
-                            output_tokens: 30,
+                            output_tokens: 0,
                         },
-                    }
-                } else {
-                    // message_stop
-                    StreamEvent::MessageStop
-                };
+                    },
+                }
+            } else if i == 1 {
+                // content_block_start for text (thinking)
+                StreamEvent::ContentBlockStart {
+                    index: 0,
+                    content_block: ContentBlock::Text {
+                        text: String::new(),
+                    },
+                }
+            } else if i < text_stop_idx {
+                // content_block_delta with thinking text
+                let chunk_idx = i - 2;
+                StreamEvent::ContentBlockDelta {
+                    index: 0,
+                    delta: Delta::TextDelta {
+                        text: thinking_chunks[chunk_idx].clone(),
+                    },
+                }
+            } else if i == text_stop_idx {
+                // content_block_stop for text
+                StreamEvent::ContentBlockStop { index: 0 }
+            } else if i == tool_start_idx {
+                // content_block_start for tool_use
+                StreamEvent::ToolUseStart {
+                    index: 1,
+                    id: tool_id.clone(),
+                    name: tool_name.clone(),
+                }
+            } else if i < tool_stop_idx {
+                // content_block_delta with partial JSON
+                let chunk_idx = i - tool_deltas_start;
+                StreamEvent::ContentBlockDelta {
+                    index: 1,
+                    delta: Delta::InputJsonDelta {
+                        partial_json: json_chunks[chunk_idx].clone(),
+                    },
+                }
+            } else if i == tool_stop_idx {
+                // content_block_stop for tool_use
+                StreamEvent::ContentBlockStop { index: 1 }
+            } else if i == msg_delta_idx {
+                // message_delta
+                StreamEvent::MessageDelta {
+                    delta: MessageDeltaData {
+                        stop_reason: "tool_use".to_string(),
+                        stop_sequence: None,
+                    },
+                    usage: Usage {
+                        input_tokens: 100,
+                        output_tokens: 50,
+                    },
+                }
+            } else {
+                // message_stop
+                StreamEvent::MessageStop
+            };
 
-                let event_type = match &event {
-                    StreamEvent::MessageStart { .. } => "message_start",
-                    StreamEvent::ContentBlockStart { .. } => "content_block_start",
-                    StreamEvent::ToolUseStart { .. } => "content_block_start",
-                    StreamEvent::ContentBlockDelta { .. } => "content_block_delta",
-                    StreamEvent::ContentBlockStop { .. } => "content_block_stop",
-                    StreamEvent::MessageDelta { .. } => "message_delta",
-                    StreamEvent::MessageStop => "message_stop",
-                    StreamEvent::Ping => "ping",
-                };
+            let event_type = match &event {
+                StreamEvent::MessageStart { .. } => "message_start",
+                StreamEvent::ContentBlockStart { .. } => "content_block_start",
+                StreamEvent::ToolUseStart { .. } => "content_block_start",
+                StreamEvent::ContentBlockDelta { .. } => "content_block_delta",
+                StreamEvent::ContentBlockStop { .. } => "content_block_stop",
+                StreamEvent::MessageDelta { .. } => "message_delta",
+                StreamEvent::MessageStop => "message_stop",
+                StreamEvent::Ping => "ping",
+            };
 
-                let data = serde_json::to_string(&event).unwrap();
+            let data = serde_json::to_string(&event).unwrap();
 
-                Ok::<_, Infallible>(
-                    axum::response::sse::Event::default()
-                        .event(event_type)
-                        .data(data),
-                )
-            }
-        });
+            Ok::<_, Infallible>(
+                axum::response::sse::Event::default()
+                    .event(event_type)
+                    .data(data),
+            )
+        }
+    });
 
     Sse::new(stream)
 }
