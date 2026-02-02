@@ -24,6 +24,7 @@ use tracing::{debug, info, warn};
 use super::traits::{
     ChatRequest, ChatResponse, ContentDelta, LlmBackend, ModelInfo, StopReason, StreamEvent, Usage,
 };
+use crate::config::{BedrockAuthMethod, BedrockConfig, SecretStore};
 use crate::error::BackendError;
 use crate::types::{ContentBlock, ConversationId, Message, Role, ToolResultContent};
 
@@ -32,6 +33,8 @@ pub struct BedrockBackend {
     client: Client,
     region: String,
     enable_prompt_caching: bool,
+    /// Configuration for SSO auto-refresh (only stored when using SSO auth)
+    config: Option<BedrockConfig>,
 }
 
 impl BedrockBackend {
@@ -74,7 +77,185 @@ impl BedrockBackend {
             client,
             region,
             enable_prompt_caching,
+            config: None,
         })
+    }
+
+    /// Create a new Bedrock backend with bearer token authentication
+    pub async fn with_bearer_token(
+        region: impl Into<String>,
+        bearer_token: impl Into<String>,
+        enable_prompt_caching: bool,
+    ) -> Result<Self, BackendError> {
+        let region = region.into();
+        let token = bearer_token.into();
+
+        info!(
+            "Initializing Bedrock backend with bearer token in region: {}",
+            region
+        );
+
+        // Set the bearer token as environment variable for AWS SDK
+        // SAFETY: This is safe because we're setting the environment variable
+        // before initializing the AWS SDK client, and we own the token value.
+        unsafe {
+            std::env::set_var("AWS_BEARER_TOKEN_BEDROCK", &token);
+        }
+
+        let config = aws_config::defaults(BehaviorVersion::latest())
+            .region(aws_config::Region::new(region.clone()))
+            .load()
+            .await;
+
+        let client = Client::new(&config);
+
+        Ok(Self {
+            client,
+            region,
+            enable_prompt_caching,
+            config: None,
+        })
+    }
+
+    /// Create backend from configuration
+    pub async fn from_config(config: &BedrockConfig) -> Result<Self, BackendError> {
+        match config.auth_method {
+            BedrockAuthMethod::BearerToken => {
+                let token = if config.bearer_token_in_env {
+                    std::env::var("AWS_BEARER_TOKEN_BEDROCK").map_err(|_| {
+                        BackendError::Authentication(
+                            "AWS_BEARER_TOKEN_BEDROCK not found in environment".to_string(),
+                        )
+                    })?
+                } else {
+                    // Read from keyring
+                    let secret_store = SecretStore::new().await.map_err(|e| {
+                        BackendError::Authentication(format!("Failed to access keyring: {}", e))
+                    })?;
+
+                    secret_store.get_bedrock_bearer_token().await.map_err(|e| {
+                        BackendError::Authentication(format!(
+                            "Bedrock bearer token not found in keyring. Please configure the token in settings. Error: {}",
+                            e
+                        ))
+                    })?
+                };
+
+                Self::with_bearer_token(&config.region, token, config.enable_prompt_caching).await
+            }
+            BedrockAuthMethod::Sso => {
+                // For SSO, store config for auto-refresh
+                let mut backend = Self::new_with_config(
+                    &config.region,
+                    config.profile.clone(),
+                    config.enable_prompt_caching,
+                )
+                .await?;
+                backend.config = Some(config.clone());
+                Ok(backend)
+            }
+            BedrockAuthMethod::Profile => {
+                Self::new_with_config(
+                    &config.region,
+                    config.profile.clone(),
+                    config.enable_prompt_caching,
+                )
+                .await
+            }
+            BedrockAuthMethod::EnvironmentVariables => {
+                // Uses default credential chain which reads from environment
+                Self::new_with_config(&config.region, None, config.enable_prompt_caching).await
+            }
+        }
+    }
+
+    /// Refresh credentials using SSO command
+    async fn refresh_sso_credentials(sso_command: &str) -> Result<(), BackendError> {
+        use tokio::process::Command;
+
+        info!(
+            "Refreshing AWS SSO credentials with command: {}",
+            sso_command
+        );
+
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg(sso_command)
+            .output()
+            .await
+            .map_err(|e| {
+                BackendError::Authentication(format!(
+                    "Failed to execute SSO refresh command: {}",
+                    e
+                ))
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(BackendError::Authentication(format!(
+                "SSO refresh command failed: {}",
+                stderr
+            )));
+        }
+
+        // Give AWS SDK time to reload credentials
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        info!("SSO credentials refreshed successfully");
+        Ok(())
+    }
+
+    /// Check if an error is a credential expiration error
+    fn is_credential_error(error: &BackendError) -> bool {
+        matches!(error, BackendError::Authentication(_))
+    }
+
+    /// Execute an operation with automatic credential refresh on auth failures
+    async fn with_auto_refresh<F, Fut, T>(&self, operation: F) -> Result<T, BackendError>
+    where
+        F: Fn() -> Fut,
+        Fut: std::future::Future<Output = Result<T, BackendError>>,
+    {
+        // Try the operation first
+        let result = operation().await;
+
+        // If it succeeded or if we don't have SSO config, return immediately
+        if result.is_ok() || self.config.is_none() {
+            return result;
+        }
+
+        // Check if it's a credential error and we can refresh
+        let Err(error) = result else {
+            unreachable!("We already checked result.is_ok() above");
+        };
+
+        if !Self::is_credential_error(&error) {
+            return Err(error);
+        }
+
+        let config = self.config.as_ref().unwrap();
+
+        // Only refresh if auto-refresh is enabled and we have a refresh command
+        if !config.auto_refresh_credentials {
+            warn!("Credential error detected but auto-refresh is disabled");
+            return Err(error);
+        }
+
+        let Some(ref refresh_command) = config.sso_refresh_command else {
+            warn!("Credential error detected but no SSO refresh command configured");
+            return Err(error);
+        };
+
+        // Attempt to refresh credentials
+        info!("Attempting automatic credential refresh");
+        if let Err(refresh_error) = Self::refresh_sso_credentials(refresh_command).await {
+            warn!("Failed to refresh credentials: {}", refresh_error);
+            return Err(error); // Return original error
+        }
+
+        // Retry the operation after refresh
+        info!("Credentials refreshed, retrying operation");
+        operation().await
     }
 
     /// Convert serde_json::Value to AWS Document
@@ -303,9 +484,9 @@ impl BedrockBackend {
     }
 }
 
-#[async_trait]
-impl LlmBackend for BedrockBackend {
-    async fn send_message(&self, request: &ChatRequest) -> Result<ChatResponse, BackendError> {
+impl BedrockBackend {
+    /// Internal implementation of send_message (without auto-refresh)
+    async fn send_message_impl(&self, request: &ChatRequest) -> Result<ChatResponse, BackendError> {
         info!(
             "Sending message to Bedrock, model: {}, region: {}",
             request.model, self.region
@@ -472,7 +653,8 @@ impl LlmBackend for BedrockBackend {
         })
     }
 
-    async fn send_message_stream(
+    /// Internal implementation of send_message_stream (without auto-refresh)
+    async fn send_message_stream_impl(
         &self,
         request: &ChatRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, BackendError>> + Send>>, BackendError>
@@ -572,6 +754,25 @@ impl LlmBackend for BedrockBackend {
         };
 
         Ok(Box::pin(stream))
+    }
+}
+
+#[async_trait]
+impl LlmBackend for BedrockBackend {
+    async fn send_message(&self, request: &ChatRequest) -> Result<ChatResponse, BackendError> {
+        // Use auto-refresh wrapper for SSO authentication
+        self.with_auto_refresh(|| self.send_message_impl(request))
+            .await
+    }
+
+    async fn send_message_stream(
+        &self,
+        request: &ChatRequest,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, BackendError>> + Send>>, BackendError>
+    {
+        // Use auto-refresh wrapper for SSO authentication
+        self.with_auto_refresh(|| self.send_message_stream_impl(request))
+            .await
     }
 
     fn name(&self) -> &'static str {
@@ -758,6 +959,7 @@ mod tests {
             ),
             region: "us-east-1".to_string(),
             enable_prompt_caching: true,
+            config: None,
         };
 
         let blocks = backend.build_system_blocks("You are a helpful assistant");
@@ -779,6 +981,7 @@ mod tests {
             ),
             region: "us-east-1".to_string(),
             enable_prompt_caching: false,
+            config: None,
         };
 
         let blocks = backend.build_system_blocks("You are a helpful assistant");
@@ -799,6 +1002,7 @@ mod tests {
             ),
             region: "us-east-1".to_string(),
             enable_prompt_caching: true,
+            config: None,
         };
 
         let blocks = backend.build_system_blocks("");
@@ -830,5 +1034,81 @@ mod tests {
         assert_eq!(usage.output_tokens, 0);
         assert_eq!(usage.cache_read_input_tokens, None);
         assert_eq!(usage.cache_write_input_tokens, None);
+    }
+
+    #[tokio::test]
+    async fn test_bearer_token_initialization() {
+        let backend =
+            BedrockBackend::with_bearer_token("us-east-1", "test-bearer-token", true).await;
+
+        assert!(backend.is_ok());
+        let backend = backend.unwrap();
+        assert_eq!(backend.region(), "us-east-1");
+        assert!(backend.enable_prompt_caching);
+
+        // Verify environment variable was set
+        assert_eq!(
+            std::env::var("AWS_BEARER_TOKEN_BEDROCK").unwrap(),
+            "test-bearer-token"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_from_config_bearer_token_env() {
+        unsafe {
+            std::env::set_var("AWS_BEARER_TOKEN_BEDROCK", "test-token");
+        }
+
+        let config = BedrockConfig {
+            region: "us-west-2".to_string(),
+            auth_method: BedrockAuthMethod::BearerToken,
+            bearer_token_in_env: true,
+            profile: None,
+            sso_refresh_command: None,
+            auto_refresh_credentials: false,
+            enable_prompt_caching: true,
+        };
+
+        let backend = BedrockBackend::from_config(&config).await;
+        assert!(backend.is_ok());
+        let backend = backend.unwrap();
+        assert_eq!(backend.region(), "us-west-2");
+    }
+
+    #[tokio::test]
+    async fn test_from_config_profile() {
+        let config = BedrockConfig {
+            region: "eu-west-1".to_string(),
+            auth_method: BedrockAuthMethod::Profile,
+            profile: Some("test-profile".to_string()),
+            bearer_token_in_env: false,
+            sso_refresh_command: None,
+            auto_refresh_credentials: false,
+            enable_prompt_caching: false,
+        };
+
+        let backend = BedrockBackend::from_config(&config).await;
+        assert!(backend.is_ok());
+        let backend = backend.unwrap();
+        assert_eq!(backend.region(), "eu-west-1");
+        assert!(!backend.enable_prompt_caching);
+    }
+
+    #[tokio::test]
+    async fn test_from_config_environment_variables() {
+        let config = BedrockConfig {
+            region: "ap-southeast-1".to_string(),
+            auth_method: BedrockAuthMethod::EnvironmentVariables,
+            profile: None,
+            bearer_token_in_env: false,
+            sso_refresh_command: None,
+            auto_refresh_credentials: false,
+            enable_prompt_caching: true,
+        };
+
+        let backend = BedrockBackend::from_config(&config).await;
+        assert!(backend.is_ok());
+        let backend = backend.unwrap();
+        assert_eq!(backend.region(), "ap-southeast-1");
     }
 }

@@ -79,20 +79,6 @@ Kirigami.ScrollablePage {
                     }
                 }
 
-                Controls.TextField {
-                    id: awsProfileField
-                    Kirigami.FormData.label: qsTr("AWS Profile:")
-                    placeholderText: qsTr("default (leave empty for default)")
-                    text: root.config.backends.bedrock.profile || ""
-                    Layout.fillWidth: true
-                    onTextChanged: {
-                        let currentValue = root.config.backends.bedrock.profile || ""
-                        if (text !== currentValue) {
-                            root.config.backends.bedrock.profile = text || null
-                        }
-                    }
-                }
-
                 Controls.CheckBox {
                     id: promptCachingCheckBox
                     Kirigami.FormData.label: qsTr("Prompt caching:")
@@ -109,6 +95,159 @@ Kirigami.ScrollablePage {
                     color: Kirigami.Theme.disabledTextColor
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
+                }
+            }
+
+            // Authentication Configuration
+            Kirigami.FormLayout {
+                Layout.fillWidth: true
+
+                Kirigami.Separator {
+                    Kirigami.FormData.isSection: true
+                    Kirigami.FormData.label: qsTr("Authentication")
+                }
+
+                Controls.ComboBox {
+                    id: authMethodComboBox
+                    Kirigami.FormData.label: qsTr("Authentication method:")
+                    model: [
+                        { value: "profile", text: qsTr("AWS Profile") },
+                        { value: "sso", text: qsTr("AWS SSO") },
+                        { value: "bearer_token", text: qsTr("Bedrock API Key (Bearer Token)") },
+                        { value: "environment_variables", text: qsTr("Environment Variables") }
+                    ]
+                    textRole: "text"
+                    valueRole: "value"
+                    currentIndex: {
+                        let method = root.config.backends.bedrock.auth_method || "profile"
+                        return model.findIndex(item => item.value === method)
+                    }
+                    onActivated: {
+                        root.config.backends.bedrock.auth_method = model[currentIndex].value
+                    }
+                }
+
+                Controls.Label {
+                    text: qsTr("Choose how Clareon authenticates with AWS Bedrock")
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    color: Kirigami.Theme.disabledTextColor
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                }
+
+                // Profile field (show for Profile and SSO methods)
+                Controls.TextField {
+                    id: awsProfileField
+                    Kirigami.FormData.label: qsTr("AWS Profile:")
+                    placeholderText: qsTr("default (leave empty for default)")
+                    text: root.config.backends.bedrock.profile || ""
+                    Layout.fillWidth: true
+                    visible: authMethodComboBox.currentIndex === 0 || authMethodComboBox.currentIndex === 1
+                    onTextChanged: {
+                        let currentValue = root.config.backends.bedrock.profile || ""
+                        if (text !== currentValue) {
+                            root.config.backends.bedrock.profile = text || null
+                        }
+                    }
+                }
+
+                // SSO-specific fields
+                Controls.TextField {
+                    id: ssoRefreshCommandField
+                    Kirigami.FormData.label: qsTr("SSO refresh command:")
+                    placeholderText: qsTr("aws sso login --profile myprofile")
+                    text: root.config.backends.bedrock.sso_refresh_command || ""
+                    Layout.fillWidth: true
+                    visible: authMethodComboBox.currentIndex === 1
+                    onTextChanged: {
+                        let currentValue = root.config.backends.bedrock.sso_refresh_command || ""
+                        if (text !== currentValue) {
+                            root.config.backends.bedrock.sso_refresh_command = text || null
+                        }
+                    }
+                }
+
+                Controls.CheckBox {
+                    id: autoRefreshCheckBox
+                    text: qsTr("Automatically refresh expired credentials")
+                    checked: root.config.backends.bedrock.auto_refresh_credentials !== undefined ? root.config.backends.bedrock.auto_refresh_credentials : true
+                    visible: authMethodComboBox.currentIndex === 1
+                    onToggled: {
+                        root.config.backends.bedrock.auto_refresh_credentials = checked
+                    }
+                }
+
+                Controls.Label {
+                    text: qsTr("When credentials expire, Clareon will automatically run the refresh command")
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    color: Kirigami.Theme.disabledTextColor
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    visible: authMethodComboBox.currentIndex === 1
+                }
+
+                // Bearer token fields
+                Controls.CheckBox {
+                    id: bearerTokenInEnvCheckBox
+                    text: qsTr("Read token from AWS_BEARER_TOKEN_BEDROCK environment variable")
+                    checked: root.config.backends.bedrock.bearer_token_in_env !== undefined ? root.config.backends.bedrock.bearer_token_in_env : false
+                    visible: authMethodComboBox.currentIndex === 2
+                    onToggled: {
+                        root.config.backends.bedrock.bearer_token_in_env = checked
+                    }
+                }
+
+                Controls.Label {
+                    text: qsTr("When disabled, the token is stored securely in the system keyring")
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    color: Kirigami.Theme.disabledTextColor
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    visible: authMethodComboBox.currentIndex === 2
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: authMethodComboBox.currentIndex === 2 && !bearerTokenInEnvCheckBox.checked
+                    spacing: Kirigami.Units.smallSpacing
+
+                    Controls.Button {
+                        text: qsTr("Set Bearer Token...")
+                        icon.name: "password-show-on"
+                        onClicked: {
+                            bearerTokenDialog.open()
+                        }
+                    }
+
+                    Controls.Button {
+                        text: qsTr("Clear Token")
+                        icon.name: "edit-clear"
+                        enabled: serviceController.hasBedrockBearerToken
+                        onClicked: {
+                            serviceController.deleteBedrockBearerToken()
+                        }
+                    }
+
+                    Item {
+                        Layout.fillWidth: true
+                    }
+                }
+
+                Kirigami.InlineMessage {
+                    Layout.fillWidth: true
+                    type: Kirigami.MessageType.Information
+                    text: qsTr("To generate a Bedrock API key, visit the AWS Bedrock console and navigate to API Keys under Settings")
+                    visible: authMethodComboBox.currentIndex === 2
+                    showCloseButton: false
+                }
+
+                // Environment variables info
+                Kirigami.InlineMessage {
+                    Layout.fillWidth: true
+                    type: Kirigami.MessageType.Information
+                    text: qsTr("Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables before starting Clareon")
+                    visible: authMethodComboBox.currentIndex === 3
+                    showCloseButton: false
                 }
             }
 
@@ -255,6 +394,49 @@ Kirigami.ScrollablePage {
                     wrapMode: Text.WordWrap
                 }
             }
+        }
+    }
+
+    // Bearer Token Dialog
+    Kirigami.PromptDialog {
+        id: bearerTokenDialog
+        title: qsTr("Set Bedrock Bearer Token")
+        standardButtons: Kirigami.Dialog.Ok | Kirigami.Dialog.Cancel
+
+        ColumnLayout {
+            spacing: Kirigami.Units.largeSpacing
+
+            Controls.Label {
+                text: qsTr("Enter your AWS Bedrock API key (bearer token):")
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+            }
+
+            Controls.TextField {
+                id: bearerTokenInput
+                Layout.fillWidth: true
+                placeholderText: qsTr("Paste your bearer token here")
+                echoMode: Controls.TextField.Password
+            }
+
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                type: Kirigami.MessageType.Warning
+                text: qsTr("The token will be stored securely in your system keyring")
+                visible: true
+                showCloseButton: false
+            }
+        }
+
+        onAccepted: {
+            if (bearerTokenInput.text.length > 0) {
+                serviceController.storeBedrockBearerToken(bearerTokenInput.text)
+                bearerTokenInput.text = ""
+            }
+        }
+
+        onRejected: {
+            bearerTokenInput.text = ""
         }
     }
 }

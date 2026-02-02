@@ -12,5 +12,7 @@ mod secrets;
 mod settings;
 
 pub use manager::ConfigManager;
-pub use secrets::{ANTHROPIC_API_KEY, SecretStore};
-pub use settings::{AnthropicConfig, Backend, Config, SandboxModeConfig};
+pub use secrets::{ANTHROPIC_API_KEY, BEDROCK_BEARER_TOKEN, SecretStore};
+pub use settings::{
+    AnthropicConfig, Backend, BedrockAuthMethod, BedrockConfig, Config, SandboxModeConfig,
+};

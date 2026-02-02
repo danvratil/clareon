@@ -47,6 +47,7 @@ mod ffi {
         #[qobject]
         #[qml_element]
         #[qml_singleton]
+        #[qproperty(bool, hasBedrockBearerToken, READ = has_bedrock_bearer_token)]
         type ServiceController = super::ServiceControllerRust;
 
         // Signals for conversation events
@@ -151,9 +152,19 @@ mod ffi {
         #[qinvokable]
         fn set_auto_start(self: &ServiceController, enabled: bool);
 
+        // Bearer token management
+        #[qinvokable]
+        fn store_bedrock_bearer_token(self: &ServiceController, token: &QString);
+
+        #[qinvokable]
+        fn delete_bedrock_bearer_token(self: &ServiceController);
+
+        fn has_bedrock_bearer_token(self: &ServiceController) -> bool;
+
         // Data access (synchronous, reads from cache)
         #[qinvokable]
         fn get_conversation_count(self: &ServiceController) -> i32;
+
     }
 
     impl cxx_qt::Threading for ServiceController {}
@@ -514,6 +525,58 @@ X-LXQt-Need-Tray=true"#,
         let _ = handle.send(Command::NewQuickConversation {
             prompt: prompt.to_string(),
         });
+    }
+
+    /// Store Bedrock bearer token in system keyring
+    fn store_bedrock_bearer_token(&self, token: &QString) {
+        let token_str = token.to_string();
+        let runtime = crate::get_runtime();
+        runtime.spawn(async move {
+            match clareon_core::config::SecretStore::new().await {
+                Ok(store) => {
+                    if let Err(e) = store.store_bedrock_bearer_token(&token_str).await {
+                        tracing::error!("Failed to store Bedrock bearer token: {}", e);
+                    } else {
+                        tracing::info!("Bedrock bearer token stored successfully");
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to connect to secret store: {}", e);
+                }
+            }
+        });
+    }
+
+    /// Delete Bedrock bearer token from system keyring
+    fn delete_bedrock_bearer_token(&self) {
+        let runtime = crate::get_runtime();
+        runtime.spawn(async move {
+            match clareon_core::config::SecretStore::new().await {
+                Ok(store) => {
+                    if let Err(e) = store.delete_bedrock_bearer_token().await {
+                        tracing::error!("Failed to delete Bedrock bearer token: {}", e);
+                    } else {
+                        tracing::info!("Bedrock bearer token deleted successfully");
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to connect to secret store: {}", e);
+                }
+            }
+        });
+    }
+
+    /// Check if Bedrock bearer token exists in keyring
+    fn has_bedrock_bearer_token(&self) -> bool {
+        // This is a synchronous check, so we use a blocking call
+        // In practice, this might need to be async or cached
+        let runtime = crate::get_runtime();
+        runtime.block_on(async {
+            match clareon_core::config::SecretStore::new().await {
+                Ok(store) => store.has_bedrock_bearer_token().await,
+                Err(_) => false,
+            }
+        })
     }
 
     /// Get the number of conversations

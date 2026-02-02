@@ -85,6 +85,21 @@ pub struct BackendsConfig {
     pub anthropic: AnthropicConfig,
 }
 
+/// AWS Bedrock authentication method
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum BedrockAuthMethod {
+    /// Use AWS profile from ~/.aws/credentials or config
+    #[default]
+    Profile,
+    /// Use AWS SSO with automatic refresh
+    Sso,
+    /// Use Bedrock API key (bearer token)
+    BearerToken,
+    /// Use environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+    EnvironmentVariables,
+}
+
 /// AWS Bedrock backend configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BedrockConfig {
@@ -92,8 +107,24 @@ pub struct BedrockConfig {
     #[serde(default = "default_region")]
     pub region: String,
 
-    /// AWS profile to use (None = default credential chain)
+    /// Authentication method
+    #[serde(default)]
+    pub auth_method: BedrockAuthMethod,
+
+    /// AWS profile to use (for profile-based and SSO auth)
     pub profile: Option<String>,
+
+    /// Whether to read bearer token from AWS_BEARER_TOKEN_BEDROCK environment variable
+    /// If false, token is read from system keyring
+    #[serde(default)]
+    pub bearer_token_in_env: bool,
+
+    /// Command to run for SSO login/refresh (e.g., "aws sso login --profile myprofile")
+    pub sso_refresh_command: Option<String>,
+
+    /// Enable automatic credential refresh for SSO
+    #[serde(default = "default_true")]
+    pub auto_refresh_credentials: bool,
 
     /// Enable prompt caching (default: true)
     /// Caches system prompts to reduce costs and latency on subsequent calls
@@ -110,7 +141,11 @@ impl Default for BedrockConfig {
     fn default() -> Self {
         Self {
             region: default_region(),
+            auth_method: BedrockAuthMethod::default(),
             profile: None,
+            bearer_token_in_env: false,
+            sso_refresh_command: None,
+            auto_refresh_credentials: true,
             enable_prompt_caching: true,
         }
     }
@@ -629,5 +664,52 @@ mod tests {
         let config: AnthropicConfig = serde_json::from_str(json).unwrap();
         assert!(!config.api_key_in_keyring);
         assert_eq!(config.base_url, None);
+    }
+
+    #[test]
+    fn test_bedrock_auth_method_serialization() {
+        let method = BedrockAuthMethod::BearerToken;
+        let json = serde_json::to_string(&method).unwrap();
+        assert_eq!(json, r#""bearer_token""#);
+
+        let deserialized: BedrockAuthMethod = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, method);
+    }
+
+    #[test]
+    fn test_bedrock_config_with_auth_methods() {
+        // Test profile method
+        let json = r#"{
+            "region": "us-west-2",
+            "auth_method": "profile",
+            "profile": "myprofile"
+        }"#;
+        let config: BedrockConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.auth_method, BedrockAuthMethod::Profile);
+        assert_eq!(config.profile, Some("myprofile".to_string()));
+
+        // Test SSO method
+        let json = r#"{
+            "region": "us-east-1",
+            "auth_method": "sso",
+            "profile": "sso-profile",
+            "sso_refresh_command": "aws sso login --profile sso-profile"
+        }"#;
+        let config: BedrockConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.auth_method, BedrockAuthMethod::Sso);
+        assert_eq!(
+            config.sso_refresh_command,
+            Some("aws sso login --profile sso-profile".to_string())
+        );
+
+        // Test bearer token method
+        let json = r#"{
+            "region": "eu-west-1",
+            "auth_method": "bearer_token",
+            "bearer_token_in_env": true
+        }"#;
+        let config: BedrockConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.auth_method, BedrockAuthMethod::BearerToken);
+        assert!(config.bearer_token_in_env);
     }
 }

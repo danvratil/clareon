@@ -18,6 +18,9 @@ pub struct SecretStore {
 #[allow(dead_code)]
 pub const ANTHROPIC_API_KEY: &str = "anthropic-api-key";
 
+/// Bedrock bearer token key
+pub const BEDROCK_BEARER_TOKEN: &str = "bedrock-bearer-token";
+
 impl SecretStore {
     /// Create a new secret store
     pub async fn new() -> Result<Self> {
@@ -142,6 +145,26 @@ impl SecretStore {
     /// Check if a secret exists
     pub async fn has_secret(&self, key: &str) -> bool {
         self.get_secret(key).await.is_ok()
+    }
+
+    /// Store Bedrock bearer token in keyring
+    pub async fn store_bedrock_bearer_token(&self, token: &str) -> Result<()> {
+        self.store_secret(BEDROCK_BEARER_TOKEN, token).await
+    }
+
+    /// Retrieve Bedrock bearer token from keyring
+    pub async fn get_bedrock_bearer_token(&self) -> Result<String> {
+        self.get_secret(BEDROCK_BEARER_TOKEN).await
+    }
+
+    /// Delete Bedrock bearer token from keyring
+    pub async fn delete_bedrock_bearer_token(&self) -> Result<()> {
+        self.delete_secret(BEDROCK_BEARER_TOKEN).await
+    }
+
+    /// Check if Bedrock bearer token exists
+    pub async fn has_bedrock_bearer_token(&self) -> bool {
+        self.has_secret(BEDROCK_BEARER_TOKEN).await
     }
 }
 
