@@ -9,7 +9,7 @@ mod conversation;
 mod message;
 mod workspace;
 
-pub use content::{ContentBlock, ToolResultContent};
+pub use content::{ContentBlock, ImageSource, ToolResultContent};
 pub use conversation::{Conversation, ConversationId, ConversationSummary, SearchResult};
 pub use message::{Message, Role};
 pub use workspace::{Artifact, UserFile, WorkspaceMetadata};

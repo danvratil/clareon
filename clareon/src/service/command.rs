@@ -4,7 +4,7 @@
 
 //! Commands sent from the Qt layer to the service worker
 
-use clareon_core::types::ConversationId;
+use clareon_core::types::{ContentBlock, ConversationId};
 
 /// Commands represent all actions the UI can request from the service
 #[derive(Debug, Clone)]
@@ -25,6 +25,19 @@ pub enum Command {
     SendMessage {
         conv_id: ConversationId,
         text: String,
+    },
+
+    /// Send a message with custom content blocks (e.g., with images)
+    SendMessageWithContent {
+        conv_id: ConversationId,
+        content: Vec<ContentBlock>,
+    },
+
+    /// Send a message with attached files (stores files in database/workspace)
+    SendMessageWithFiles {
+        conv_id: ConversationId,
+        text: String,
+        file_paths: Vec<String>,
     },
 
     /// Load messages for a conversation

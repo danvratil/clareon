@@ -36,9 +36,27 @@ pub enum ContentBlock {
         #[serde(skip_serializing_if = "Option::is_none")]
         is_error: Option<bool>,
     },
+
+    /// Image content (base64-encoded)
+    Image {
+        /// Image source information
+        source: ImageSource,
+    },
     // Future variants:
-    // Image { source: ImageSource, ... }
     // Document { source: DocumentSource, ... }
+}
+
+/// Source of an image
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ImageSource {
+    /// Base64-encoded image data
+    Base64 {
+        /// Media type (e.g., "image/jpeg", "image/png", "image/gif", "image/webp")
+        media_type: String,
+        /// Base64-encoded image data
+        data: String,
+    },
 }
 
 impl ContentBlock {
@@ -73,6 +91,16 @@ impl ContentBlock {
         }
     }
 
+    /// Create a new image content block from base64-encoded data
+    pub fn image_base64(media_type: impl Into<String>, data: impl Into<String>) -> Self {
+        Self::Image {
+            source: ImageSource::Base64 {
+                media_type: media_type.into(),
+                data: data.into(),
+            },
+        }
+    }
+
     /// Extract text content if this is a text block
     pub fn as_text(&self) -> Option<&str> {
         match self {
@@ -89,6 +117,11 @@ impl ContentBlock {
     /// Check if this is a tool result block
     pub fn is_tool_result(&self) -> bool {
         matches!(self, Self::ToolResult { .. })
+    }
+
+    /// Check if this is an image block
+    pub fn is_image(&self) -> bool {
+        matches!(self, Self::Image { .. })
     }
 }
 

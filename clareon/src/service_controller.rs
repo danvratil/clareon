@@ -4,8 +4,8 @@
 
 //! ServiceController - Qt bridge to the service layer
 
-use std::pin::Pin;
 use std::sync::OnceLock;
+use std::{ops::Deref, pin::Pin};
 
 use clareon_core::types::ConversationId;
 use cxx_qt::Threading;
@@ -38,6 +38,8 @@ mod ffi {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+        include!("cxx-qt-lib/qstringlist.h");
+        type QStringList = cxx_qt_lib::QStringList;
     }
 
     #[auto_cxx_name]
@@ -117,6 +119,14 @@ mod ffi {
         fn send_message(self: &ServiceController, conversation_id: &QString, text: &QString);
 
         #[qinvokable]
+        fn send_message_with_files(
+            self: &ServiceController,
+            conversation_id: &QString,
+            text: &QString,
+            file_paths: &QStringList,
+        );
+
+        #[qinvokable]
         fn load_messages(self: &ServiceController, conversation_id: &QString);
 
         #[qinvokable]
@@ -150,7 +160,7 @@ mod ffi {
     impl cxx_qt::Initialize for ServiceController {}
 }
 
-use cxx_qt_lib::QString;
+use cxx_qt_lib::{QList, QString, QStringList};
 
 /// Rust implementation of ServiceController
 #[derive(Default)]
@@ -359,6 +369,56 @@ impl ffi::ServiceController {
         let _ = handle.send(Command::SendMessage {
             conv_id: ConversationId::from(conversation_id.to_string()),
             text: text.to_string(),
+        });
+    }
+
+    /// Send a message with attached files in a conversation
+    fn send_message_with_files(
+        &self,
+        conversation_id: &QString,
+        text: &QString,
+        file_paths: &QStringList,
+    ) {
+        use std::path::Path;
+
+        let conv_id = ConversationId::from(conversation_id.to_string());
+        let handle = get_service_handle();
+
+        // Build message text mentioning attached files
+        let mut message_text = text.to_string();
+
+        // Process each file path and collect file information
+        let mut file_info = Vec::new();
+        let list: &QList<QString> = file_paths.deref();
+        for i in 0..list.len() {
+            // Unwrap is safe here: `i` is within bounds
+            let path_str = list.get(i).unwrap().to_string();
+            let path = Path::new(&path_str);
+
+            if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                file_info.push((path_str.clone(), filename.to_string()));
+            }
+        }
+
+        // Add file list to message text if there are files
+        if !file_info.is_empty() {
+            if !message_text.trim().is_empty() {
+                message_text.push_str("\n\n");
+            }
+            message_text.push_str("Attached files:\n");
+            for (_, filename) in &file_info {
+                message_text.push_str(&format!("- {}\n", filename));
+            }
+            message_text.push_str(
+                "\nThese files are available in your workspace at /mnt/user-data/uploads/",
+            );
+        }
+
+        // Send command with file paths so the service can store them
+        let _ = handle.send(Command::SendMessageWithFiles {
+            conv_id,
+            text: message_text,
+            file_paths: file_info.into_iter().map(|(path, _)| path).collect(),
         });
     }
 

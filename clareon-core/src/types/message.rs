@@ -94,6 +94,27 @@ impl Message {
         }
     }
 
+    /// Create a new user message with custom content blocks
+    pub fn user_with_content(
+        conversation_id: impl Into<ConversationId>,
+        content: Vec<ContentBlock>,
+    ) -> Self {
+        // Extract text content for FTS indexing
+        let text_content = Self::extract_text(&content);
+
+        Self {
+            id: 0, // Will be set by database
+            conversation_id: conversation_id.into(),
+            created_at: chrono::Utc::now().timestamp(),
+            role: Role::User,
+            text_content,
+            content,
+            input_tokens: None,
+            output_tokens: None,
+            model: None,
+        }
+    }
+
     /// Create a new assistant message
     pub fn assistant(
         conversation_id: impl Into<ConversationId>,

@@ -109,10 +109,26 @@ impl ToolExecutor {
             .get_workspace(conversation_id)
             .await?;
 
-        // 2. Scan output directory BEFORE execution (get baseline hashes)
+        // 2. Load user files into workspace input directory
+        let user_files = self
+            .workspace_manager
+            .storage
+            .get_user_files(conversation_id)
+            .await
+            .map_err(|e| super::ToolError::ExecutionFailed(e.to_string()))?;
+
+        if !user_files.is_empty() {
+            workspace.populate_input_files(&user_files).await?;
+            info!(
+                "Populated {} user file(s) into workspace input directory",
+                user_files.len()
+            );
+        }
+
+        // 3. Scan output directory BEFORE execution (get baseline hashes)
         let before_hashes = ArtifactManager::scan_output_directory(workspace.output()).await?;
 
-        // 3. Build execution context
+        // 4. Build execution context
         let context = ExecutionContext {
             conversation_id: conversation_id.clone(),
             workspace: workspace.clone(),
@@ -120,7 +136,7 @@ impl ToolExecutor {
             env_vars: HashMap::new(),
         };
 
-        // 4. Execute tools in parallel
+        // 5. Execute tools in parallel
         let mut tasks = Vec::new();
 
         for (id, name, input) in tool_uses {
@@ -143,7 +159,7 @@ impl ToolExecutor {
             }
         }
 
-        // 5. Scan and sync artifacts
+        // 6. Scan and sync artifacts
         let synced_count = self
             .artifact_manager
             .sync_artifacts(conversation_id, message_id, &workspace, &before_hashes)
@@ -153,7 +169,7 @@ impl ToolExecutor {
             info!("Synced {} new/updated artifacts to database", synced_count);
         }
 
-        // 6. Update workspace metadata
+        // 7. Update workspace metadata
         let disk_usage = workspace.calculate_disk_usage().await?;
         if let Err(e) = self
             .workspace_manager

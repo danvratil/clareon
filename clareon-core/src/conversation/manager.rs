@@ -314,6 +314,20 @@ impl ConversationManager {
         Ok(user_message)
     }
 
+    /// Appends user message with custom content blocks to the store and returns the updated message.
+    pub async fn append_user_message_with_content(
+        &self,
+        conv_id: ConversationId,
+        content: Vec<ContentBlock>,
+    ) -> Result<Message> {
+        // Create and store user message
+        let mut user_message = Message::user_with_content(conv_id, content);
+        let user_msg_id = self.storage.add_message(&user_message).await?;
+        user_message.id = user_msg_id;
+        debug!("Stored user message with custom content: {}", user_msg_id);
+        Ok(user_message)
+    }
+
     /// Send a message with streaming response and automatic tool execution
     ///
     /// This handles the full chat turn with streaming and automatic tool execution:

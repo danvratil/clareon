@@ -934,6 +934,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-bedrockruntime",
  "aws-smithy-types",
+ "base64",
  "chrono",
  "directories",
  "eventsource-stream",

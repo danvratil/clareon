@@ -1,5 +1,4 @@
 # Rust build artifacts
-target
 /target/
 **/target/
 
@@ -9,6 +8,8 @@ target
 
 # QML language server
 .qmlls.ini
+
+**/*.pdb
 
 # IDE files
 .vscode/
@@ -20,3 +21,19 @@ target
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local configuration
+.env
+.env.local
+
+# Database files (development)
+*.db
+*.db-shm
+*.db-wal
+
+# Qt build artifacts
+*.o
+*.so
+*.a
+moc_*.cpp
+ui_*.h

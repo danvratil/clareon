@@ -130,6 +130,18 @@ impl AnthropicBackend {
                             r#type: "text".to_string(),
                             text: text.clone(),
                         },
+                        ContentBlock::Image { source } => match source {
+                            crate::types::ImageSource::Base64 { media_type, data } => {
+                                AnthropicContent::Image {
+                                    r#type: "image".to_string(),
+                                    source: AnthropicImageSource {
+                                        r#type: "base64".to_string(),
+                                        media_type: media_type.clone(),
+                                        data: data.clone(),
+                                    },
+                                }
+                            }
+                        },
                         ContentBlock::ToolUse { id, name, input } => AnthropicContent::ToolUse {
                             r#type: "tool_use".to_string(),
                             id: id.clone(),
@@ -172,6 +184,12 @@ impl AnthropicBackend {
             .iter()
             .map(|block| match block {
                 AnthropicContent::Text { text, .. } => ContentBlock::Text { text: text.clone() },
+                AnthropicContent::Image { .. } => {
+                    // Images shouldn't appear in responses, only in requests
+                    ContentBlock::Text {
+                        text: "[invalid image in response]".to_string(),
+                    }
+                }
                 AnthropicContent::ToolUse {
                     id, name, input, ..
                 } => ContentBlock::ToolUse {
@@ -535,6 +553,10 @@ enum AnthropicContent {
         r#type: String,
         text: String,
     },
+    Image {
+        r#type: String,
+        source: AnthropicImageSource,
+    },
     ToolUse {
         r#type: String,
         id: String,
@@ -548,6 +570,13 @@ enum AnthropicContent {
         #[serde(skip_serializing_if = "Option::is_none")]
         is_error: Option<bool>,
     },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct AnthropicImageSource {
+    r#type: String,
+    media_type: String,
+    data: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

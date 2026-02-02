@@ -144,6 +144,45 @@ impl BedrockBackend {
                     .iter()
                     .map(|block| match block {
                         ContentBlock::Text { text } => BedrockContentBlock::Text(text.clone()),
+                        ContentBlock::Image { source } => {
+                            use aws_sdk_bedrockruntime::types::{
+                                ImageBlock, ImageFormat, ImageSource as BedrockImageSource,
+                            };
+
+                            match source {
+                                crate::types::ImageSource::Base64 { media_type, data } => {
+                                    // Decode base64 to bytes
+                                    use base64::Engine;
+                                    let bytes = base64::engine::general_purpose::STANDARD
+                                        .decode(data)
+                                        .expect("Invalid base64 data");
+
+                                    // Determine image format from media type
+                                    let format = match media_type.as_str() {
+                                        "image/jpeg" => ImageFormat::Jpeg,
+                                        "image/png" => ImageFormat::Png,
+                                        "image/gif" => ImageFormat::Gif,
+                                        "image/webp" => ImageFormat::Webp,
+                                        _ => {
+                                            warn!(
+                                                "Unsupported media type {}, defaulting to JPEG",
+                                                media_type
+                                            );
+                                            ImageFormat::Jpeg
+                                        }
+                                    };
+
+                                    let image_source = BedrockImageSource::Bytes(bytes.into());
+                                    let image_block = ImageBlock::builder()
+                                        .format(format)
+                                        .source(image_source)
+                                        .build()
+                                        .expect("Failed to build ImageBlock");
+
+                                    BedrockContentBlock::Image(image_block)
+                                }
+                            }
+                        }
                         ContentBlock::ToolUse { id, name, input } => BedrockContentBlock::ToolUse(
                             ToolUseBlock::builder()
                                 .tool_use_id(id)

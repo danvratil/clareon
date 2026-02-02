@@ -8,7 +8,7 @@ use futures::StreamExt;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
 
-use clareon_core::types::{ConversationId, ConversationSummary, Message};
+use clareon_core::types::{ContentBlock, ConversationId, ConversationSummary, Message};
 use clareon_core::{ConversationManager, StreamUpdate};
 
 use super::{
@@ -75,6 +75,18 @@ impl ServiceWorker {
             }
             Command::SendMessage { conv_id, text } => {
                 self.handle_send_message(conv_id, text).await;
+            }
+            Command::SendMessageWithContent { conv_id, content } => {
+                self.handle_send_message_with_content(conv_id, content)
+                    .await;
+            }
+            Command::SendMessageWithFiles {
+                conv_id,
+                text,
+                file_paths,
+            } => {
+                self.handle_send_message_with_files(conv_id, text, file_paths)
+                    .await;
             }
             Command::LoadMessages { conv_id } => {
                 self.handle_load_messages(conv_id).await;
@@ -365,6 +377,325 @@ impl ServiceWorker {
                     conv_id,
                     error_info,
                     user_message_id: user_msg_id,
+                });
+            }
+        }
+    }
+
+    async fn handle_send_message_with_content(
+        &self,
+        conv_id: ConversationId,
+        content: Vec<ContentBlock>,
+    ) {
+        // First store the user message with content blocks to the conversation
+        let user_msg_id = match self
+            .manager
+            .append_user_message_with_content(conv_id.clone(), content)
+            .await
+        {
+            Ok(msg) => {
+                let msg_id = msg.id;
+                let _ = self.response_tx.send(Response::MessageSent {
+                    conv_id: conv_id.clone(),
+                    message: message_to_data(msg),
+                });
+                Some(msg_id)
+            }
+            Err(e) => {
+                error!(
+                    "Failed to append user message with content to conversation {}: {}",
+                    conv_id, e
+                );
+                let error_info = error_to_info(&e);
+                let _ = self.response_tx.send(Response::SendMessageError {
+                    conv_id,
+                    error_info,
+                    user_message_id: None,
+                });
+                return;
+            }
+        };
+
+        // Then load the conversation
+        let mut conversation = match self.manager.load_conversation(&conv_id).await {
+            Ok(conv) => conv,
+            Err(e) => {
+                error!(
+                    "Failed to load conversation {} for sending message: {}",
+                    conv_id, e
+                );
+                let error_info = error_to_info(&e);
+                let _ = self.response_tx.send(Response::SendMessageError {
+                    conv_id,
+                    error_info,
+                    user_message_id: user_msg_id,
+                });
+                return;
+            }
+        };
+
+        // Start streaming
+        let _ = self.response_tx.send(Response::StreamingStarted {
+            conv_id: conv_id.clone(),
+        });
+
+        // Send message with streaming
+        match self.manager.send_message_stream(&mut conversation).await {
+            Ok(mut stream) => {
+                let mut accumulated = String::new();
+
+                // Process stream events
+                while let Some(result) = stream.next().await {
+                    match result {
+                        Ok(update) => {
+                            if let Some(text_delta) = extract_text_delta(&update) {
+                                accumulated.push_str(&text_delta);
+
+                                let _ = self.response_tx.send(Response::StreamingChunk {
+                                    conv_id: conv_id.clone(),
+                                    delta: text_delta,
+                                    accumulated: accumulated.clone(),
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            error!("Streaming error for conversation {}: {}", conv_id, e);
+                            let error_info = error_to_info(&e);
+                            let _ = self.response_tx.send(Response::StreamingError {
+                                conv_id,
+                                error_info,
+                                partial_text: accumulated,
+                            });
+                            return;
+                        }
+                    }
+                }
+
+                // Streaming complete - reload messages to get the final message
+                match self.manager.get_messages(&conv_id).await {
+                    Ok(messages) => {
+                        if let Some(last_message) = messages.last() {
+                            let message_data = message_to_data(last_message.clone());
+                            let _ = self.response_tx.send(Response::StreamingComplete {
+                                conv_id,
+                                message: message_data,
+                            });
+                        } else {
+                            warn!("No messages found after streaming completed");
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to reload messages after streaming: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Failed to start streaming for conversation {}: {}",
+                    conv_id, e
+                );
+                let error_info = error_to_info(&e);
+                let _ = self.response_tx.send(Response::SendMessageError {
+                    conv_id,
+                    error_info,
+                    user_message_id: user_msg_id,
+                });
+            }
+        }
+    }
+
+    async fn handle_send_message_with_files(
+        &self,
+        conv_id: ConversationId,
+        text: String,
+        file_paths: Vec<String>,
+    ) {
+        use std::fs;
+        use std::path::Path;
+
+        // First, store the user message
+        let user_msg_id = match self
+            .manager
+            .append_user_message(conv_id.clone(), &text)
+            .await
+        {
+            Ok(msg) => {
+                let msg_id = msg.id;
+                let _ = self.response_tx.send(Response::MessageSent {
+                    conv_id: conv_id.clone(),
+                    message: message_to_data(msg),
+                });
+                msg_id
+            }
+            Err(e) => {
+                error!(
+                    "Failed to append user message to conversation {}: {}",
+                    conv_id, e
+                );
+                let error_info = error_to_info(&e);
+                let _ = self.response_tx.send(Response::SendMessageError {
+                    conv_id,
+                    error_info,
+                    user_message_id: None,
+                });
+                return;
+            }
+        };
+
+        // Store each file in the database
+        for path_str in &file_paths {
+            let path = Path::new(path_str);
+
+            // Read file content
+            let file_content = match fs::read(path) {
+                Ok(content) => content,
+                Err(e) => {
+                    error!("Failed to read file {}: {}", path_str, e);
+                    continue;
+                }
+            };
+
+            // Get filename
+            let filename = match path.file_name().and_then(|n| n.to_str()) {
+                Some(name) => name.to_string(),
+                None => {
+                    error!("Invalid filename: {}", path_str);
+                    continue;
+                }
+            };
+
+            // Determine MIME type from extension
+            let mime_type = match path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.to_lowercase())
+                .as_deref()
+            {
+                Some("txt") => "text/plain",
+                Some("json") => "application/json",
+                Some("xml") => "application/xml",
+                Some("html") | Some("htm") => "text/html",
+                Some("css") => "text/css",
+                Some("js") => "text/javascript",
+                Some("pdf") => "application/pdf",
+                Some("zip") => "application/zip",
+                Some("tar") => "application/x-tar",
+                Some("gz") => "application/gzip",
+                Some("jpg") | Some("jpeg") => "image/jpeg",
+                Some("png") => "image/png",
+                Some("gif") => "image/gif",
+                Some("webp") => "image/webp",
+                Some("svg") => "image/svg+xml",
+                Some("mp3") => "audio/mpeg",
+                Some("mp4") => "video/mp4",
+                Some("csv") => "text/csv",
+                Some("md") => "text/markdown",
+                Some("rs") => "text/x-rust",
+                Some("py") => "text/x-python",
+                Some("c") => "text/x-c",
+                Some("cpp") | Some("cc") | Some("cxx") => "text/x-c++",
+                Some("h") | Some("hpp") => "text/x-c-header",
+                Some("java") => "text/x-java",
+                Some("sh") => "text/x-shellscript",
+                _ => "application/octet-stream",
+            };
+
+            // Store file in database
+            if let Err(e) = self
+                .manager
+                .storage()
+                .add_user_file(&conv_id, user_msg_id, &filename, mime_type, &file_content)
+                .await
+            {
+                error!("Failed to store file {} in database: {}", filename, e);
+            } else {
+                info!("Stored file {} in database", filename);
+            }
+        }
+
+        // Then load the conversation and continue with streaming
+        let mut conversation = match self.manager.load_conversation(&conv_id).await {
+            Ok(conv) => conv,
+            Err(e) => {
+                error!(
+                    "Failed to load conversation {} for sending message: {}",
+                    conv_id, e
+                );
+                let error_info = error_to_info(&e);
+                let _ = self.response_tx.send(Response::SendMessageError {
+                    conv_id,
+                    error_info,
+                    user_message_id: Some(user_msg_id),
+                });
+                return;
+            }
+        };
+
+        // Start streaming
+        let _ = self.response_tx.send(Response::StreamingStarted {
+            conv_id: conv_id.clone(),
+        });
+
+        // Send message with streaming
+        match self.manager.send_message_stream(&mut conversation).await {
+            Ok(mut stream) => {
+                let mut accumulated = String::new();
+
+                // Process stream events
+                while let Some(result) = stream.next().await {
+                    match result {
+                        Ok(update) => {
+                            if let Some(text_delta) = extract_text_delta(&update) {
+                                accumulated.push_str(&text_delta);
+
+                                let _ = self.response_tx.send(Response::StreamingChunk {
+                                    conv_id: conv_id.clone(),
+                                    delta: text_delta,
+                                    accumulated: accumulated.clone(),
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            error!("Streaming error for conversation {}: {}", conv_id, e);
+                            let error_info = error_to_info(&e);
+                            let _ = self.response_tx.send(Response::StreamingError {
+                                conv_id,
+                                error_info,
+                                partial_text: accumulated,
+                            });
+                            return;
+                        }
+                    }
+                }
+
+                // Streaming complete - reload messages to get the final message
+                match self.manager.get_messages(&conv_id).await {
+                    Ok(messages) => {
+                        if let Some(last_message) = messages.last() {
+                            let message_data = message_to_data(last_message.clone());
+                            let _ = self.response_tx.send(Response::StreamingComplete {
+                                conv_id,
+                                message: message_data,
+                            });
+                        } else {
+                            warn!("No messages found after streaming completed");
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to reload messages after streaming: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Failed to start streaming for conversation {}: {}",
+                    conv_id, e
+                );
+                let error_info = error_to_info(&e);
+                let _ = self.response_tx.send(Response::SendMessageError {
+                    conv_id,
+                    error_info,
+                    user_message_id: Some(user_msg_id),
                 });
             }
         }
