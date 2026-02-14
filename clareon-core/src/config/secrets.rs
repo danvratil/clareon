@@ -7,6 +7,7 @@
 use secret_service::{EncryptionType, SecretService};
 use tracing::{debug, info};
 
+use super::profile::ProfileId;
 use crate::error::{ConfigError, Result};
 
 /// Secret store for secure credential storage
@@ -30,9 +31,9 @@ impl SecretStore {
         Ok(Self { service })
     }
 
-    /// Store a secret in the keyring
-    pub async fn store_secret(&self, key: &str, value: &str) -> Result<()> {
-        info!("Storing secret: {}", key);
+    /// Store a secret in the keyring for a specific profile
+    pub async fn store_secret(&self, profile_id: &ProfileId, key: &str, value: &str) -> Result<()> {
+        info!("Storing secret: {} (profile: {})", key, profile_id);
 
         let collection = self
             .service
@@ -48,13 +49,18 @@ impl SecretStore {
                 .map_err(|e| ConfigError::SecretService(e.to_string()))?;
         }
 
-        // Create attributes for the secret
-        let attributes = vec![("application", "clareon"), ("key", key)];
+        let profile_str = profile_id.as_str();
+        // Create attributes for the secret, scoped to profile
+        let attributes = vec![
+            ("application", "clareon"),
+            ("profile", profile_str),
+            ("key", key),
+        ];
 
         // Create or update the secret
         collection
             .create_item(
-                &format!("Clareon: {}", key),
+                &format!("Clareon ({}): {}", profile_id, key),
                 attributes.into_iter().collect(),
                 value.as_bytes(),
                 true, // Replace existing
@@ -66,9 +72,9 @@ impl SecretStore {
         Ok(())
     }
 
-    /// Retrieve a secret from the keyring
-    pub async fn get_secret(&self, key: &str) -> Result<String> {
-        debug!("Retrieving secret: {}", key);
+    /// Retrieve a secret from the keyring for a specific profile
+    pub async fn get_secret(&self, profile_id: &ProfileId, key: &str) -> Result<String> {
+        debug!("Retrieving secret: {} (profile: {})", key, profile_id);
 
         let collection = self
             .service
@@ -84,8 +90,13 @@ impl SecretStore {
                 .map_err(|e| ConfigError::SecretService(e.to_string()))?;
         }
 
-        // Search for the secret
-        let attributes = vec![("application", "clareon"), ("key", key)];
+        let profile_str = profile_id.as_str();
+        // Search for the secret scoped to profile
+        let attributes = vec![
+            ("application", "clareon"),
+            ("profile", profile_str),
+            ("key", key),
+        ];
 
         let items = collection
             .search_items(attributes.into_iter().collect())
@@ -104,9 +115,9 @@ impl SecretStore {
         String::from_utf8(secret).map_err(|e| ConfigError::SecretService(e.to_string()).into())
     }
 
-    /// Delete a secret from the keyring
-    pub async fn delete_secret(&self, key: &str) -> Result<()> {
-        info!("Deleting secret: {}", key);
+    /// Delete a secret from the keyring for a specific profile
+    pub async fn delete_secret(&self, profile_id: &ProfileId, key: &str) -> Result<()> {
+        info!("Deleting secret: {} (profile: {})", key, profile_id);
 
         let collection = self
             .service
@@ -122,8 +133,13 @@ impl SecretStore {
                 .map_err(|e| ConfigError::SecretService(e.to_string()))?;
         }
 
-        // Search for the secret
-        let attributes = vec![("application", "clareon"), ("key", key)];
+        let profile_str = profile_id.as_str();
+        // Search for the secret scoped to profile
+        let attributes = vec![
+            ("application", "clareon"),
+            ("profile", profile_str),
+            ("key", key),
+        ];
 
         let items = collection
             .search_items(attributes.into_iter().collect())
@@ -139,9 +155,9 @@ impl SecretStore {
         Ok(())
     }
 
-    /// Check if a secret exists
-    pub async fn has_secret(&self, key: &str) -> bool {
-        self.get_secret(key).await.is_ok()
+    /// Check if a secret exists for a specific profile
+    pub async fn has_secret(&self, profile_id: &ProfileId, key: &str) -> bool {
+        self.get_secret(profile_id, key).await.is_ok()
     }
 }
 

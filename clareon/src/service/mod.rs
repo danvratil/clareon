@@ -18,7 +18,7 @@ use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
 use clareon_core::{
-    Config, ConfigManager, ConversationManager, Error, Result, Storage,
+    ConfigManager, ConversationManager, Error, Result, Storage,
     tools::{
         ArtifactManager, BubblewrapSandbox, NoneSandbox, SandboxMode, ToolExecutor, ToolRegistry,
         WorkspaceManager, register_builtin_tools,
@@ -54,31 +54,30 @@ pub struct ClareonService {
 }
 
 impl ClareonService {
-    /// Create a new Clareon service
+    /// Create a new Clareon service for a specific profile
     ///
     /// This initializes the async runtime, storage, backend, and conversation manager.
     /// It also starts the background worker task.
-    ///
-    /// Configuration is accessed via the global ConfigManager singleton.
-    pub fn new() -> Result<Self> {
+    pub fn new(config_manager: Arc<ConfigManager>) -> Result<Self> {
         // Create tokio runtime
         let runtime = Runtime::new()?;
 
         // Initialize core components on the runtime
         let manager = runtime.block_on(async {
-            // Get config from singleton
-            let config = ConfigManager::get().config();
+            let config = config_manager.config();
+            let profile = config_manager.profile();
 
-            // Initialize storage
-            let storage = Arc::new(Storage::new(&Config::database_url()?).await?);
+            // Initialize storage using profile's database URL
+            let storage = Arc::new(Storage::new(&profile.database_url).await?);
 
-            // Create backends
-            let backend = clareon_core::backend::create_backend_from_config(&config)
+            // Create backends, passing profile ID for secret retrieval
+            let backend = clareon_core::backend::create_backend_from_config(&config, &profile.id)
                 .await
                 .map_err(std::io::Error::other)?;
-            let title_backend = clareon_core::backend::create_backend_from_config(&config)
-                .await
-                .map_err(std::io::Error::other)?;
+            let title_backend =
+                clareon_core::backend::create_backend_from_config(&config, &profile.id)
+                    .await
+                    .map_err(std::io::Error::other)?;
 
             // Create tool executor if tools are enabled
             let tool_executor = if config.tools.enabled {
@@ -100,8 +99,8 @@ impl ClareonService {
                     SandboxModeConfig::None => Arc::new(NoneSandbox),
                 };
 
-                // Get workspace cache directory
-                let workspace_dir = Config::workspace_cache_dir().map_err(std::io::Error::other)?;
+                // Use profile's workspace cache directory
+                let workspace_dir = profile.workspace_cache_dir.clone();
 
                 // Create workspace manager
                 let workspace_manager =

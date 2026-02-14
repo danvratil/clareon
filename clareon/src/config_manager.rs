@@ -2,6 +2,23 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::sync::{Arc, OnceLock};
+
+/// Staged ConfigManager instance, set once before QML initialization.
+static STAGED_CONFIG_MANAGER: OnceLock<Arc<clareon_core::ConfigManager>> = OnceLock::new();
+
+/// Stage a ConfigManager for the QML ConfigManager bridge to use
+pub fn stage_config_manager(manager: Arc<clareon_core::ConfigManager>) {
+    STAGED_CONFIG_MANAGER.set(manager).ok();
+}
+
+/// Get the staged ConfigManager
+fn get_config_manager() -> &'static Arc<clareon_core::ConfigManager> {
+    STAGED_CONFIG_MANAGER
+        .get()
+        .expect("ConfigManager not staged before QML initialization")
+}
+
 #[cxx_qt::bridge]
 mod ffi {
     unsafe extern "C++" {
@@ -65,8 +82,7 @@ pub struct ConfigManagerRust {}
 impl ffi::ConfigManager {
     /// Get the current configuration as ConfigCpp
     fn get_config(&self) -> *mut ffi::ConfigCpp {
-        // Get config from Rust ConfigManager
-        let config = clareon_core::ConfigManager::get().config();
+        let config = get_config_manager().config();
 
         // Serialize to JSON
         let json = match serde_json::to_string(&config) {
@@ -94,8 +110,8 @@ impl ffi::ConfigManager {
         // Deserialize to Rust Config
         match serde_json::from_str::<clareon_core::config::Config>(&json) {
             Ok(new_config) => {
-                clareon_core::ConfigManager::get().replace_config(new_config);
-                match clareon_core::ConfigManager::get().save() {
+                get_config_manager().replace_config(new_config);
+                match get_config_manager().save() {
                     Ok(()) => {
                         tracing::info!("Configuration saved successfully");
                         true
@@ -115,7 +131,7 @@ impl ffi::ConfigManager {
 
     /// Reload configuration from disk
     fn reload(&self) -> bool {
-        match clareon_core::ConfigManager::get().reload() {
+        match get_config_manager().reload() {
             Ok(()) => {
                 tracing::info!("Configuration reloaded successfully");
                 true

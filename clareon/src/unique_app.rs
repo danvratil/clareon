@@ -63,13 +63,17 @@ use tracing::{debug, error, info, warn};
 pub struct Activation {
     /// Command-line arguments passed to the application
     pub args: Vec<String>,
+    /// Profile name requested by the secondary instance
+    #[serde(default)]
+    pub profile: Option<String>,
 }
 
 impl Activation {
     /// Create a new activation from command-line arguments
-    pub fn from_args() -> Self {
+    pub fn from_args(profile: Option<String>) -> Self {
         Self {
             args: env::args().collect(),
+            profile,
         }
     }
 
@@ -178,11 +182,11 @@ fn get_socket_path() -> std::path::PathBuf {
 /// - `Ok(UniqueResult::Primary(server))` if this is the first instance
 /// - `Ok(UniqueResult::Secondary)` if another instance is running (activation sent)
 /// - `Err(e)` if there was an error
-pub fn try_become_unique() -> io::Result<UniqueResult> {
+pub fn try_become_unique(profile: Option<String>) -> io::Result<UniqueResult> {
     let socket_path = get_socket_path();
 
     // First, try to connect as a client
-    match try_activate_existing(&socket_path) {
+    match try_activate_existing(&socket_path, profile) {
         Ok(true) => {
             info!("Activated existing instance, exiting");
             return Ok(UniqueResult::Secondary);
@@ -205,10 +209,10 @@ pub fn try_become_unique() -> io::Result<UniqueResult> {
 /// - `Ok(true)` if activation was sent successfully
 /// - `Ok(false)` if no instance is running
 /// - `Err(e)` on error
-fn try_activate_existing(socket_path: &PathBuf) -> io::Result<bool> {
+fn try_activate_existing(socket_path: &PathBuf, profile: Option<String>) -> io::Result<bool> {
     match UnixStream::connect(socket_path) {
         Ok(mut stream) => {
-            let activation = Activation::from_args();
+            let activation = Activation::from_args(profile);
             let json = activation.to_json().map_err(|e| {
                 io::Error::new(io::ErrorKind::InvalidData, format!("JSON error: {}", e))
             })?;

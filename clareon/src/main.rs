@@ -2,11 +2,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use tokio::runtime::Runtime;
 
 use clap::Parser;
-use clareon_core::ConfigManager;
+use clareon_core::{ConfigManager, ProfileId, ProfileManager};
 use clareon_qt::{QApplicationExt, QIcon};
 use cxx_qt_lib::{QQmlApplicationEngine, QString, QUrl};
 use cxx_qt_lib_extras::QApplication;
@@ -28,7 +28,7 @@ pub mod service;
 pub mod service_controller;
 pub mod unique_app;
 
-// Global service instance
+// Global service instance (needed for runtime access from Qt callbacks)
 static SERVICE: OnceLock<Mutex<ClareonService>> = OnceLock::new();
 
 /// Get the tokio runtime
@@ -46,6 +46,10 @@ pub fn get_runtime() -> &'static Runtime {
 pub struct Args {
     #[arg(short, long, action = clap::ArgAction::SetTrue, help = "Show a quick input window to start a new conversation")]
     pub quick_input: bool,
+
+    /// Profile to use (creates a new profile if it doesn't exist)
+    #[arg(long, default_value = "default")]
+    pub profile: String,
 }
 
 fn main() {
@@ -53,7 +57,7 @@ fn main() {
 
     // Try to become the unique instance first, before initializing anything else
     // This ensures we exit quickly if another instance is already running
-    let unique_handle = match try_become_unique() {
+    let unique_handle = match try_become_unique(Some(args.profile.clone())) {
         Ok(UniqueResult::Primary(server)) => Some(server),
         Ok(UniqueResult::Secondary) => {
             // Another instance is running, activation sent, exit
@@ -68,21 +72,44 @@ fn main() {
 
     // If we acquired the unique handle, we can proceed with initialization.
 
-    // Initialize ConfigManager singleton (loads config on first access)
-    let config = ConfigManager::get().config();
+    // Resolve or create the profile
+    let profile_id = ProfileId::new(&args.profile).unwrap_or_else(|e| {
+        eprintln!("FATAL: Invalid profile name '{}': {}", args.profile, e);
+        std::process::exit(1);
+    });
+    let profile = ProfileManager::get_or_create_profile(&profile_id).unwrap_or_else(|e| {
+        eprintln!(
+            "FATAL: Failed to initialize profile '{}': {}",
+            profile_id, e
+        );
+        std::process::exit(1);
+    });
 
-    // Initialize logging
+    // Create ConfigManager for this profile (no longer a singleton)
+    let config_manager = Arc::new(ConfigManager::new(profile).unwrap_or_else(|e| {
+        eprintln!(
+            "FATAL: Failed to load configuration for profile '{}': {}",
+            profile_id, e
+        );
+        std::process::exit(1);
+    }));
+
+    // Initialize logging from profile's config
+    let config = config_manager.config();
     let _guard =
         clareon_core::logging::init_logging(&config).expect("Failed to initialize logging");
     logging::init_qt_logging();
 
-    // Create the service (will use ConfigManager internally)
-    let service = ClareonService::new().expect("Failed to create service");
+    tracing::info!("Starting Clareon with profile: {}", profile_id);
+
+    // Create the service with profile-aware config
+    let service =
+        ClareonService::new(Arc::clone(&config_manager)).expect("Failed to create service");
 
     // Get the service handle before storing service
     let handle = service.handle();
 
-    // Store service in global
+    // Store service in global (needed for runtime access)
     SERVICE.set(Mutex::new(service)).ok();
 
     // Spawn the unique server listener in the background if we have one
@@ -116,8 +143,9 @@ fn main() {
         let _ = handle.send(Command::ActivateQuickInput);
     }
 
-    // Initialize Qt - pass handle
-    qt::init_service_handle(handle);
+    // Stage the service handle and config manager for QML singletons
+    service_controller::stage_service_handle(handle);
+    config_manager::stage_config_manager(config_manager);
 
     let mut app = QApplication::new();
     app.pin_mut()

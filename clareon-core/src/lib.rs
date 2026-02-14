@@ -19,7 +19,9 @@ pub mod types;
 pub use backend::{
     AnthropicBackend, BedrockBackend, ChatRequest, ChatResponse, LlmBackend, StopReason,
 };
-pub use config::{Config, ConfigManager, SandboxModeConfig, SecretStore};
+pub use config::{
+    Config, ConfigManager, Profile, ProfileId, ProfileManager, SandboxModeConfig, SecretStore,
+};
 pub use conversation::{ConversationManager, StreamUpdate};
 pub use error::{Error, Result};
 pub use storage::Storage;

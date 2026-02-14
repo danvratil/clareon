@@ -2,50 +2,57 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Configuration manager singleton
+//! Configuration manager for a specific profile
 
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
+use super::profile::Profile;
 use super::settings::Config;
 use crate::error::Result;
 
-/// Global configuration manager singleton
+/// Configuration manager bound to a specific profile
 ///
-/// Provides thread-safe access to application configuration.
-/// All application code should use `ConfigManager::get()` to access configuration
-/// instead of passing `Config` instances around.
+/// Provides thread-safe access to configuration for a single profile.
+/// Each profile gets its own ConfigManager instance.
 ///
 /// # Example
 ///
 /// ```no_run
-/// use clareon_core::ConfigManager;
+/// use clareon_core::config::{ConfigManager, ProfileId, ProfileManager};
 ///
-/// let config = ConfigManager::get().config();
+/// let profile_id = ProfileId::new("default").unwrap();
+/// let profile = ProfileManager::get_or_create_profile(&profile_id).unwrap();
+/// let manager = ConfigManager::new(profile).unwrap();
+/// let config = manager.config();
 /// println!("Default backend: {:?}", config.default_backend);
 /// ```
 pub struct ConfigManager {
+    profile: Profile,
     config: Arc<Mutex<Config>>,
 }
 
 impl ConfigManager {
-    /// Get the global ConfigManager singleton instance
+    /// Create a new ConfigManager for a specific profile
     ///
-    /// On first access, loads configuration from the default location.
-    /// Panics if config cannot be loaded (this is intentional - app cannot run without config).
-    pub fn get() -> &'static ConfigManager {
-        static INSTANCE: OnceLock<ConfigManager> = OnceLock::new();
-        INSTANCE.get_or_init(|| {
-            let config = Config::load().expect("Failed to load configuration");
-            ConfigManager {
-                config: Arc::new(Mutex::new(config)),
-            }
+    /// Loads configuration from the profile's config path. If the config file
+    /// doesn't exist, uses default configuration.
+    pub fn new(profile: Profile) -> Result<Self> {
+        let config = Config::load_from(&profile.config_path)?;
+        Ok(Self {
+            profile,
+            config: Arc::new(Mutex::new(config)),
         })
+    }
+
+    /// Get a reference to the profile
+    pub fn profile(&self) -> &Profile {
+        &self.profile
     }
 
     /// Get a clone of the current configuration
     ///
     /// Returns a snapshot of the current configuration. Changes to the returned
-    /// Config will not affect the global configuration.
+    /// Config will not affect the managed configuration.
     pub fn config(&self) -> Config {
         self.config.lock().expect("Config mutex poisoned").clone()
     }
@@ -54,16 +61,6 @@ impl ConfigManager {
     ///
     /// The provided function receives a mutable reference to the config.
     /// Changes are kept in memory only - call `save()` to persist.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use clareon_core::ConfigManager;
-    ///
-    /// ConfigManager::get().update_config(|config| {
-    ///     config.default_backend = clareon_core::config::Backend::Anthropic;
-    /// }).unwrap();
-    /// ```
     pub fn update_config<F>(&self, f: F) -> Result<()>
     where
         F: FnOnce(&mut Config),
@@ -75,17 +72,17 @@ impl ConfigManager {
 
     /// Save the current configuration to disk
     ///
-    /// Writes the current in-memory configuration to the default config file.
+    /// Writes the current in-memory configuration to the profile's config file.
     pub fn save(&self) -> Result<()> {
         let config = self.config.lock().expect("Config mutex poisoned");
-        config.save().map(|_| ())
+        config.save_to(&self.profile.config_path)
     }
 
     /// Reload configuration from disk
     ///
-    /// Discards any in-memory changes and reloads from the config file.
+    /// Discards any in-memory changes and reloads from the profile's config file.
     pub fn reload(&self) -> Result<()> {
-        let config = Config::load()?;
+        let config = Config::load_from(&self.profile.config_path)?;
         *self.config.lock().expect("Config mutex poisoned") = config;
         Ok(())
     }
@@ -102,10 +99,13 @@ impl ConfigManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Backend;
 
-    /// Helper to create a test ConfigManager without touching production config
+    /// Helper to create a test ConfigManager with a temporary profile
     fn create_test_manager() -> ConfigManager {
+        let profile = Profile::new_for_test("test-config-manager");
         ConfigManager {
+            profile,
             config: Arc::new(Mutex::new(Config::default())),
         }
     }
@@ -122,8 +122,6 @@ mod tests {
 
     #[test]
     fn test_update_config() {
-        use crate::config::Backend;
-
         let manager = create_test_manager();
         let original = manager.config();
 
@@ -142,8 +140,6 @@ mod tests {
 
     #[test]
     fn test_replace_config() {
-        use crate::config::Backend;
-
         let manager = create_test_manager();
 
         // Create a custom config
@@ -160,5 +156,11 @@ mod tests {
         let current = manager.config();
         assert_eq!(current.default_backend, Backend::Anthropic);
         assert_eq!(current.default_model, "custom-model");
+    }
+
+    #[test]
+    fn test_profile_access() {
+        let manager = create_test_manager();
+        assert_eq!(manager.profile().id.as_str(), "test-config-manager");
     }
 }

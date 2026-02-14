@@ -16,6 +16,7 @@ use tracing::{debug, info, warn};
 use super::traits::{
     ChatRequest, ChatResponse, ContentDelta, LlmBackend, ModelInfo, StopReason, StreamEvent, Usage,
 };
+use crate::config::ProfileId;
 use crate::config::{ANTHROPIC_API_KEY, AnthropicConfig, SecretStore};
 use crate::error::BackendError;
 use crate::types::{ContentBlock, ConversationId, Message, Role};
@@ -36,11 +37,14 @@ impl AnthropicBackend {
     ///
     /// This will retrieve the API key from either the system keyring (if configured)
     /// or fall back to the ANTHROPIC_API_KEY environment variable.
-    pub async fn from_config(config: &AnthropicConfig) -> Result<Self, BackendError> {
+    pub async fn from_config(
+        config: &AnthropicConfig,
+        profile_id: &ProfileId,
+    ) -> Result<Self, BackendError> {
         let api_key = if config.api_key_in_keyring {
             // Try to get from keyring first
             match SecretStore::new().await {
-                Ok(store) => match store.get_secret(ANTHROPIC_API_KEY).await {
+                Ok(store) => match store.get_secret(profile_id, ANTHROPIC_API_KEY).await {
                     Ok(key) => {
                         debug!("Retrieved API key from keyring");
                         key

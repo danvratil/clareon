@@ -7,7 +7,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
@@ -36,6 +35,14 @@ impl TryFrom<&str> for Backend {
 /// Main configuration struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    /// Human-readable display name for the profile
+    #[serde(default)]
+    pub profile_display_name: Option<String>,
+
+    /// Optional profile description
+    #[serde(default)]
+    pub profile_description: Option<String>,
+
     /// Default backend to use (bedrock or anthropic)
     #[serde(default)]
     pub default_backend: Backend,
@@ -353,6 +360,8 @@ pub struct UiConfig {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            profile_display_name: None,
+            profile_description: None,
             default_backend: Backend::default(),
             default_model: default_model(),
             backends: BackendsConfig::default(),
@@ -366,33 +375,19 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Load configuration from the default location
-    pub fn load() -> Result<Self> {
-        let config_path = Self::config_path()?;
-
-        if !config_path.exists() {
-            info!("Config file not found, using defaults");
-            return Ok(Self::default());
-        }
-
-        Self::load_from(&config_path)
-    }
-
     /// Load configuration from a specific path
     pub fn load_from(path: &PathBuf) -> Result<Self> {
         debug!("Loading config from: {:?}", path);
+
+        if !path.exists() {
+            info!("Config file not found at {:?}, using defaults", path);
+            return Ok(Self::default());
+        }
 
         let content = std::fs::read_to_string(path).map_err(ConfigError::Io)?;
         let config: Config = serde_json::from_str(&content).map_err(ConfigError::Parse)?;
 
         Ok(config)
-    }
-
-    /// Save configuration to the default location
-    pub fn save(&self) -> Result<Self> {
-        let config_path = Self::config_path()?;
-        self.save_to(&config_path)?;
-        Ok(self.clone())
     }
 
     /// Save configuration to a specific path
@@ -409,57 +404,6 @@ impl Config {
 
         info!("Config saved to: {:?}", path);
         Ok(())
-    }
-
-    /// Get the default config file path
-    pub fn config_path() -> Result<PathBuf> {
-        let dirs = Self::project_dirs()?;
-        Ok(dirs.config_dir().join("config.json"))
-    }
-
-    /// Get the default database file path
-    pub fn database_path() -> Result<PathBuf> {
-        let dirs = Self::project_dirs()?;
-        let data_dir = dirs.data_dir();
-        std::fs::create_dir_all(data_dir).map_err(ConfigError::Io)?;
-        Ok(data_dir.join("clareon.db"))
-    }
-
-    /// Get the database URL for SQLite
-    pub fn database_url() -> Result<String> {
-        let path = Self::database_path()?;
-        Ok(format!("sqlite://{}?mode=rwc", path.display()))
-    }
-
-    /// Get the cache root directory
-    pub fn cache_root() -> Result<PathBuf> {
-        let dirs = Self::project_dirs()?;
-        let cache_dir = dirs.cache_dir();
-        std::fs::create_dir_all(cache_dir).map_err(ConfigError::Io)?;
-        Ok(cache_dir.to_path_buf())
-    }
-
-    /// Get the workspace cache directory
-    pub fn workspace_cache_dir() -> Result<PathBuf> {
-        let cache_root = Self::cache_root()?;
-        let workspace_dir = cache_root.join("conversations");
-        std::fs::create_dir_all(&workspace_dir).map_err(ConfigError::Io)?;
-        Ok(workspace_dir)
-    }
-
-    /// Get the shared cache directory
-    pub fn shared_cache_dir() -> Result<PathBuf> {
-        let cache_root = Self::cache_root()?;
-        let shared_dir = cache_root.join("shared");
-        std::fs::create_dir_all(&shared_dir).map_err(ConfigError::Io)?;
-        Ok(shared_dir)
-    }
-
-    /// Get the project directories
-    fn project_dirs() -> Result<ProjectDirs> {
-        ProjectDirs::from("org", "clareon", "clareon").ok_or_else(|| {
-            ConfigError::Invalid("Could not determine home directory".to_string()).into()
-        })
     }
 
     /// Get the default system prompt

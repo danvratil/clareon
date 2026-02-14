@@ -8,9 +8,6 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use clareon_core::types::{ConversationSummary, SearchResult};
 
-// Re-export from service_controller
-pub use crate::service_controller::init_service_handle;
-
 // Type alias for conversations cache
 type ConversationsCache = Arc<Mutex<Vec<ConversationSummary>>>;
 

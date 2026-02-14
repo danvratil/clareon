@@ -12,25 +12,14 @@ use cxx_qt::Threading;
 
 use crate::service::{Command, Response, ServiceHandle};
 
-// Global service handle (set during initialization)
-static SERVICE_HANDLE: OnceLock<ServiceHandle> = OnceLock::new();
+/// Staged service handle, set once before QML initialization.
+/// The handle is consumed during ServiceController::initialize() and moved
+/// into the ServiceController instance.
+static STAGED_SERVICE_HANDLE: OnceLock<ServiceHandle> = OnceLock::new();
 
-/// Initialize the global service handle
-pub fn init_service_handle(handle: ServiceHandle) {
-    SERVICE_HANDLE.set(handle).ok();
-}
-
-/// Get the global service handle
-fn get_service_handle() -> ServiceHandle {
-    SERVICE_HANDLE
-        .get()
-        .expect("Service handle not initialized")
-        .clone()
-}
-
-/// Try to get the global service handle (returns None if not initialized)
-pub fn try_get_service_handle() -> Option<ServiceHandle> {
-    SERVICE_HANDLE.get().cloned()
+/// Stage a service handle for the ServiceController to pick up during initialization
+pub fn stage_service_handle(handle: ServiceHandle) {
+    STAGED_SERVICE_HANDLE.set(handle).ok();
 }
 
 #[cxx_qt::bridge]
@@ -163,15 +152,28 @@ mod ffi {
 use cxx_qt_lib::{QList, QString, QStringList};
 
 /// Rust implementation of ServiceController
-#[derive(Default)]
 pub struct ServiceControllerRust {
-    // No state needed - uses global caches from qt module
+    handle: Option<ServiceHandle>,
+}
+
+impl Default for ServiceControllerRust {
+    fn default() -> Self {
+        Self { handle: None }
+    }
 }
 
 impl cxx_qt::Initialize for ffi::ServiceController {
-    fn initialize(self: Pin<&mut Self>) {
+    fn initialize(mut self: Pin<&mut Self>) {
+        // Take the staged service handle
+        let handle = STAGED_SERVICE_HANDLE
+            .get()
+            .expect("Service handle not staged before ServiceController initialization")
+            .clone();
+
+        // Store in the struct
+        self.as_mut().rust_mut().handle = Some(handle.clone());
+
         // Subscribe to broadcast events
-        let handle = get_service_handle();
         let mut response_rx = handle.subscribe();
         let qt_thread = self.qt_thread();
 
@@ -190,6 +192,13 @@ impl cxx_qt::Initialize for ffi::ServiceController {
 }
 
 impl ffi::ServiceController {
+    /// Get the service handle, panicking if not initialized
+    fn service_handle(&self) -> &ServiceHandle {
+        self.handle
+            .as_ref()
+            .expect("ServiceController not initialized")
+    }
+
     /// Handle a response from the service
     fn handle_response(mut self: Pin<&mut Self>, response: Response) {
         match response {
@@ -276,8 +285,6 @@ impl ffi::ServiceController {
                 error_info,
                 user_message_id: _,
             } => {
-                // For now, emit error_occurred signal
-                // Later, MessageListModel will handle this directly
                 self.as_mut().error_occurred(
                     QString::from(&format!("SendMessage({})", conv_id)),
                     QString::from(&error_info.message),
@@ -289,8 +296,6 @@ impl ffi::ServiceController {
                 error_info,
                 partial_text: _,
             } => {
-                // For now, emit error_occurred signal
-                // Later, MessageListModel will handle this directly
                 self.as_mut().error_occurred(
                     QString::from(&format!("StreamingError({})", conv_id)),
                     QString::from(&error_info.message),
@@ -306,8 +311,6 @@ impl ffi::ServiceController {
             }
 
             Response::ArtifactsLoaded { conv_id, .. } => {
-                // ArtifactListModel now handles this directly
-                // Emit signal for UI feedback
                 self.as_mut()
                     .artifacts_loaded(QString::from(&conv_id.to_string()));
             }
@@ -318,16 +321,13 @@ impl ffi::ServiceController {
                 mime_type,
                 content,
             } => {
-                // Convert content to UTF-8 string for text types, or base64 for binary
                 let content_str = if mime_type.starts_with("text/") {
                     String::from_utf8_lossy(&content).to_string()
                 } else {
-                    // For binary content, encode as base64
                     use base64::{Engine as _, engine::general_purpose};
                     general_purpose::STANDARD.encode(&content)
                 };
 
-                // Emit signal
                 self.as_mut().artifact_loaded(
                     artifact_id,
                     QString::from(&filename),
@@ -337,7 +337,6 @@ impl ffi::ServiceController {
             }
 
             Response::ArtifactSaved { artifact_id, path } => {
-                // Emit signal for UI feedback
                 self.as_mut()
                     .artifact_saved(artifact_id, QString::from(&path));
             }
@@ -359,14 +358,12 @@ impl ffi::ServiceController {
 
     /// Create a new conversation
     fn new_conversation(&self) {
-        let handle = get_service_handle();
-        let _ = handle.send(Command::NewConversation);
+        let _ = self.service_handle().send(Command::NewConversation);
     }
 
     /// Send a message in a conversation
     fn send_message(&self, conversation_id: &QString, text: &QString) {
-        let handle = get_service_handle();
-        let _ = handle.send(Command::SendMessage {
+        let _ = self.service_handle().send(Command::SendMessage {
             conv_id: ConversationId::from(conversation_id.to_string()),
             text: text.to_string(),
         });
@@ -382,7 +379,6 @@ impl ffi::ServiceController {
         use std::path::Path;
 
         let conv_id = ConversationId::from(conversation_id.to_string());
-        let handle = get_service_handle();
 
         // Build message text mentioning attached files
         let mut message_text = text.to_string();
@@ -415,7 +411,7 @@ impl ffi::ServiceController {
         }
 
         // Send command with file paths so the service can store them
-        let _ = handle.send(Command::SendMessageWithFiles {
+        let _ = self.service_handle().send(Command::SendMessageWithFiles {
             conv_id,
             text: message_text,
             file_paths: file_info.into_iter().map(|(path, _)| path).collect(),
@@ -424,46 +420,42 @@ impl ffi::ServiceController {
 
     /// Load messages for a conversation
     fn load_messages(&self, conversation_id: &QString) {
-        let handle = get_service_handle();
-        let _ = handle.send(Command::LoadMessages {
+        let _ = self.service_handle().send(Command::LoadMessages {
             conv_id: ConversationId::from(conversation_id.to_string()),
         });
     }
 
     /// Retry the last failed message in a conversation
     fn retry_last_message(&self, conversation_id: &QString) {
-        let handle = get_service_handle();
-        let _ = handle.send(Command::RetryLastMessage {
+        let _ = self.service_handle().send(Command::RetryLastMessage {
             conv_id: ConversationId::from(conversation_id.to_string()),
         });
     }
 
     /// Delete a conversation
     fn delete_conversation(&self, conversation_id: &QString) {
-        let handle = get_service_handle();
-        let _ = handle.send(Command::DeleteConversation {
+        let _ = self.service_handle().send(Command::DeleteConversation {
             id: ConversationId::from(conversation_id.to_string()),
         });
     }
 
     /// Refresh the list of conversations
     fn refresh_conversations(&self) {
-        let handle = get_service_handle();
-        let _ = handle.send(Command::RefreshConversations);
+        let _ = self.service_handle().send(Command::RefreshConversations);
     }
 
     /// Search across all conversations
     fn search(&self, query: &QString) {
-        let handle = get_service_handle();
-        let _ = handle.send(Command::Search {
+        let _ = self.service_handle().send(Command::Search {
             query: query.to_string(),
         });
     }
 
     /// Load a single artifact's content
     fn load_artifact(&self, artifact_id: i64) {
-        let handle = get_service_handle();
-        let _ = handle.send(Command::LoadArtifact { artifact_id });
+        let _ = self
+            .service_handle()
+            .send(Command::LoadArtifact { artifact_id });
     }
 
     /// Set auto-start on login
@@ -510,8 +502,7 @@ X-LXQt-Need-Tray=true"#,
     /// Create a new conversation and immediately send a message
     /// Used for quick input flow
     fn new_quick_conversation(&self, prompt: &QString) {
-        let handle = get_service_handle();
-        let _ = handle.send(Command::NewQuickConversation {
+        let _ = self.service_handle().send(Command::NewQuickConversation {
             prompt: prompt.to_string(),
         });
     }
