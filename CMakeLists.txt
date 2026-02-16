@@ -9,13 +9,17 @@ include(GNUInstallDirs)
 include(ECMInstallIcons)
 include(ECMFindQmlModule)
 
-
 find_package(Qt6 REQUIRED COMPONENTS Core Quick Qml)
 ecm_find_qmlmodule(org.kde.kirigami REQUIRED)
 ecm_find_qmlmodule(org.kde.kitemmodels REQUIRED)
 ecm_find_qmlmodule(QtQuick.Controls REQUIRED)
 ecm_find_qmlmodule(QtQuick.Layouts REQUIRED)
 ecm_find_qmlmodule(Qt.labs.platform REQUIRED)
+
+# This is used by build.rs to find the moc executable - it will find it on its own
+# if the variable is unset, but no point searching for Qt twice if we already have it here.
+get_target_property(moc Qt6::moc LOCATION)
+set($ENV{QT_MOC_EXECUTABLE} ${moc})
 
 # Fetch and setup Corrosion
 include(FetchContent)

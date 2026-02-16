@@ -2,32 +2,33 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::path::PathBuf;
+use cmake_package::find_package;
+use std::path::{Path, PathBuf};
 
 pub fn run_moc(header_path: &PathBuf, output_path: &PathBuf) -> Result<(), String> {
-    // Find Qt installation
-    let qt_path = std::env::var("QT_PATH")
-        .or_else(|_| std::env::var("QTDIR"))
-        .or_else(|_| std::env::var("Qt6_DIR"))
-        .unwrap_or_else(|_| "/usr".to_string());
+    let moc_path = match std::env::var("QT_MOC_EXECUTABLE") {
+        Ok(moc_path) => moc_path,
+        Err(_) => {
+            let qt6_core = find_package("Qt6Core")
+                .find()
+                .map_err(|e| format!("Failed to find Qt6Core: {}", e))?;
+            let qt6_moc = qt6_core
+                .target("Qt6::moc")
+                .ok_or_else(|| "Failed to find Qt6::moc target".to_string())?;
+            qt6_core
+                .target_property(&qt6_moc, "LOCATION")
+                .ok_or_else(|| "Failed to get LOCATION property of Qt6::moc".to_string())?
+        }
+    };
 
-    // Try common MOC locations (prioritize Qt6 versions)
-    let moc_candidates = vec![
-        PathBuf::from("/usr/lib/qt6/libexec/moc"), // Most common Qt6 location on Linux
-        PathBuf::from("/usr/lib/qt6/bin/moc"),
-        PathBuf::from("/usr/bin/moc6"), // Some distros use moc6
-        PathBuf::from("/usr/bin/moc-qt6"),
-        PathBuf::from(&qt_path).join("libexec/moc"),
-        PathBuf::from(&qt_path).join("bin/moc"),
-        PathBuf::from("/usr/bin/moc"), // Fallback to generic moc (might be Qt5)
-    ];
-
-    let moc_path = moc_candidates
-        .into_iter()
-        .find(|p| p.exists())
-        .ok_or_else(|| "Could not find MOC executable".to_string())?;
-
-    println!("Found MOC at: {}", moc_path.display());
+    if Path::new(&moc_path).exists() {
+        println!("Found MOC at: {}", moc_path);
+    } else {
+        return Err(format!(
+            "MOC executable not found at location {}",
+            moc_path
+        ));
+    }
 
     // Run MOC
     let status = std::process::Command::new(&moc_path)
