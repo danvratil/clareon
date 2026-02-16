@@ -86,6 +86,23 @@ cargo test
 cargo build -p clareon
 ```
 
+### Docker Image
+
+A Docker image with all build dependencies (including Qt libraries) is available at `ghcr.io/danvratil/clareon`. This is intended for building and testing in environments where Qt is not installed, such as Claude Code Web sessions or GitHub Actions workflows. The image is tagged by commit hash and `latest` for the default branch.
+
+```bash
+# Pull the latest image
+docker pull ghcr.io/danvratil/clareon:latest
+
+# Build inside the container
+docker run --rm -v $(pwd):/src -w /src ghcr.io/danvratil/clareon:latest cargo build
+
+# Run tests inside the container
+docker run --rm -v $(pwd):/src -w /src ghcr.io/danvratil/clareon:latest cargo test
+```
+
+The image is built and published by the `.github/workflows/docker.yml` workflow (triggered manually via `workflow_dispatch`).
+
 ## Running
 
 ```bash
