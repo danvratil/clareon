@@ -20,3 +20,4 @@ cxx-qt-lib-extras = { workspace = true }
 
 [build-dependencies]
 cxx-qt-build = { workspace = true }
+cmake-package = { workspace = true }

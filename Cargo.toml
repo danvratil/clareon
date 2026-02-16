@@ -79,3 +79,6 @@ cxx-qt-build = { version = "0.8", features = ["link_qt_object_files"] }
 
 # Base64 encoding
 base64 = "0.22"
+
+# Build dependencies
+cmake-package = "0.1"

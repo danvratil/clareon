@@ -5,34 +5,26 @@
 use std::path::{Path, PathBuf};
 
 use cxx_qt_build::CxxQtBuilder;
+use cmake_package::find_package;
 
 /// Find the Qt MOC executable.
 ///
 /// Checks the `QT_MOC_EXECUTABLE` environment variable first, then falls back
-/// to searching `PATH` for `moc`, `moc-qt6`, and `moc6` (in that order).
+/// to using cmake-package to find it via CMake.
 fn find_qt_moc() -> Option<PathBuf> {
     println!("cargo:rerun-if-env-changed=QT_MOC_EXECUTABLE");
-
-    if let Ok(moc_path) = std::env::var("QT_MOC_EXECUTABLE") {
-        let path = PathBuf::from(&moc_path);
-        if path.is_file() {
-            println!("cargo:warning=Using MOC from QT_MOC_EXECUTABLE: {moc_path}");
-            return Some(path);
+    let moc_path = match std::env::var("QT_MOC_EXECUTABLE") {
+        Ok(moc_path) => moc_path,
+        Err(_) => {
+            let qt6_core = find_package("Qt6Core").find().ok()?;
+            let qt6_moc = qt6_core.target("Qt6::moc")?;
+            qt6_core.target_property(&qt6_moc, "LOCATION")?
         }
-        println!(
-            "cargo:warning=QT_MOC_EXECUTABLE is set to '{moc_path}' but the file was not found, \
-             falling back to PATH search"
-        );
-    }
+    };
 
-    let path_var = std::env::var_os("PATH")?;
-    for candidate in ["moc", "moc-qt6", "moc6"] {
-        if let Some(path) = std::env::split_paths(&path_var).find_map(|dir| {
-            let full_path = dir.join(candidate);
-            full_path.is_file().then_some(full_path)
-        }) {
-            return Some(path);
-        }
+    let path = PathBuf::from(&moc_path);
+    if path.is_file() {
+        return Some(path);
     }
 
     None

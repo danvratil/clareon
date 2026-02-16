@@ -6,6 +6,7 @@ use cmake_package::find_package;
 use std::path::{Path, PathBuf};
 
 pub fn run_moc(header_path: &PathBuf, output_path: &PathBuf) -> Result<(), String> {
+    println!("cargo:rerun-if-env-changed=QT_MOC_EXECUTABLE");
     let moc_path = match std::env::var("QT_MOC_EXECUTABLE") {
         Ok(moc_path) => moc_path,
         Err(_) => {

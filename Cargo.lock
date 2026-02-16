@@ -963,6 +963,7 @@ dependencies = [
 name = "clareon-qt"
 version = "0.1.0"
 dependencies = [
+ "cmake-package",
  "cxx",
  "cxx-qt",
  "cxx-qt-build",
