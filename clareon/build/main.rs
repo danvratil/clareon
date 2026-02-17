@@ -33,9 +33,15 @@ fn main() {
     // Get OUT_DIR for include path
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
 
+    let qml_files = if std::env::var("CARGO_FEATURE_QML_FROM_FILESYSTEM").is_ok() {
+        vec![]
+    } else {
+        find_qml_files()
+    };
+
     CxxQtBuilder::new_qml_module(
         QmlModule::new("cz.dvratil.clareon")
-            .qml_files(find_qml_files())
+            .qml_files(qml_files)
             .depend("QtQuick"),
     )
     // Don't include the entire crate - that way we would end up rebuilding whenever anything changes,

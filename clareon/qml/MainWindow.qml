@@ -112,7 +112,7 @@ Kirigami.ApplicationWindow {
     Loader {
         id: configWindowLoader
         active: false
-        source: "qrc:/qt/qml/cz/dvratil/clareon/qml/config/ConfigurationPage.qml"
+        source: Qt.resolvedUrl("config/ConfigurationPage.qml")
 
         onLoaded: {
             item.show()

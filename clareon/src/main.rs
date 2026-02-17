@@ -139,7 +139,16 @@ fn main() {
 
     qml::register_clareon_qml_types();
 
+    #[cfg(feature = "qml-from-filesystem")]
+    let qml_url = {
+        let qml_dir = std::env::var("CLAREON_QML_PATH")
+            .unwrap_or_else(|_| format!("{}/qml", env!("CARGO_MANIFEST_DIR")));
+        tracing::info!("Loading QML from filesystem: {}", qml_dir);
+        QUrl::from(&format!("file://{}/main.qml", qml_dir))
+    };
+    #[cfg(not(feature = "qml-from-filesystem"))]
     let qml_url = QUrl::from("qrc:/qt/qml/cz/dvratil/clareon/qml/main.qml");
+
     if let Some(engine) = engine.as_mut() {
         engine.load(&qml_url);
     }

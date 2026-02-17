@@ -116,6 +116,21 @@ cargo run -p clareon-cli
 ANTHROPIC_API_KEY=sk-... cargo run -p clareon-cli -- --backend anthropic
 ```
 
+### QML Development Mode
+
+For rapid QML iteration without recompilation, build with the `qml-from-filesystem` feature flag. This loads QML files from the source tree at runtime instead of embedding them in the binary:
+
+```bash
+# Build once with filesystem QML loading
+cargo build -p clareon --features qml-from-filesystem
+
+# Run - edits to QML files take effect on restart without rebuilding
+cargo run -p clareon --features qml-from-filesystem
+
+# Override the QML source path at runtime
+CLAREON_QML_PATH=/path/to/qml cargo run -p clareon --features qml-from-filesystem
+```
+
 ## Configuration
 
 Config file: `~/.config/clareon/config.json`
