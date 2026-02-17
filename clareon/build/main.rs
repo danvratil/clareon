@@ -28,6 +28,8 @@ fn main() {
     // Generate C++ config code from Rust settings
     let config = config_generator::generate_config_cpp();
 
+    let root_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+
     // Get OUT_DIR for include path
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
 
@@ -36,6 +38,9 @@ fn main() {
             .qml_files(find_qml_files())
             .depend("QtQuick"),
     )
+    // Don't include the entire crate - that way we would end up rebuilding whenever anything changes,
+    // even if it's not related to the code.
+    .crate_include_root(None)
     .qrc("icons/icons.qrc")
     .files([
         "src/qml.rs",
@@ -51,6 +56,7 @@ fn main() {
     .cpp_file("src/cpp/qml.cpp")
     .cpp_file(config.impl_path) // Add generated config implementation
     .cpp_file(config.moc_path) // Add MOC-generated file
+    .include_dir(&root_dir)
     .include_dir(&out_dir) // Add OUT_DIR to include path for config_generated.h
     .include_dir("src/cpp") // Add src/cpp to include path for config_bridge.hpp
     .include_dir(
