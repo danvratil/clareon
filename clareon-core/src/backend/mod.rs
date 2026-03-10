@@ -9,6 +9,7 @@
 
 mod anthropic;
 mod bedrock;
+mod openai;
 mod traits;
 
 use std::sync::Arc;
@@ -16,6 +17,7 @@ use std::sync::Arc;
 use crate::{Config, config::Backend};
 pub use anthropic::AnthropicBackend;
 pub use bedrock::BedrockBackend;
+pub use openai::OpenAiBackend;
 pub use traits::*;
 
 /// Create an LLM backend instance based on the provided configuration
@@ -44,6 +46,9 @@ pub async fn create_backend_from_config(config: &Config) -> Result<Arc<dyn LlmBa
 
             Ok(Arc::new(backend))
         }
-        Backend::OpenAi => Err("OpenAI backend is not yet implemented".to_string()),
+        Backend::OpenAi => {
+            let backend = OpenAiBackend::from_config(&config.backends.openai);
+            Ok(Arc::new(backend))
+        }
     }
 }

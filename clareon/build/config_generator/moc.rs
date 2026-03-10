@@ -25,10 +25,7 @@ pub fn run_moc(header_path: &PathBuf, output_path: &PathBuf) -> Result<(), Strin
     if Path::new(&moc_path).exists() {
         println!("Found MOC at: {}", moc_path);
     } else {
-        return Err(format!(
-            "MOC executable not found at location {}",
-            moc_path
-        ));
+        return Err(format!("MOC executable not found at location {}", moc_path));
     }
 
     // Run MOC

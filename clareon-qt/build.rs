@@ -4,8 +4,8 @@
 
 use std::path::{Path, PathBuf};
 
-use cxx_qt_build::CxxQtBuilder;
 use cmake_package::find_package;
+use cxx_qt_build::CxxQtBuilder;
 
 /// Find the Qt MOC executable.
 ///
