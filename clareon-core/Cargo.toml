@@ -36,6 +36,9 @@ aws-config = { workspace = true }
 aws-sdk-bedrockruntime = { workspace = true }
 aws-smithy-types = { workspace = true }
 
+# OpenAI-compatible API
+async-openai = { workspace = true }
+
 # HTTP client (for Anthropic API)
 reqwest = { workspace = true }
 

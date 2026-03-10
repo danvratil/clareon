@@ -44,6 +44,9 @@ aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-bedrockruntime = "1"
 aws-smithy-types = "1"
 
+# OpenAI-compatible API
+async-openai = "0.33"
+
 # HTTP client (for Anthropic API)
 reqwest = { version = "0.12", features = ["json", "stream"] }
 
