@@ -44,5 +44,6 @@ pub async fn create_backend_from_config(config: &Config) -> Result<Arc<dyn LlmBa
 
             Ok(Arc::new(backend))
         }
+        Backend::OpenAi => Err("OpenAI backend is not yet implemented".to_string()),
     }
 }

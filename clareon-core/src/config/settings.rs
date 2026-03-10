@@ -19,6 +19,7 @@ pub enum Backend {
     #[default]
     Bedrock,
     Anthropic,
+    OpenAi,
 }
 
 impl TryFrom<&str> for Backend {
@@ -28,6 +29,7 @@ impl TryFrom<&str> for Backend {
         match value.to_lowercase().as_str() {
             "bedrock" => Ok(Backend::Bedrock),
             "anthropic" => Ok(Backend::Anthropic),
+            "openai" => Ok(Backend::OpenAi),
             other => Err(ConfigError::Invalid(format!("Unknown backend: {}", other))),
         }
     }
@@ -83,6 +85,10 @@ pub struct BackendsConfig {
     /// Anthropic API configuration
     #[serde(default)]
     pub anthropic: AnthropicConfig,
+
+    /// OpenAI-compatible API configuration
+    #[serde(default)]
+    pub openai: OpenAiConfig,
 }
 
 /// AWS Bedrock backend configuration
@@ -124,6 +130,18 @@ pub struct AnthropicConfig {
     pub api_key_in_keyring: bool,
 
     /// Base URL for the API (for custom endpoints)
+    #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
+    pub base_url: Option<String>,
+}
+
+/// OpenAI-compatible API backend configuration
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OpenAiConfig {
+    /// API key (plaintext for now, keyring later)
+    #[serde(default)]
+    pub api_key: Option<String>,
+
+    /// Base URL for the API (defaults to https://api.openai.com/v1)
     #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
     pub base_url: Option<String>,
 }
@@ -617,6 +635,38 @@ mod tests {
         assert_eq!(
             config.base_url,
             Some("https://api.example.com/v1/messages".to_string())
+        );
+    }
+
+    #[test]
+    fn test_openai_config_defaults() {
+        let json = r#"{"default_backend": "openai"}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.default_backend, Backend::OpenAi);
+        assert_eq!(config.backends.openai.api_key, None);
+        assert_eq!(config.backends.openai.base_url, None);
+    }
+
+    #[test]
+    fn test_openai_config_with_values() {
+        let json = r#"{
+            "default_backend": "openai",
+            "backends": {
+                "openai": {
+                    "api_key": "sk-test-key",
+                    "base_url": "http://localhost:4000/v1"
+                }
+            }
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.default_backend, Backend::OpenAi);
+        assert_eq!(
+            config.backends.openai.api_key,
+            Some("sk-test-key".to_string())
+        );
+        assert_eq!(
+            config.backends.openai.base_url,
+            Some("http://localhost:4000/v1".to_string())
         );
     }
 
