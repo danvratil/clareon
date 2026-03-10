@@ -4,7 +4,9 @@
 
 //! OpenAI-compatible API backend implementation
 
+use std::collections::HashSet;
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 
 use async_openai::Client;
 use async_openai::config::OpenAIConfig as AsyncOpenAIConfig;
@@ -14,15 +16,16 @@ use async_openai::types::chat::{
     ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
     ChatCompletionRequestToolMessage, ChatCompletionRequestToolMessageContent,
     ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
-    ChatCompletionResponseMessage, ChatCompletionTool, ChatCompletionTools,
-    CreateChatCompletionRequestArgs, FinishReason, FunctionCall, FunctionObject,
+    ChatCompletionResponseMessage, ChatCompletionStreamOptions, ChatCompletionTool,
+    ChatCompletionTools, CreateChatCompletionRequestArgs, FinishReason, FunctionCall,
+    FunctionObject,
 };
 use async_trait::async_trait;
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use tracing::{debug, info, warn};
 
 use super::traits::{
-    ChatRequest, ChatResponse, LlmBackend, ModelInfo, StopReason, StreamEvent, Usage,
+    ChatRequest, ChatResponse, ContentDelta, LlmBackend, ModelInfo, StopReason, StreamEvent, Usage,
 };
 use crate::config::OpenAiConfig as ClareonOpenAiConfig;
 use crate::error::BackendError;
@@ -421,10 +424,164 @@ impl LlmBackend for OpenAiBackend {
 
     async fn send_message_stream(
         &self,
-        _request: &ChatRequest,
+        request: &ChatRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, BackendError>> + Send>>, BackendError>
     {
-        todo!("Streaming implemented in Task 6")
+        info!(
+            "Sending streaming message to OpenAI API, model: {}",
+            request.model
+        );
+        debug!("Message count: {}", request.messages.len());
+        debug!("Tools count: {}", request.tools.len());
+
+        let messages = Self::convert_messages(&request.system_prompt, &request.messages);
+        let tools = Self::convert_tools(&request.tools);
+
+        #[allow(deprecated)]
+        let mut builder = CreateChatCompletionRequestArgs::default();
+        builder
+            .model(&request.model)
+            .messages(messages)
+            .max_completion_tokens(request.max_tokens)
+            .stream_options(ChatCompletionStreamOptions {
+                include_usage: Some(true),
+                include_obfuscation: None,
+            });
+
+        if let Some(temp) = request.temperature {
+            builder.temperature(temp);
+        }
+
+        if let Some(tools) = tools {
+            builder.tools(tools);
+        }
+
+        let openai_request = builder.build().map_err(map_openai_error)?;
+
+        let stream = self
+            .client
+            .chat()
+            .create_stream(openai_request)
+            .await
+            .map_err(map_openai_error)?;
+
+        // Track which content block indices have been started
+        let started_blocks: Arc<Mutex<HashSet<usize>>> = Arc::new(Mutex::new(HashSet::new()));
+
+        let mapped_stream = stream.flat_map(move |result| {
+            let started_blocks = Arc::clone(&started_blocks);
+            let events: Vec<Result<StreamEvent, BackendError>> = match result {
+                Err(err) => vec![Err(map_openai_error(err))],
+                Ok(response) => {
+                    let mut events = Vec::new();
+
+                    // Handle usage in the final chunk
+                    if let Some(usage) = response.usage {
+                        events.push(Ok(StreamEvent::Usage(Usage {
+                            input_tokens: i64::from(usage.prompt_tokens),
+                            output_tokens: i64::from(usage.completion_tokens),
+                            cache_read_input_tokens: None,
+                            cache_write_input_tokens: None,
+                        })));
+                    }
+
+                    for choice in &response.choices {
+                        let delta = &choice.delta;
+
+                        // Handle text content delta
+                        if let Some(content) = &delta.content {
+                            let mut started = started_blocks.lock().unwrap();
+                            if !started.contains(&0) {
+                                // First text delta - emit ContentBlockStart
+                                started.insert(0);
+                                events.push(Ok(StreamEvent::ContentBlockStart {
+                                    index: 0,
+                                    block: ContentBlock::Text {
+                                        text: String::new(),
+                                    },
+                                }));
+                            }
+                            events.push(Ok(StreamEvent::ContentBlockDelta {
+                                index: 0,
+                                delta: ContentDelta::Text {
+                                    text: content.clone(),
+                                },
+                            }));
+                        }
+
+                        // Handle tool call deltas
+                        if let Some(tool_calls) = &delta.tool_calls {
+                            for tc_chunk in tool_calls {
+                                let block_index = tc_chunk.index as usize + 1;
+                                let mut started = started_blocks.lock().unwrap();
+
+                                if !started.contains(&block_index) {
+                                    // First delta for this tool call - emit ContentBlockStart
+                                    started.insert(block_index);
+                                    let id = tc_chunk
+                                        .id
+                                        .clone()
+                                        .unwrap_or_else(|| format!("tool_{block_index}"));
+                                    let name = tc_chunk
+                                        .function
+                                        .as_ref()
+                                        .and_then(|f| f.name.clone())
+                                        .unwrap_or_default();
+                                    events.push(Ok(StreamEvent::ContentBlockStart {
+                                        index: block_index,
+                                        block: ContentBlock::ToolUse {
+                                            id,
+                                            name,
+                                            input: serde_json::Value::Object(
+                                                serde_json::Map::new(),
+                                            ),
+                                        },
+                                    }));
+                                }
+
+                                // Emit tool input delta if there are arguments
+                                if let Some(func) = &tc_chunk.function
+                                    && let Some(args) = &func.arguments
+                                    && !args.is_empty()
+                                {
+                                    events.push(Ok(StreamEvent::ContentBlockDelta {
+                                        index: block_index,
+                                        delta: ContentDelta::ToolInput {
+                                            partial_json: args.clone(),
+                                        },
+                                    }));
+                                }
+                            }
+                        }
+
+                        // Handle finish_reason
+                        if let Some(finish_reason) = &choice.finish_reason {
+                            let started = started_blocks.lock().unwrap();
+                            let mut indices: Vec<usize> = started.iter().copied().collect();
+                            indices.sort_unstable();
+                            for idx in indices {
+                                events.push(Ok(StreamEvent::ContentBlockStop { index: idx }));
+                            }
+
+                            let stop_reason = match finish_reason {
+                                FinishReason::Stop => StopReason::EndTurn,
+                                FinishReason::ToolCalls => StopReason::ToolUse,
+                                FinishReason::Length => StopReason::MaxTokens,
+                                FinishReason::ContentFilter => StopReason::EndTurn,
+                                FinishReason::FunctionCall => StopReason::ToolUse,
+                            };
+                            events.push(Ok(StreamEvent::MessageStop { stop_reason }));
+                        }
+                    }
+
+                    events
+                }
+            };
+
+            futures::stream::iter(events)
+        });
+
+        Ok(Box::pin(mapped_stream))
     }
 
     fn name(&self) -> &'static str {
