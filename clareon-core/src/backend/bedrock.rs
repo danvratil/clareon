@@ -578,8 +578,8 @@ impl LlmBackend for BedrockBackend {
         "AWS Bedrock"
     }
 
-    fn available_models(&self) -> &[ModelInfo] {
-        &[] // Models are region-dependent, use get_models() instead
+    async fn available_models(&self) -> Result<Vec<ModelInfo>, BackendError> {
+        Ok(vec![]) // Models are region-dependent, use get_models() instead
     }
 
     fn default_model(&self) -> &ModelInfo {

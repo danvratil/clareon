@@ -877,7 +877,7 @@ mod backend_info {
         let server = MockServer::start().await.unwrap();
         let backend = create_backend(&server.base_url());
 
-        let models = backend.available_models();
+        let models = backend.available_models().await.unwrap();
         assert!(!models.is_empty());
 
         // Check that expected models are present

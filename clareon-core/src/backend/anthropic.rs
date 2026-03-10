@@ -503,8 +503,8 @@ impl LlmBackend for AnthropicBackend {
         "Anthropic API"
     }
 
-    fn available_models(&self) -> &[ModelInfo] {
-        &self.models
+    async fn available_models(&self) -> Result<Vec<ModelInfo>, BackendError> {
+        Ok(self.models.clone())
     }
 
     fn default_model(&self) -> &ModelInfo {

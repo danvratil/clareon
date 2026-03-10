@@ -32,7 +32,7 @@ pub trait LlmBackend: Send + Sync {
     fn name(&self) -> &'static str;
 
     /// List available models for this backend
-    fn available_models(&self) -> &[ModelInfo];
+    async fn available_models(&self) -> Result<Vec<ModelInfo>, BackendError>;
 
     /// Return the default model for this backend
     fn default_model(&self) -> &ModelInfo;
