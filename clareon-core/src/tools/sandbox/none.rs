@@ -31,7 +31,7 @@ impl NoneSandbox {
                 context.workspace.output().to_string_lossy().to_string(),
             ),
             (
-                "/home/claude",
+                "/home/clareon",
                 context.workspace.workspace().to_string_lossy().to_string(),
             ),
         ];

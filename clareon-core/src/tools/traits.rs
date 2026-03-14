@@ -113,7 +113,7 @@ impl ToolResult {
 #[async_trait]
 pub trait Sandbox: Send + Sync + Debug {
     fn workspace(&self) -> PathBuf {
-        PathBuf::from("/home/claude")
+        PathBuf::from("/home/clareon")
     }
 
     fn input_dir(&self) -> PathBuf {

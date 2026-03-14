@@ -148,7 +148,7 @@ mod tests {
         // Read using sandbox path
         let tool = ReadFileTool;
         let input = json!({
-            "path": "/home/claude/test.txt"
+            "path": "/home/clareon/test.txt"
         });
 
         let result = tool.execute(&input, &context).await.unwrap();
@@ -211,7 +211,7 @@ mod tests {
         // Read using sandbox path
         let tool = ReadFileTool;
         let input = json!({
-            "path": "/home/claude/subdir/nested.txt"
+            "path": "/home/clareon/subdir/nested.txt"
         });
 
         let result = tool.execute(&input, &context).await.unwrap();
@@ -229,7 +229,7 @@ mod tests {
 
         let tool = ReadFileTool;
         let input = json!({
-            "path": "/home/claude/multiline.txt"
+            "path": "/home/clareon/multiline.txt"
         });
 
         let result = tool.execute(&input, &context).await.unwrap();
@@ -250,7 +250,7 @@ mod tests {
 
         let tool = ReadFileTool;
         let input = json!({
-            "path": "/home/claude/large.txt"
+            "path": "/home/clareon/large.txt"
         });
 
         let result = tool.execute(&input, &context).await.unwrap();
@@ -294,7 +294,7 @@ mod tests {
 
         let tool = ReadFileTool;
         let input = json!({
-            "path": "/home/claude/nonexistent.txt"
+            "path": "/home/clareon/nonexistent.txt"
         });
 
         let result = tool.execute(&input, &context).await.unwrap();
@@ -313,7 +313,7 @@ mod tests {
 
         let tool = ReadFileTool;
         let input = json!({
-            "path": "/home/claude/binary.dat"
+            "path": "/home/clareon/binary.dat"
         });
 
         let result = tool.execute(&input, &context).await.unwrap();

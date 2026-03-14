@@ -141,7 +141,7 @@ mod tests {
 
         let tool = WriteFileTool;
         let input = json!({
-            "path": "/home/claude/test.txt",
+            "path": "/home/clareon/test.txt",
             "content": "Hello, workspace!"
         });
 
@@ -185,7 +185,7 @@ mod tests {
 
         let tool = WriteFileTool;
         let input = json!({
-            "path": "/home/claude/subdir/nested.txt",
+            "path": "/home/clareon/subdir/nested.txt",
             "content": "Nested content"
         });
 
@@ -204,7 +204,7 @@ mod tests {
         let content = "Line 1\nLine 2\nLine 3\n";
         let tool = WriteFileTool;
         let input = json!({
-            "path": "/home/claude/multiline.txt",
+            "path": "/home/clareon/multiline.txt",
             "content": content
         });
 
@@ -228,7 +228,7 @@ mod tests {
         // Overwrite it
         let tool = WriteFileTool;
         let input = json!({
-            "path": "/home/claude/existing.txt",
+            "path": "/home/clareon/existing.txt",
             "content": "New content"
         });
 
@@ -246,7 +246,7 @@ mod tests {
 
         let tool = WriteFileTool;
         let input = json!({
-            "path": "/home/claude/empty.txt",
+            "path": "/home/clareon/empty.txt",
             "content": ""
         });
 
@@ -268,7 +268,7 @@ mod tests {
         let large_content = "X".repeat(50_000);
         let tool = WriteFileTool;
         let input = json!({
-            "path": "/home/claude/large.txt",
+            "path": "/home/clareon/large.txt",
             "content": large_content.clone()
         });
 
@@ -289,7 +289,7 @@ mod tests {
         let special_content = "Special chars: !@#$%^&*()_+-=[]{}|;':\",./<>?`~\nTab:\tNewline:\n";
         let tool = WriteFileTool;
         let input = json!({
-            "path": "/home/claude/special.txt",
+            "path": "/home/clareon/special.txt",
             "content": special_content
         });
 
@@ -354,7 +354,7 @@ mod tests {
 
         let tool = WriteFileTool;
         let input = json!({
-            "path": "/home/claude/test.txt"
+            "path": "/home/clareon/test.txt"
             // Missing "content" field
         });
 

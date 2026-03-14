@@ -77,23 +77,23 @@ impl BubblewrapSandbox {
         // Create writable /tmp
         args.extend_from_slice(&["--tmpfs".to_string(), "/tmp".to_string()]);
 
-        // Make /home writable (tmpfs) so we can create /home/claude
+        // Make /home writable (tmpfs) so we can create /home/clareon
         args.extend_from_slice(&["--tmpfs".to_string(), "/home".to_string()]);
 
-        // Mount workspace to /home/claude (RW)
+        // Mount workspace to /home/clareon (RW)
         args.extend_from_slice(&[
             "--bind".to_string(),
             context.workspace.workspace().to_string_lossy().to_string(),
-            "/home/claude".to_string(),
+            "/home/clareon".to_string(),
         ]);
 
-        // Mount shared pip cache to /home/claude/.local (RW)
+        // Mount shared pip cache to /home/clareon/.local (RW)
         // Need to create the directory first
-        args.extend_from_slice(&["--dir".to_string(), "/home/claude/.local".to_string()]);
+        args.extend_from_slice(&["--dir".to_string(), "/home/clareon/.local".to_string()]);
         args.extend_from_slice(&[
             "--bind".to_string(),
             context.workspace.pip_cache().to_string_lossy().to_string(),
-            "/home/claude/.local".to_string(),
+            "/home/clareon/.local".to_string(),
         ]);
 
         // Make /mnt writable (tmpfs) so we can create mount points
@@ -140,8 +140,8 @@ impl BubblewrapSandbox {
             }
         }
 
-        // Set working directory to /home/claude
-        args.extend_from_slice(&["--chdir".to_string(), "/home/claude".to_string()]);
+        // Set working directory to /home/clareon
+        args.extend_from_slice(&["--chdir".to_string(), "/home/clareon".to_string()]);
 
         // Clear environment and set only what's needed
         args.push("--clearenv".to_string());
@@ -155,17 +155,17 @@ impl BubblewrapSandbox {
         args.extend_from_slice(&[
             "--setenv".to_string(),
             "HOME".to_string(),
-            "/home/claude".to_string(),
+            "/home/clareon".to_string(),
         ]);
         args.extend_from_slice(&[
             "--setenv".to_string(),
             "PATH".to_string(),
-            "/usr/bin:/bin:/home/claude/.local/bin".to_string(),
+            "/usr/bin:/bin:/home/clareon/.local/bin".to_string(),
         ]);
         args.extend_from_slice(&[
             "--setenv".to_string(),
             "USER".to_string(),
-            "claude".to_string(),
+            "clareon".to_string(),
         ]);
 
         // Add the actual command to execute
@@ -534,7 +534,7 @@ mod tests {
         // Read it from sandbox
         let result = sandbox
             .execute(
-                &["cat".to_string(), "/home/claude/test.txt".to_string()],
+                &["cat".to_string(), "/home/clareon/test.txt".to_string()],
                 &context,
                 None,
                 Duration::from_secs(5),
@@ -561,7 +561,7 @@ mod tests {
                 &[
                     "sh".to_string(),
                     "-c".to_string(),
-                    "echo 'test output' > /home/claude/output.txt".to_string(),
+                    "echo 'test output' > /home/clareon/output.txt".to_string(),
                 ],
                 &context,
                 None,
@@ -715,9 +715,9 @@ mod tests {
         let output = String::from_utf8_lossy(&result.stdout);
 
         // Should have HOME, PATH, USER
-        assert!(output.contains("HOME=/home/claude"));
+        assert!(output.contains("HOME=/home/clareon"));
         assert!(output.contains("PATH="));
-        assert!(output.contains("USER=claude"));
+        assert!(output.contains("USER=clareon"));
 
         // Should NOT have many host environment variables
         // (this is a basic check - the env should be minimal)
@@ -850,7 +850,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_working_directory() {
-        // Verify working directory is set to /home/claude
+        // Verify working directory is set to /home/clareon
         let sandbox = BubblewrapSandbox::new(SandboxMode::Basic);
         require_bubblewrap(&sandbox);
 
@@ -863,6 +863,6 @@ mod tests {
 
         assert_eq!(result.exit_code, 0);
         let output = String::from_utf8_lossy(&result.stdout);
-        assert_eq!(output.trim(), "/home/claude");
+        assert_eq!(output.trim(), "/home/clareon");
     }
 }

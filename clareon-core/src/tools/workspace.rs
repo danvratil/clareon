@@ -79,7 +79,7 @@ impl PersistentWorkspace {
         Ok(())
     }
 
-    /// Get the workspace path (mounted to /home/claude)
+    /// Get the workspace path (mounted to /home/clareon)
     pub fn workspace(&self) -> &Path {
         &self.workspace_path
     }
@@ -94,7 +94,7 @@ impl PersistentWorkspace {
         &self.output_path
     }
 
-    /// Get the shared pip cache path (mounted to /home/claude/.local/)
+    /// Get the shared pip cache path (mounted to /home/clareon/.local/)
     pub fn pip_cache(&self) -> &Path {
         &self.pip_cache_path
     }

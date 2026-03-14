@@ -52,7 +52,7 @@ impl Tool for ListDirectoryTool {
 
         // Check if path is in allowed sandbox directories
         let host_path = if path.starts_with(context.sandbox.workspace()) {
-            // Map /home/claude/* to host workspace path
+            // Map /home/clareon/* to host workspace path
             context.workspace.workspace().join(
                 path.strip_prefix(context.sandbox.workspace())
                     .map_err(|e| ToolError::InvalidInput(e.to_string()))?,
@@ -166,7 +166,7 @@ mod tests {
         // List using sandbox path
         let tool = ListDirectoryTool;
         let input = json!({
-            "path": "/home/claude"
+            "path": "/home/clareon"
         });
 
         let result = tool.execute(&input, &context).await.unwrap();
@@ -230,7 +230,7 @@ mod tests {
         // List using sandbox path
         let tool = ListDirectoryTool;
         let input = json!({
-            "path": "/home/claude/mydir"
+            "path": "/home/clareon/mydir"
         });
 
         let result = tool.execute(&input, &context).await.unwrap();
@@ -274,7 +274,7 @@ mod tests {
         // Workspace is empty by default
         let tool = ListDirectoryTool;
         let input = json!({
-            "path": "/home/claude"
+            "path": "/home/clareon"
         });
 
         let result = tool.execute(&input, &context).await.unwrap();
@@ -288,7 +288,7 @@ mod tests {
 
         let tool = ListDirectoryTool;
         let input = json!({
-            "path": "/home/claude/nonexistent"
+            "path": "/home/clareon/nonexistent"
         });
 
         let result = tool.execute(&input, &context).await.unwrap();
