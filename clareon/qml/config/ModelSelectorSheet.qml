@@ -209,23 +209,13 @@ Kirigami.OverlaySheet {
                 required property string modelInputModalities
                 required property string modelOutputModalities
 
-                Rectangle {
+                Kirigami.AbstractCard {
                     id: card
                     anchors.fill: parent
                     anchors.margins: Kirigami.Units.smallSpacing
+                    showClickFeedback: true
 
-                    radius: Kirigami.Units.cornerRadius
-                    color: cardMouseArea.containsMouse ? Kirigami.Theme.highlightColor : Kirigami.Theme.backgroundColor
-                    border.color: cardMouseArea.containsMouse ? Kirigami.Theme.highlightColor : Kirigami.Theme.separatorColor
-                    border.width: 1
-
-                    Kirigami.Theme.colorSet: Kirigami.Theme.View
-                    Kirigami.Theme.inherit: false
-
-                    ColumnLayout {
-                        id: cardContent
-                        anchors.fill: parent
-                        anchors.margins: Kirigami.Units.largeSpacing
+                    contentItem: ColumnLayout {
                         spacing: Kirigami.Units.smallSpacing
 
                         // Owner
@@ -323,15 +313,9 @@ Kirigami.OverlaySheet {
                         }
                     }
 
-                    MouseArea {
-                        id: cardMouseArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            sheet.modelSelected(modelId, modelContextWindow, modelMaxOutputTokens)
-                            sheet.close()
-                        }
+                    onClicked: {
+                        sheet.modelSelected(modelId, modelContextWindow, modelMaxOutputTokens)
+                        sheet.close()
                     }
                 }
             }
