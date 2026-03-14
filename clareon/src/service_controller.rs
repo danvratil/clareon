@@ -111,6 +111,13 @@ mod ffi {
         #[qsignal]
         fn quick_input_requested(self: Pin<&mut ServiceController>);
 
+        // Signals for model events
+        #[qsignal]
+        fn models_loaded(self: Pin<&mut ServiceController>);
+
+        #[qsignal]
+        fn models_load_failed(self: Pin<&mut ServiceController>, error: QString);
+
         // Actions (invokable from QML)
         #[qinvokable]
         fn new_conversation(self: &ServiceController);
@@ -154,12 +161,49 @@ mod ffi {
         // Data access (synchronous, reads from cache)
         #[qinvokable]
         fn get_conversation_count(self: &ServiceController) -> i32;
+
+        #[qinvokable]
+        fn fetch_available_models(self: &ServiceController, provider: &QString);
+
+        #[qinvokable]
+        fn get_model_count(self: &ServiceController) -> i32;
+
+        #[qinvokable]
+        fn get_model_id(self: &ServiceController, index: i32) -> QString;
+
+        #[qinvokable]
+        fn get_model_name(self: &ServiceController, index: i32) -> QString;
+
+        #[qinvokable]
+        fn get_model_context_window(self: &ServiceController, index: i32) -> u32;
+
+        #[qinvokable]
+        fn get_model_max_output_tokens(self: &ServiceController, index: i32) -> u32;
+
+        #[qinvokable]
+        fn get_model_description(self: &ServiceController, index: i32) -> QString;
+
+        #[qinvokable]
+        fn get_model_owner(self: &ServiceController, index: i32) -> QString;
+
+        #[qinvokable]
+        fn get_model_pricing_prompt(self: &ServiceController, index: i32) -> QString;
+
+        #[qinvokable]
+        fn get_model_pricing_completion(self: &ServiceController, index: i32) -> QString;
+
+        #[qinvokable]
+        fn get_model_input_modalities(self: &ServiceController, index: i32) -> QString;
+
+        #[qinvokable]
+        fn get_model_output_modalities(self: &ServiceController, index: i32) -> QString;
     }
 
     impl cxx_qt::Threading for ServiceController {}
     impl cxx_qt::Initialize for ServiceController {}
 }
 
+use clareon_core::config::Provider;
 use cxx_qt_lib::{QList, QString, QStringList};
 
 /// Rust implementation of ServiceController
@@ -355,8 +399,13 @@ impl ffi::ServiceController {
                 self.as_mut().quick_input_requested();
             }
 
-            Response::ModelsLoaded { .. } | Response::ModelsLoadFailed { .. } => {
-                // Handled by the models cache layer (Task 6)
+            Response::ModelsLoaded { models } => {
+                *crate::qt::models_cache().lock().unwrap() = models;
+                self.as_mut().models_loaded();
+            }
+
+            Response::ModelsLoadFailed { error } => {
+                self.as_mut().models_load_failed(QString::from(&error));
             }
         }
     }
@@ -523,5 +572,115 @@ X-LXQt-Need-Tray=true"#,
     /// Get the number of conversations
     fn get_conversation_count(&self) -> i32 {
         crate::qt::conversations_cache().lock().unwrap().len() as i32
+    }
+
+    /// Fetch available models for a provider
+    fn fetch_available_models(&self, provider: &QString) {
+        let handle = get_service_handle();
+        let provider_str = provider.to_string();
+        let provider = match provider_str.as_str() {
+            "openai" => Provider::OpenAi,
+            "openrouter" => Provider::OpenRouter,
+            "litellm" => Provider::LiteLlm,
+            _ => {
+                tracing::warn!("Unsupported provider for model fetching: {}", provider_str);
+                return;
+            }
+        };
+        let _ = handle.send(Command::FetchAvailableModels { provider });
+    }
+
+    fn get_model_count(&self) -> i32 {
+        crate::qt::models_cache().lock().unwrap().len() as i32
+    }
+
+    fn get_model_id(&self, index: i32) -> QString {
+        let arc = crate::qt::models_cache();
+        let cache = arc.lock().unwrap();
+        cache
+            .get(index as usize)
+            .map(|m| QString::from(&m.id))
+            .unwrap_or_default()
+    }
+
+    fn get_model_name(&self, index: i32) -> QString {
+        let arc = crate::qt::models_cache();
+        let cache = arc.lock().unwrap();
+        cache
+            .get(index as usize)
+            .map(|m| QString::from(&m.name))
+            .unwrap_or_default()
+    }
+
+    fn get_model_context_window(&self, index: i32) -> u32 {
+        let arc = crate::qt::models_cache();
+        let cache = arc.lock().unwrap();
+        cache
+            .get(index as usize)
+            .map(|m| m.context_window)
+            .unwrap_or(0)
+    }
+
+    fn get_model_max_output_tokens(&self, index: i32) -> u32 {
+        let arc = crate::qt::models_cache();
+        let cache = arc.lock().unwrap();
+        cache
+            .get(index as usize)
+            .map(|m| m.max_output_tokens)
+            .unwrap_or(0)
+    }
+
+    fn get_model_description(&self, index: i32) -> QString {
+        let arc = crate::qt::models_cache();
+        let cache = arc.lock().unwrap();
+        cache
+            .get(index as usize)
+            .map(|m| QString::from(&m.description))
+            .unwrap_or_default()
+    }
+
+    fn get_model_owner(&self, index: i32) -> QString {
+        let arc = crate::qt::models_cache();
+        let cache = arc.lock().unwrap();
+        cache
+            .get(index as usize)
+            .map(|m| QString::from(&m.owner))
+            .unwrap_or_default()
+    }
+
+    fn get_model_pricing_prompt(&self, index: i32) -> QString {
+        let arc = crate::qt::models_cache();
+        let cache = arc.lock().unwrap();
+        cache
+            .get(index as usize)
+            .map(|m| QString::from(&m.pricing_prompt))
+            .unwrap_or_default()
+    }
+
+    fn get_model_pricing_completion(&self, index: i32) -> QString {
+        let arc = crate::qt::models_cache();
+        let cache = arc.lock().unwrap();
+        cache
+            .get(index as usize)
+            .map(|m| QString::from(&m.pricing_completion))
+            .unwrap_or_default()
+    }
+
+    fn get_model_input_modalities(&self, index: i32) -> QString {
+        let arc = crate::qt::models_cache();
+        let cache = arc.lock().unwrap();
+        cache
+            .get(index as usize)
+            .map(|m| QString::from(&m.input_modalities))
+            .unwrap_or_default()
+    }
+
+    fn get_model_output_modalities(&self, index: i32) -> QString {
+        let arc = crate::qt::models_cache();
+        let cache = arc.lock().unwrap();
+        cache
+            .get(index as usize)
+            .map(|m| QString::from(&m.output_modalities))
+            .unwrap_or_default()
     }
 }

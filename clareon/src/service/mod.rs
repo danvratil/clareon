@@ -9,7 +9,7 @@ mod response;
 mod worker;
 
 pub use command::Command;
-pub use response::{ArtifactData, ErrorCategory, ErrorInfo, MessageData, Response};
+pub use response::{ArtifactData, ErrorCategory, ErrorInfo, MessageData, ModelInfoData, Response};
 pub use worker::ServiceWorker;
 
 use std::sync::Arc;
