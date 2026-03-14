@@ -23,7 +23,7 @@ pub struct UserFile {
     pub created_at: i64,
 }
 
-/// Claude-generated artifact (file in output directory)
+/// AI-generated artifact (file in output directory)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Artifact {
     pub id: i64,

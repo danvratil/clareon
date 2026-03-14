@@ -23,7 +23,7 @@ async fn test_anthropic_backend_with_mock_server() {
 
     // Create a simple message
     let conv_id = ConversationId::new();
-    let messages = vec![Message::user(conv_id, "Hello, Claude!")];
+    let messages = vec![Message::user(conv_id, "Hello!")];
 
     // Build request
     let request = ChatRequest::new(messages, "claude-sonnet-4-20250514").with_max_tokens(1024);

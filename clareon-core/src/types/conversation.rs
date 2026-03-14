@@ -61,7 +61,7 @@ impl std::borrow::Borrow<str> for ConversationId {
     }
 }
 
-/// A conversation with Claude
+/// A conversation with the assistant
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Conversation {
     /// Unique identifier (UUIDv4)

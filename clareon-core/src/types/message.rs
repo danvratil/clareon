@@ -14,7 +14,7 @@ use super::{ContentBlock, ConversationId};
 pub enum Role {
     /// Message from the user
     User,
-    /// Message from the assistant (Claude)
+    /// Message from the assistant
     Assistant,
 }
 
@@ -188,9 +188,9 @@ mod tests {
 
     #[test]
     fn test_user_message_creation() {
-        let msg = Message::user("test-conversation-id", "Hello, Claude!");
+        let msg = Message::user("test-conversation-id", "Hello!");
         assert_eq!(msg.role, Role::User);
-        assert_eq!(msg.text_content, Some("Hello, Claude!".to_string()));
+        assert_eq!(msg.text_content, Some("Hello!".to_string()));
         assert_eq!(msg.content.len(), 1);
     }
 

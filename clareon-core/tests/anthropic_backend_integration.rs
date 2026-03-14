@@ -40,7 +40,7 @@ mod non_streaming {
         let backend = create_backend(&server.base_url());
 
         let request = ChatRequest::new(
-            vec![create_user_message("Hello, Claude!")],
+            vec![create_user_message("Hello!")],
             "claude-sonnet-4-5-20250929",
         );
 
@@ -134,7 +134,7 @@ mod streaming {
         let backend = create_backend(&server.base_url());
 
         let request = ChatRequest::new(
-            vec![create_user_message("Hello, Claude!")],
+            vec![create_user_message("Hello!")],
             "claude-sonnet-4-5-20250929",
         );
 

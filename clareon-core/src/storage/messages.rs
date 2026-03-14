@@ -278,11 +278,11 @@ mod tests {
         let conv = Conversation::new("test");
         let conv_id = storage.create_conversation(&conv).await.unwrap();
 
-        let msg = Message::user(conv_id.clone(), "Hello, Claude!");
+        let msg = Message::user(conv_id.clone(), "Hello!");
         let msg_id = storage.add_message(&msg).await.unwrap();
 
         let loaded = storage.get_message(msg_id).await.unwrap();
-        assert_eq!(loaded.text_content, Some("Hello, Claude!".to_string()));
+        assert_eq!(loaded.text_content, Some("Hello!".to_string()));
         assert_eq!(loaded.role, Role::User);
     }
 

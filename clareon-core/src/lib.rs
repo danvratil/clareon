@@ -4,7 +4,7 @@
 
 //! Clareon Core Library
 //!
-//! This crate provides the core functionality for the Clareon Claude assistant,
+//! This crate provides the core functionality for the Clareon assistant,
 //! including LLM backends, conversation management, storage, and configuration.
 
 pub mod backend;

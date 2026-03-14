@@ -104,7 +104,7 @@ pub struct BedrockConfig {
 
     /// Enable prompt caching (default: true)
     /// Caches system prompts to reduce costs and latency on subsequent calls
-    /// Only works with Claude Sonnet 3.5+, Opus 4, and Nova models
+    /// Only works with select models (Claude Sonnet 3.5+, Opus 4, Nova)
     #[serde(default = "default_true")]
     pub enable_prompt_caching: bool,
 }

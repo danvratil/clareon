@@ -27,7 +27,7 @@ use super::traits::{
 use crate::error::BackendError;
 use crate::types::{ContentBlock, ConversationId, Message, Role, ToolResultContent};
 
-/// AWS Bedrock backend for Claude models
+/// AWS Bedrock backend for Anthropic models
 pub struct BedrockBackend {
     client: Client,
     region: String,
@@ -583,7 +583,7 @@ impl LlmBackend for BedrockBackend {
     }
 
     fn default_model(&self) -> &ModelInfo {
-        // Return Claude Sonnet 4 as the default model
+        // Return Anthropic Sonnet 4 as the default model
         static DEFAULT_MODEL: LazyLock<ModelInfo> = LazyLock::new(|| ModelInfo {
             id: "eu.anthropic.claude-sonnet-4-5-20250929-v1:0".to_string(),
             name: "Claude Sonnet 4 (Bedrock)".to_string(),
@@ -711,7 +711,7 @@ impl BedrockBackend {
         }
     }
 
-    /// Get available Claude models on Bedrock
+    /// Get available Anthropic models on Bedrock
     pub fn get_models() -> Vec<ModelInfo> {
         vec![
             ModelInfo {
