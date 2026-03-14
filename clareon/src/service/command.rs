@@ -4,6 +4,7 @@
 
 //! Commands sent from the Qt layer to the service worker
 
+use clareon_core::config::Provider;
 use clareon_core::types::{ContentBlock, ConversationId};
 
 /// Commands represent all actions the UI can request from the service
@@ -73,4 +74,7 @@ pub enum Command {
 
     /// Activate quick input window
     ActivateQuickInput,
+
+    /// Fetch available models for a provider
+    FetchAvailableModels { provider: Provider },
 }

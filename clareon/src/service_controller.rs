@@ -354,6 +354,10 @@ impl ffi::ServiceController {
             Response::ActivateQuickInput => {
                 self.as_mut().quick_input_requested();
             }
+
+            Response::ModelsLoaded { .. } | Response::ModelsLoadFailed { .. } => {
+                // Handled by the models cache layer (Task 6)
+            }
         }
     }
 

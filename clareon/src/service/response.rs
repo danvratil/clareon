@@ -68,6 +68,21 @@ pub struct ArtifactData {
     pub updated_at: i64,
 }
 
+/// Simplified model info for Qt consumption
+#[derive(Debug, Clone)]
+pub struct ModelInfoData {
+    pub id: String,
+    pub name: String,
+    pub context_window: u32,
+    pub max_output_tokens: u32,
+    pub description: String,
+    pub owner: String,
+    pub pricing_prompt: String,
+    pub pricing_completion: String,
+    pub input_modalities: String,
+    pub output_modalities: String,
+}
+
 /// Responses represent all events and results sent from the service to the UI
 #[derive(Debug, Clone)]
 pub enum Response {
@@ -163,4 +178,10 @@ pub enum Response {
 
     /// Quick input window activation was requested
     ActivateQuickInput,
+
+    /// Available models were loaded
+    ModelsLoaded { models: Vec<ModelInfoData> },
+
+    /// Failed to load available models
+    ModelsLoadFailed { error: String },
 }
