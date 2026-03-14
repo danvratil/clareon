@@ -80,6 +80,10 @@ impl OpenAiBackend {
             name: "GPT-4o".to_string(),
             context_window: 128000,
             max_output_tokens: 16384,
+            description: None,
+            owner: None,
+            pricing: None,
+            modalities: None,
         }
     }
 
@@ -649,6 +653,10 @@ impl LlmBackend for OpenAiBackend {
                 name: m.id,
                 context_window: 0, // OpenAI API doesn't provide this in the list endpoint
                 max_output_tokens: 0,
+                description: None,
+                owner: None,
+                pricing: None,
+                modalities: None,
             })
             .collect();
 

@@ -143,6 +143,32 @@ pub struct ModelInfo {
     pub context_window: u32,
     /// Maximum output tokens
     pub max_output_tokens: u32,
+    /// Model description (if available from provider)
+    pub description: Option<String>,
+    /// Model owner/vendor (parsed from ID slug, e.g. "anthropic" from "anthropic/claude-sonnet-4-5")
+    pub owner: Option<String>,
+    /// Pricing information (if available from provider)
+    pub pricing: Option<ModelPricing>,
+    /// Supported modalities (if available from provider)
+    pub modalities: Option<ModelModalities>,
+}
+
+/// Pricing information for a model (raw strings from provider API)
+#[derive(Debug, Clone, Default)]
+pub struct ModelPricing {
+    /// Input/prompt price (raw string from API)
+    pub prompt: Option<String>,
+    /// Output/completion price (raw string from API)
+    pub completion: Option<String>,
+}
+
+/// Modality information for a model
+#[derive(Debug, Clone, Default)]
+pub struct ModelModalities {
+    /// Input modalities (e.g. "text", "image", "audio")
+    pub input: Vec<String>,
+    /// Output modalities (e.g. "text", "image")
+    pub output: Vec<String>,
 }
 
 /// Tool definition (for future tool support)

@@ -589,6 +589,10 @@ impl LlmBackend for BedrockBackend {
             name: "Claude Sonnet 4 (Bedrock)".to_string(),
             context_window: 200000,
             max_output_tokens: 16000,
+            description: None,
+            owner: None,
+            pricing: None,
+            modalities: None,
         });
 
         &DEFAULT_MODEL
@@ -715,24 +719,40 @@ impl BedrockBackend {
                 name: "Claude Opus 4 (Bedrock)".to_string(),
                 context_window: 200000,
                 max_output_tokens: 32000,
+                description: None,
+                owner: None,
+                pricing: None,
+                modalities: None,
             },
             ModelInfo {
                 id: "eu.anthropic.claude-sonnet-4-5-20250929-v1:0".to_string(),
                 name: "Claude Sonnet 4 (Bedrock)".to_string(),
                 context_window: 200000,
                 max_output_tokens: 16000,
+                description: None,
+                owner: None,
+                pricing: None,
+                modalities: None,
             },
             ModelInfo {
                 id: "anthropic.claude-3-5-haiku-20241022-v1:0".to_string(),
                 name: "Claude 3.5 Haiku (Bedrock)".to_string(),
                 context_window: 200000,
                 max_output_tokens: 8192,
+                description: None,
+                owner: None,
+                pricing: None,
+                modalities: None,
             },
             ModelInfo {
                 id: "anthropic.claude-3-5-haiku-20241022-v1:0".to_string(),
                 name: "Claude 3.5 Haiku (Bedrock)".to_string(),
                 context_window: 200000,
                 max_output_tokens: 8192,
+                description: None,
+                owner: None,
+                pricing: None,
+                modalities: None,
             },
         ]
     }
