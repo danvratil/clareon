@@ -117,6 +117,31 @@ Kirigami.OverlaySheet {
         }
     }
 
+    // ListModel for GridView - populated from filteredModels JS array
+    ListModel {
+        id: gridModel
+    }
+
+    // Sync filteredModels array to ListModel whenever it changes
+    onFilteredModelsChanged: {
+        gridModel.clear()
+        for (let i = 0; i < filteredModels.length; i++) {
+            let m = filteredModels[i]
+            gridModel.append({
+                modelId: m.id,
+                modelName: m.name,
+                modelContextWindow: m.contextWindow,
+                modelMaxOutputTokens: m.maxOutputTokens,
+                modelDescription: m.description,
+                modelOwner: m.owner,
+                modelPricingPrompt: m.pricingPrompt,
+                modelPricingCompletion: m.pricingCompletion,
+                modelInputModalities: m.inputModalities,
+                modelOutputModalities: m.outputModalities,
+            })
+        }
+    }
+
     ColumnLayout {
         spacing: Kirigami.Units.largeSpacing
         Layout.preferredWidth: Kirigami.Units.gridUnit * 40
@@ -150,25 +175,44 @@ Kirigami.OverlaySheet {
             icon.name: "edit-find"
         }
 
-        // Model grid
-        GridLayout {
-            columns: 2
-            columnSpacing: Kirigami.Units.largeSpacing
-            rowSpacing: Kirigami.Units.largeSpacing
+        // Virtualized model grid - only instantiates visible delegates
+        GridView {
+            id: modelGrid
             Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.preferredHeight: Kirigami.Units.gridUnit * 30
             visible: !sheet.loading && sheet.errorMessage === "" && sheet.filteredModels.length > 0
 
-            Repeater {
-                model: sheet.filteredModels
+            cellWidth: modelGrid.width / 2
+            cellHeight: Kirigami.Units.gridUnit * 12
 
-                delegate: Rectangle {
+            clip: true
+            model: gridModel
+
+            Controls.ScrollBar.vertical: Controls.ScrollBar {
+                policy: Controls.ScrollBar.AsNeeded
+            }
+
+            delegate: Item {
+                width: modelGrid.cellWidth
+                height: modelGrid.cellHeight
+
+                required property int index
+                required property string modelId
+                required property string modelName
+                required property int modelContextWindow
+                required property int modelMaxOutputTokens
+                required property string modelDescription
+                required property string modelOwner
+                required property string modelPricingPrompt
+                required property string modelPricingCompletion
+                required property string modelInputModalities
+                required property string modelOutputModalities
+
+                Rectangle {
                     id: card
-
-                    required property var modelData
-                    required property int index
-
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: cardContent.implicitHeight + 2 * Kirigami.Units.largeSpacing
+                    anchors.fill: parent
+                    anchors.margins: Kirigami.Units.smallSpacing
 
                     radius: Kirigami.Units.cornerRadius
                     color: cardMouseArea.containsMouse ? Kirigami.Theme.highlightColor : Kirigami.Theme.backgroundColor
@@ -186,8 +230,8 @@ Kirigami.OverlaySheet {
 
                         // Owner
                         Controls.Label {
-                            text: card.modelData.owner.toUpperCase()
-                            visible: card.modelData.owner !== ""
+                            text: modelOwner.toUpperCase()
+                            visible: modelOwner !== ""
                             font.pointSize: Kirigami.Theme.smallFont.pointSize
                             font.weight: Font.Medium
                             color: Kirigami.Theme.disabledTextColor
@@ -196,7 +240,7 @@ Kirigami.OverlaySheet {
 
                         // Model name
                         Controls.Label {
-                            text: card.modelData.name || card.modelData.id
+                            text: modelName || modelId
                             font.bold: true
                             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.1
                             Layout.fillWidth: true
@@ -205,8 +249,8 @@ Kirigami.OverlaySheet {
 
                         // Model ID
                         Controls.Label {
-                            text: card.modelData.id
-                            visible: card.modelData.name !== "" && card.modelData.name !== card.modelData.id
+                            text: modelId
+                            visible: modelName !== "" && modelName !== modelId
                             font.pointSize: Kirigami.Theme.smallFont.pointSize
                             color: Kirigami.Theme.disabledTextColor
                             Layout.fillWidth: true
@@ -215,8 +259,8 @@ Kirigami.OverlaySheet {
 
                         // Description
                         Controls.Label {
-                            text: card.modelData.description
-                            visible: card.modelData.description !== ""
+                            text: modelDescription
+                            visible: modelDescription !== ""
                             font.pointSize: Kirigami.Theme.smallFont.pointSize
                             color: Kirigami.Theme.disabledTextColor
                             Layout.fillWidth: true
@@ -229,15 +273,14 @@ Kirigami.OverlaySheet {
                         Flow {
                             Layout.fillWidth: true
                             spacing: Kirigami.Units.smallSpacing
-                            visible: inputModalitiesRepeater.count > 0
-                                || card.modelData.pricingPrompt !== ""
-                                || card.modelData.pricingCompletion !== ""
-                                || card.modelData.contextWindow > 0
-                                || card.modelData.maxOutputTokens > 0
+                            visible: modelInputModalities !== ""
+                                || modelPricingPrompt !== ""
+                                || modelPricingCompletion !== ""
+                                || modelContextWindow > 0
+                                || modelMaxOutputTokens > 0
 
                             Repeater {
-                                id: inputModalitiesRepeater
-                                model: card.modelData.inputModalities || []
+                                model: modelInputModalities !== "" ? modelInputModalities.split(",") : []
                                 delegate: Kirigami.Chip {
                                     text: modelData
                                     closable: false
@@ -246,32 +289,37 @@ Kirigami.OverlaySheet {
                             }
 
                             Kirigami.Chip {
-                                text: qsTr("Prompt: %1").arg(card.modelData.pricingPrompt)
-                                visible: card.modelData.pricingPrompt !== ""
+                                text: qsTr("Prompt: %1").arg(modelPricingPrompt)
+                                visible: modelPricingPrompt !== ""
                                 closable: false
                                 checkable: false
                             }
 
                             Kirigami.Chip {
-                                text: qsTr("Completion: %1").arg(card.modelData.pricingCompletion)
-                                visible: card.modelData.pricingCompletion !== ""
+                                text: qsTr("Completion: %1").arg(modelPricingCompletion)
+                                visible: modelPricingCompletion !== ""
                                 closable: false
                                 checkable: false
                             }
 
                             Kirigami.Chip {
-                                text: qsTr("Context: %1").arg(card.modelData.contextWindow.toLocaleString())
-                                visible: card.modelData.contextWindow > 0
+                                text: qsTr("Context: %1").arg(modelContextWindow.toLocaleString())
+                                visible: modelContextWindow > 0
                                 closable: false
                                 checkable: false
                             }
 
                             Kirigami.Chip {
-                                text: qsTr("Max output: %1").arg(card.modelData.maxOutputTokens.toLocaleString())
-                                visible: card.modelData.maxOutputTokens > 0
+                                text: qsTr("Max output: %1").arg(modelMaxOutputTokens.toLocaleString())
+                                visible: modelMaxOutputTokens > 0
                                 closable: false
                                 checkable: false
                             }
+                        }
+
+                        // Spacer to push content to top
+                        Item {
+                            Layout.fillHeight: true
                         }
                     }
 
@@ -281,7 +329,7 @@ Kirigami.OverlaySheet {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
-                            sheet.modelSelected(card.modelData.id, card.modelData.contextWindow, card.modelData.maxOutputTokens)
+                            sheet.modelSelected(modelId, modelContextWindow, modelMaxOutputTokens)
                             sheet.close()
                         }
                     }
