@@ -17,6 +17,7 @@ Kirigami.ScrollablePage {
     property bool isDirty: false
 
     readonly property string selectedProvider: providerComboBox.currentValue || "openai"
+    readonly property bool isOpenAiBacked: ["openai", "openrouter", "litellm"].indexOf(selectedProvider) !== -1
 
     ColumnLayout {
         width: root.width
@@ -332,7 +333,7 @@ Kirigami.ScrollablePage {
             }
         }
 
-        // Default Model (shared across all providers)
+        // Default Model section
         Kirigami.FormLayout {
             Layout.fillWidth: true
 
@@ -341,11 +342,30 @@ Kirigami.ScrollablePage {
                 Kirigami.FormData.label: qsTr("Default Model")
             }
 
-            Controls.TextField {
-                id: defaultModelField
+            // Browse mode (OpenAI-backed providers)
+            RowLayout {
                 Kirigami.FormData.label: qsTr("Default model:")
-                placeholderText: "gpt-4o"
-                text: root.config.defaultModel || "gpt-4o"
+                visible: isOpenAiBacked
+                Layout.fillWidth: true
+
+                Controls.Label {
+                    text: root.config.defaultModel || qsTr("(none selected)")
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                }
+                Controls.Button {
+                    text: qsTr("Browse Models...")
+                    icon.name: "view-list-details"
+                    onClicked: defaultModelSheet.open()
+                }
+            }
+
+            // Fallback text field (Anthropic/Bedrock)
+            Controls.TextField {
+                Kirigami.FormData.label: qsTr("Default model:")
+                visible: !isOpenAiBacked
+                placeholderText: "claude-sonnet-4-5-20250929"
+                text: root.config.defaultModel || ""
                 Layout.fillWidth: true
                 onTextChanged: {
                     if (text !== root.config.defaultModel) {
@@ -354,11 +374,29 @@ Kirigami.ScrollablePage {
                 }
             }
 
-            Controls.TextField {
-                id: titleModelField
+            // Same pattern for title generation model
+            RowLayout {
                 Kirigami.FormData.label: qsTr("Title generation model:")
-                placeholderText: "gpt-4o-mini"
-                text: root.config.models.titleGeneration || "gpt-4o-mini"
+                visible: isOpenAiBacked
+                Layout.fillWidth: true
+
+                Controls.Label {
+                    text: root.config.models.titleGeneration || qsTr("(none selected)")
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                }
+                Controls.Button {
+                    text: qsTr("Browse Models...")
+                    icon.name: "view-list-details"
+                    onClicked: titleModelSheet.open()
+                }
+            }
+
+            Controls.TextField {
+                Kirigami.FormData.label: qsTr("Title generation model:")
+                visible: !isOpenAiBacked
+                placeholderText: "claude-haiku-3-5-20241022"
+                text: root.config.models.titleGeneration || ""
                 Layout.fillWidth: true
                 onTextChanged: {
                     if (text !== root.config.models.titleGeneration) {
@@ -368,12 +406,29 @@ Kirigami.ScrollablePage {
             }
 
             Controls.Label {
-                text: qsTr("Use the model ID as shown by your provider (e.g., gpt-4o, claude-sonnet-4-5-20250929, etc.)")
+                text: qsTr("Use the model ID as shown by your provider")
+                visible: !isOpenAiBacked
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
                 color: Kirigami.Theme.disabledTextColor
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }
+        }
+    }
+
+    ModelSelectorSheet {
+        id: defaultModelSheet
+        provider: selectedProvider
+        onModelSelected: function(modelId, contextWindow, maxOutputTokens) {
+            root.config.defaultModel = modelId
+        }
+    }
+
+    ModelSelectorSheet {
+        id: titleModelSheet
+        provider: selectedProvider
+        onModelSelected: function(modelId, contextWindow, maxOutputTokens) {
+            root.config.models.titleGeneration = modelId
         }
     }
 }
