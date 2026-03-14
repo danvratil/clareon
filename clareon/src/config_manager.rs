@@ -14,10 +14,10 @@ mod ffi {
 
         // Q_GADGET config types from generated code
         type ConfigCpp;
-        type BackendsConfigCpp;
+        type ProvidersConfigCpp;
+        type OpenAiBackendConfigCpp;
         type BedrockConfigCpp;
         type AnthropicConfigCpp;
-        type OpenAiConfigCpp;
         type SystemPromptConfigCpp;
         type ModelsConfigCpp;
         type ToolsConfigCpp;
@@ -99,6 +99,13 @@ impl ffi::ConfigManager {
                 match clareon_core::ConfigManager::get().save() {
                     Ok(()) => {
                         tracing::info!("Configuration saved successfully");
+                        // Notify the service worker to reload with the new config
+                        if let Some(handle) =
+                            crate::service_controller::try_get_service_handle()
+                        {
+                            let _ =
+                                handle.send(crate::service::Command::ReloadConfig);
+                        }
                         true
                     }
                     Err(e) => {

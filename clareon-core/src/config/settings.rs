@@ -13,42 +13,35 @@ use tracing::{debug, info};
 
 use crate::error::{ConfigError, Result};
 
+/// LLM provider selection
+///
+/// Providers are the user-facing abstraction. Multiple providers (OpenAI,
+/// OpenRouter, LiteLLM) may share the same backend implementation internally.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
-pub enum Backend {
+pub enum Provider {
     #[default]
-    Bedrock,
-    Anthropic,
     OpenAi,
-}
-
-impl TryFrom<&str> for Backend {
-    type Error = ConfigError;
-
-    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
-        match value.to_lowercase().as_str() {
-            "bedrock" => Ok(Backend::Bedrock),
-            "anthropic" => Ok(Backend::Anthropic),
-            "openai" => Ok(Backend::OpenAi),
-            other => Err(ConfigError::Invalid(format!("Unknown backend: {}", other))),
-        }
-    }
+    OpenRouter,
+    LiteLlm,
+    Anthropic,
+    Bedrock,
 }
 
 /// Main configuration struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    /// Default backend to use (bedrock or anthropic)
+    /// Default provider to use
     #[serde(default)]
-    pub default_backend: Backend,
+    pub default_provider: Provider,
 
     /// Default model to use
     #[serde(default = "default_model")]
     pub default_model: String,
 
-    /// Backend-specific configuration
+    /// Provider-specific configuration
     #[serde(default)]
-    pub backends: BackendsConfig,
+    pub providers: ProvidersConfig,
 
     /// System prompt configuration
     #[serde(default)]
@@ -72,23 +65,31 @@ pub struct Config {
 }
 
 fn default_model() -> String {
-    "anthropic.claude-sonnet-4-20250514-v1:0".to_string()
+    "gpt-4o".to_string()
 }
 
-/// Backend-specific configuration
+/// Provider-specific configuration
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct BackendsConfig {
-    /// AWS Bedrock configuration
+pub struct ProvidersConfig {
+    /// OpenAI provider configuration
     #[serde(default)]
-    pub bedrock: BedrockConfig,
+    pub openai: OpenAiBackendConfig,
+
+    /// OpenRouter provider configuration
+    #[serde(default)]
+    pub openrouter: OpenAiBackendConfig,
+
+    /// LiteLLM provider configuration
+    #[serde(default)]
+    pub litellm: OpenAiBackendConfig,
 
     /// Anthropic API configuration
     #[serde(default)]
     pub anthropic: AnthropicConfig,
 
-    /// OpenAI-compatible API configuration
+    /// AWS Bedrock configuration
     #[serde(default)]
-    pub openai: OpenAiConfig,
+    pub bedrock: BedrockConfig,
 }
 
 /// AWS Bedrock backend configuration
@@ -134,14 +135,17 @@ pub struct AnthropicConfig {
     pub base_url: Option<String>,
 }
 
-/// OpenAI-compatible API backend configuration
+/// Configuration for OpenAI-compatible providers (OpenAI, OpenRouter, LiteLLM)
+///
+/// Each provider uses the same structure, but the backend applies different
+/// defaults based on the selected provider.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct OpenAiConfig {
-    /// API key (plaintext for now, keyring later)
+pub struct OpenAiBackendConfig {
+    /// API key
     #[serde(default)]
     pub api_key: Option<String>,
 
-    /// Base URL for the API (defaults to https://api.openai.com/v1)
+    /// Base URL for the API (provider-specific default if not set)
     #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
     pub base_url: Option<String>,
 }
@@ -202,7 +206,7 @@ pub struct ModelsConfig {
 }
 
 fn default_title_model() -> String {
-    "anthropic.claude-3-5-haiku-20241022-v1:0".to_string()
+    "gpt-4o-mini".to_string()
 }
 
 impl Default for ModelsConfig {
@@ -371,9 +375,9 @@ pub struct UiConfig {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            default_backend: Backend::default(),
+            default_provider: Provider::default(),
             default_model: default_model(),
-            backends: BackendsConfig::default(),
+            providers: ProvidersConfig::default(),
             system_prompt: SystemPromptConfig::default(),
             models: ModelsConfig::default(),
             tools: ToolsConfig::default(),
@@ -536,7 +540,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.default_backend, Backend::Bedrock);
+        assert_eq!(config.default_provider, Provider::OpenAi);
     }
 
     #[test]
@@ -544,15 +548,15 @@ mod tests {
         let config = Config::default();
         let json = serde_json::to_string(&config).unwrap();
         let loaded: Config = serde_json::from_str(&json).unwrap();
-        assert_eq!(config.default_backend, loaded.default_backend);
+        assert_eq!(config.default_provider, loaded.default_provider);
     }
 
     #[test]
     fn test_config_deserialization_with_defaults() {
         // Test that missing fields use defaults
-        let json = r#"{"default_backend": "anthropic"}"#;
+        let json = r#"{"default_provider": "anthropic"}"#;
         let config: Config = serde_json::from_str(json).unwrap();
-        assert_eq!(config.default_backend, Backend::Anthropic);
+        assert_eq!(config.default_provider, Provider::Anthropic);
     }
 
     #[test]
@@ -639,33 +643,51 @@ mod tests {
     }
 
     #[test]
-    fn test_openai_config_defaults() {
-        let json = r#"{"default_backend": "openai"}"#;
+    fn test_openai_provider_defaults() {
+        let json = r#"{"default_provider": "openai"}"#;
         let config: Config = serde_json::from_str(json).unwrap();
-        assert_eq!(config.default_backend, Backend::OpenAi);
-        assert_eq!(config.backends.openai.api_key, None);
-        assert_eq!(config.backends.openai.base_url, None);
+        assert_eq!(config.default_provider, Provider::OpenAi);
+        assert_eq!(config.providers.openai.api_key, None);
+        assert_eq!(config.providers.openai.base_url, None);
     }
 
     #[test]
-    fn test_openai_config_with_values() {
+    fn test_openrouter_provider_config() {
         let json = r#"{
-            "default_backend": "openai",
-            "backends": {
-                "openai": {
+            "default_provider": "openrouter",
+            "providers": {
+                "openrouter": {
+                    "api_key": "sk-or-test-key"
+                }
+            }
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.default_provider, Provider::OpenRouter);
+        assert_eq!(
+            config.providers.openrouter.api_key,
+            Some("sk-or-test-key".to_string())
+        );
+    }
+
+    #[test]
+    fn test_litellm_provider_config() {
+        let json = r#"{
+            "default_provider": "litellm",
+            "providers": {
+                "litellm": {
                     "api_key": "sk-test-key",
                     "base_url": "http://localhost:4000/v1"
                 }
             }
         }"#;
         let config: Config = serde_json::from_str(json).unwrap();
-        assert_eq!(config.default_backend, Backend::OpenAi);
+        assert_eq!(config.default_provider, Provider::LiteLlm);
         assert_eq!(
-            config.backends.openai.api_key,
+            config.providers.litellm.api_key,
             Some("sk-test-key".to_string())
         );
         assert_eq!(
-            config.backends.openai.base_url,
+            config.providers.litellm.base_url,
             Some("http://localhost:4000/v1".to_string())
         );
     }

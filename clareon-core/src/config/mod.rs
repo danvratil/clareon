@@ -13,4 +13,4 @@ mod settings;
 
 pub use manager::ConfigManager;
 pub use secrets::{ANTHROPIC_API_KEY, SecretStore};
-pub use settings::{AnthropicConfig, Backend, Config, OpenAiConfig, SandboxModeConfig};
+pub use settings::{AnthropicConfig, Config, OpenAiBackendConfig, Provider, SandboxModeConfig};

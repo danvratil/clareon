@@ -117,6 +117,11 @@ impl ConversationManager {
         self.storage.clone()
     }
 
+    /// Get a reference to the tool executor (if configured)
+    pub fn tool_executor(&self) -> Option<Arc<ToolExecutor>> {
+        self.tool_executor.clone()
+    }
+
     /// Start a new conversation
     pub async fn new_conversation(&self) -> Result<Conversation> {
         let model = &self.config.default_model;

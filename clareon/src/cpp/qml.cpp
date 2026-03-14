@@ -17,14 +17,14 @@ void registerClareonQmlTypes() {
     qmlRegisterType<ArtifactListModel>("cc.clareon.core", 1, 0, "ArtifactListModel");
     qmlRegisterUncreatableType<ConfigCpp>("cc.clareon.core", 1, 0, "ConfigCpp",
                                       QStringLiteral("ConfigCpp is not creatable from QML"));
-    qmlRegisterUncreatableType<BackendsConfigCpp>("cc.clareon.core", 1, 0, "BackendsConfigCpp",
-                                      QStringLiteral("BackendsConfigCpp is not creatable from QML"));
+    qmlRegisterUncreatableType<ProvidersConfigCpp>("cc.clareon.core", 1, 0, "ProvidersConfigCpp",
+                                      QStringLiteral("ProvidersConfigCpp is not creatable from QML"));
     qmlRegisterUncreatableType<AnthropicConfigCpp>("cc.clareon.core", 1, 0, "AnthropicConfigCpp",
                                       QStringLiteral("AnthropicConfigCpp is not creatable from QML"));
     qmlRegisterUncreatableType<BedrockConfigCpp>("cc.clareon.core", 1, 0, "BedrockConfigCpp",
                                       QStringLiteral("BedrockConfigCpp is not creatable from QML"));
-    qmlRegisterUncreatableType<OpenAiConfigCpp>("cc.clareon.core", 1, 0, "OpenAiConfigCpp",
-                                      QStringLiteral("OpenAiConfigCpp is not creatable from QML"));
+    qmlRegisterUncreatableType<OpenAiBackendConfigCpp>("cc.clareon.core", 1, 0, "OpenAiBackendConfigCpp",
+                                      QStringLiteral("OpenAiBackendConfigCpp is not creatable from QML"));
     qmlRegisterUncreatableType<ToolsConfigCpp>("cc.clareon.core", 1, 0, "ToolsConfigCpp",
                                       QStringLiteral("ToolsConfigCpp is not creatable from QML"));
     qmlRegisterUncreatableType<SystemPromptConfigCpp>("cc.clareon.core", 1, 0, "SystemPromptConfigCpp",

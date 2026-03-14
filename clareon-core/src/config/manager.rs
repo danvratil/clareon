@@ -21,7 +21,7 @@ use crate::error::Result;
 /// use clareon_core::ConfigManager;
 ///
 /// let config = ConfigManager::get().config();
-/// println!("Default backend: {:?}", config.default_backend);
+/// println!("Default provider: {:?}", config.default_provider);
 /// ```
 pub struct ConfigManager {
     config: Arc<Mutex<Config>>,
@@ -61,7 +61,7 @@ impl ConfigManager {
     /// use clareon_core::ConfigManager;
     ///
     /// ConfigManager::get().update_config(|config| {
-    ///     config.default_backend = clareon_core::config::Backend::Anthropic;
+    ///     config.default_provider = clareon_core::config::Provider::Anthropic;
     /// }).unwrap();
     /// ```
     pub fn update_config<F>(&self, f: F) -> Result<()>
@@ -117,38 +117,38 @@ mod tests {
         let config2 = manager.config();
 
         // Configs should be equal but not the same instance
-        assert_eq!(config1.default_backend, config2.default_backend);
+        assert_eq!(config1.default_provider, config2.default_provider);
     }
 
     #[test]
     fn test_update_config() {
-        use crate::config::Backend;
+        use crate::config::Provider;
 
         let manager = create_test_manager();
         let original = manager.config();
 
         manager
             .update_config(|config| {
-                config.default_backend = Backend::Anthropic;
+                config.default_provider = Provider::Anthropic;
             })
             .unwrap();
 
         let updated = manager.config();
-        assert_eq!(updated.default_backend, Backend::Anthropic);
+        assert_eq!(updated.default_provider, Provider::Anthropic);
 
-        // Verify original was Bedrock (default)
-        assert_eq!(original.default_backend, Backend::Bedrock);
+        // Verify original was OpenAi (default)
+        assert_eq!(original.default_provider, Provider::OpenAi);
     }
 
     #[test]
     fn test_replace_config() {
-        use crate::config::Backend;
+        use crate::config::Provider;
 
         let manager = create_test_manager();
 
         // Create a custom config
         let custom_config = Config {
-            default_backend: Backend::Anthropic,
+            default_provider: Provider::Anthropic,
             default_model: "custom-model".to_string(),
             ..Default::default()
         };
@@ -158,7 +158,7 @@ mod tests {
 
         // Verify it was replaced
         let current = manager.config();
-        assert_eq!(current.default_backend, Backend::Anthropic);
+        assert_eq!(current.default_provider, Provider::Anthropic);
         assert_eq!(current.default_model, "custom-model");
     }
 }

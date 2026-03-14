@@ -62,6 +62,9 @@ pub enum Command {
     /// Save an artifact to a file
     SaveArtifact { artifact_id: i64, path: String },
 
+    /// Reload configuration and recreate the backend
+    ReloadConfig,
+
     /// Shutdown the service
     Shutdown,
 

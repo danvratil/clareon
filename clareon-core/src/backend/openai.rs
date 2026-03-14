@@ -27,34 +27,49 @@ use tracing::{debug, info, warn};
 use super::traits::{
     ChatRequest, ChatResponse, ContentDelta, LlmBackend, ModelInfo, StopReason, StreamEvent, Usage,
 };
-use crate::config::OpenAiConfig as ClareonOpenAiConfig;
+use crate::config::{OpenAiBackendConfig, Provider};
 use crate::error::BackendError;
 use crate::types::{ContentBlock, ConversationId, Message, Role};
 
 /// OpenAI-compatible API backend
+///
+/// Used by multiple providers (OpenAI, OpenRouter, LiteLLM) with
+/// provider-specific default configuration.
 pub struct OpenAiBackend {
     client: Client<AsyncOpenAIConfig>,
     default_model: ModelInfo,
+    #[allow(dead_code)] // Will be used for provider-aware model fetching
+    provider: Provider,
 }
 
 impl OpenAiBackend {
-    /// Create a new OpenAI backend from configuration
-    pub fn from_config(config: &ClareonOpenAiConfig) -> Self {
+    /// Create a new OpenAI backend from provider configuration
+    ///
+    /// The provider determines default settings (e.g., OpenRouter's base URL)
+    /// which can be overridden by explicit config values.
+    pub fn from_config(config: &OpenAiBackendConfig, provider: Provider) -> Self {
         let api_key = config.api_key.clone().unwrap_or_default();
+
+        // Apply provider-specific default base URL if user hasn't set one
+        let base_url = config.base_url.clone().or_else(|| match provider {
+            Provider::OpenRouter => Some("https://openrouter.ai/api/v1".to_string()),
+            _ => None,
+        });
 
         let mut openai_config = AsyncOpenAIConfig::new().with_api_key(api_key);
 
-        if let Some(base_url) = &config.base_url {
-            openai_config = openai_config.with_api_base(base_url);
+        if let Some(url) = &base_url {
+            openai_config = openai_config.with_api_base(url);
         }
 
         let client = Client::with_config(openai_config);
 
-        info!("Initializing OpenAI backend");
+        info!("Initializing OpenAI backend (provider: {:?})", provider);
 
         Self {
             client,
             default_model: Self::fallback_model(),
+            provider,
         }
     }
 

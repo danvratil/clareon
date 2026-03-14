@@ -59,7 +59,7 @@ impl ServiceWorker {
     }
 
     /// Handle a single command
-    async fn handle_command(&self, cmd: Command) {
+    async fn handle_command(&mut self, cmd: Command) {
         match cmd {
             Command::NewConversation => {
                 self.handle_new_conversation().await;
@@ -117,6 +117,9 @@ impl ServiceWorker {
             }
             Command::ActivateQuickInput => {
                 self.handle_activate_quick_input().await;
+            }
+            Command::ReloadConfig => {
+                self.handle_reload_config().await;
             }
         }
     }
@@ -882,6 +885,47 @@ impl ServiceWorker {
                 });
             }
         }
+    }
+
+    async fn handle_reload_config(&mut self) {
+        info!("Reloading configuration and recreating backend");
+
+        let config = clareon_core::ConfigManager::get().config();
+
+        // Recreate backends from new config
+        let backend = match clareon_core::backend::create_backend_from_config(&config).await {
+            Ok(b) => b,
+            Err(e) => {
+                error!("Failed to create backend after config reload: {}", e);
+                let _ = self.response_tx.send(Response::Error {
+                    command: "ReloadConfig".to_string(),
+                    error: format!("Failed to create backend: {}", e),
+                });
+                return;
+            }
+        };
+        let title_backend = match clareon_core::backend::create_backend_from_config(&config).await {
+            Ok(b) => b,
+            Err(e) => {
+                error!("Failed to create title backend after config reload: {}", e);
+                let _ = self.response_tx.send(Response::Error {
+                    command: "ReloadConfig".to_string(),
+                    error: format!("Failed to create title backend: {}", e),
+                });
+                return;
+            }
+        };
+
+        // Rebuild the ConversationManager, preserving storage and tool executor
+        let storage = self.manager.storage();
+        let tool_executor = self.manager.tool_executor();
+        let mut new_manager = ConversationManager::new(storage, backend, title_backend, config);
+        if let Some(executor) = tool_executor {
+            new_manager = new_manager.with_tools(executor);
+        }
+
+        self.manager = new_manager;
+        info!("Configuration reloaded successfully, backend recreated");
     }
 }
 
