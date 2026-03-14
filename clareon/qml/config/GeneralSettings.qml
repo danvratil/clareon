@@ -37,7 +37,7 @@ Kirigami.ScrollablePage {
 
             Controls.TextField {
                 id: userNameField
-                Kirigami.FormData.label: qsTr("What should Claude call you:")
+                Kirigami.FormData.label: qsTr("What should the assistant call you:")
                 placeholderText: qsTr("Your name")
                 Layout.fillWidth: true
                 text: root.config.systemPrompt.userName || ""
@@ -51,7 +51,7 @@ Kirigami.ScrollablePage {
             Controls.TextArea {
                 id: personalPrefsField
                 Kirigami.FormData.label: qsTr("Personal preferences:")
-                placeholderText: qsTr("Tell Claude about your preferences in responses (tone, style, verbosity, etc.)")
+                placeholderText: qsTr("Tell the assistant about your preferences in responses (tone, style, verbosity, etc.)")
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 wrapMode: TextEdit.Wrap

@@ -324,7 +324,7 @@ Kirigami.ScrollablePage {
                 }
 
                 Controls.Label {
-                    text: qsTr("Prompt caching is only available for Claude Sonnet 3.5+, Opus 4, and Nova models")
+                    text: qsTr("Prompt caching is only available for select models (Claude Sonnet 3.5+, Opus 4, Nova)")
                     font.pointSize: Kirigami.Theme.smallFont.pointSize
                     color: Kirigami.Theme.disabledTextColor
                     Layout.fillWidth: true

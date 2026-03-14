@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Clareon
 
-Clareon is an attempt at building a desktop AI assistant similar to Claude Desktop. Unlike Claude Desktop it should support wide range of model providers and aims to be multiplatform with actual proper Linux support.
+Clareon is a desktop AI assistant for Linux supporting multiple LLM backends including OpenAI-compatible APIs, AWS Bedrock, and the Anthropic API.
 
 ## Goals
 

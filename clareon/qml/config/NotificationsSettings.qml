@@ -65,7 +65,7 @@ Kirigami.ScrollablePage {
             Controls.CheckBox {
                 id: notifyResponseCompleteCheckBox
                 Kirigami.FormData.label: qsTr("Response complete:")
-                text: qsTr("Notify when Claude finishes responding")
+                text: qsTr("Notify when the assistant finishes responding")
                 checked: true
                 enabled: false
             }
@@ -91,7 +91,7 @@ Kirigami.ScrollablePage {
             Controls.CheckBox {
                 id: notifyToolRequestCheckBox
                 Kirigami.FormData.label: qsTr("Tool requests:")
-                text: qsTr("Notify when Claude wants to use a tool")
+                text: qsTr("Notify when the assistant wants to use a tool")
                 checked: false
                 enabled: false
             }

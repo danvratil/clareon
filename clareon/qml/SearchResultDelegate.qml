@@ -45,7 +45,7 @@ Controls.ItemDelegate {
 
         // Role indicator
         Controls.Label {
-            text: delegate.role === "user" ? qsTr("You") : qsTr("Claude")
+            text: delegate.role === "user" ? qsTr("You") : qsTr("Assistant")
             opacity: 0.6
             font.pointSize: Kirigami.Theme.smallFont.pointSize
             font.bold: true

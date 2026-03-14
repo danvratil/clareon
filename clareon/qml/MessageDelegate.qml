@@ -215,7 +215,7 @@ Item {
                 // Sender label (hidden for grouped assistant messages; never shown for user)
                 Controls.Label {
                     visible: root.role === "assistant" && !root.isGroupedWithPrevious
-                    text: "Claude"
+                    text: "Assistant"
                     font.pointSize: Kirigami.Theme.smallFont.pointSize
                     font.capitalization: Font.SmallCaps
                     font.bold: true

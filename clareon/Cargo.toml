@@ -4,7 +4,7 @@
 
 [package]
 name = "clareon"
-description = "Qt/QML GUI for Clareon - Claude assistant for Linux"
+description = "Qt/QML GUI for Clareon - AI assistant for Linux"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

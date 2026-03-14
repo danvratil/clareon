@@ -69,7 +69,7 @@ Kirigami.Page {
                     Layout.alignment: Qt.AlignHCenter
                     Layout.maximumWidth: parent.width
                     level: 3
-                    text: qsTr("Your Claude assistant for Linux")
+                    text: qsTr("Your AI assistant for Linux")
                     opacity: 0.7
                     wrapMode: Text.WordWrap
                 }
@@ -99,7 +99,7 @@ Kirigami.Page {
 
                             Controls.TextArea {
                                 id: messageInput
-                                placeholderText: qsTr("Message Claude...")
+                                placeholderText: qsTr("Message Assistant...")
                                 wrapMode: TextEdit.Wrap
                                 selectByMouse: true
                                 focus: true

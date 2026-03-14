@@ -4,7 +4,7 @@
 
 [package]
 name = "clareon-core"
-description = "Core library for Clareon - Claude assistant for Linux"
+description = "Core library for Clareon - AI assistant for Linux"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

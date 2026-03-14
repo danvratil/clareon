@@ -32,7 +32,7 @@ Kirigami.ScrollablePage {
             Controls.CheckBox {
                 id: enableToolsCheckBox
                 Kirigami.FormData.label: qsTr("Enable tools:")
-                text: qsTr("Allow Claude to use tools")
+                text: qsTr("Allow the assistant to use tools")
                 checked: root.config.tools?.enabled || true
                 onToggled: {
                     root.config.tools.enabled = checked
@@ -218,7 +218,7 @@ Kirigami.ScrollablePage {
             }
 
             Controls.Label {
-                text: qsTr("Model Context Protocol (MCP) servers provide additional tools and resources to Claude")
+                text: qsTr("Model Context Protocol (MCP) servers provide additional tools and resources to the assistant")
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
                 color: Kirigami.Theme.disabledTextColor
                 Layout.fillWidth: true
