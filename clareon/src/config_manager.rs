@@ -17,6 +17,7 @@ mod ffi {
         type BackendsConfigCpp;
         type BedrockConfigCpp;
         type AnthropicConfigCpp;
+        type OpenAiConfigCpp;
         type SystemPromptConfigCpp;
         type ModelsConfigCpp;
         type ToolsConfigCpp;

@@ -344,11 +344,41 @@ fn map_openai_error(err: async_openai::error::OpenAIError) -> BackendError {
             }
         }
         async_openai::error::OpenAIError::Reqwest(e) => BackendError::Http(e),
-        other => BackendError::Api {
-            status: 0,
-            message: other.to_string(),
-        },
+        other => {
+            // The async-openai crate may fail to deserialize error responses from
+            // OpenAI-compatible APIs (e.g. OpenRouter returns `"code": 402` as integer
+            // but the crate expects a string). Try to extract the error message from the
+            // raw response body embedded in the error string.
+            let error_str = other.to_string();
+            if let Some(message) = try_extract_error_message(&error_str) {
+                BackendError::Api { status: 0, message }
+            } else {
+                BackendError::Api {
+                    status: 0,
+                    message: error_str,
+                }
+            }
+        }
     }
+}
+
+/// Try to extract a user-friendly error message from a raw error string that may
+/// contain embedded JSON. OpenAI-compatible APIs often return error JSON that
+/// async-openai fails to deserialize due to type mismatches.
+fn try_extract_error_message(error_str: &str) -> Option<String> {
+    // Look for JSON content embedded in the error string
+    let json_start = error_str.find('{');
+    let json_end = error_str.rfind('}');
+
+    let start = json_start?;
+    let end = json_end?;
+    let json_str = &error_str[start..=end];
+    let value: serde_json::Value = serde_json::from_str(json_str).ok()?;
+    value
+        .get("error")
+        .and_then(|e| e.get("message"))
+        .and_then(|m| m.as_str())
+        .map(|s| s.to_string())
 }
 
 #[async_trait]

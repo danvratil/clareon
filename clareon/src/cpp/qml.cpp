@@ -23,6 +23,8 @@ void registerClareonQmlTypes() {
                                       QStringLiteral("AnthropicConfigCpp is not creatable from QML"));
     qmlRegisterUncreatableType<BedrockConfigCpp>("cc.clareon.core", 1, 0, "BedrockConfigCpp",
                                       QStringLiteral("BedrockConfigCpp is not creatable from QML"));
+    qmlRegisterUncreatableType<OpenAiConfigCpp>("cc.clareon.core", 1, 0, "OpenAiConfigCpp",
+                                      QStringLiteral("OpenAiConfigCpp is not creatable from QML"));
     qmlRegisterUncreatableType<ToolsConfigCpp>("cc.clareon.core", 1, 0, "ToolsConfigCpp",
                                       QStringLiteral("ToolsConfigCpp is not creatable from QML"));
     qmlRegisterUncreatableType<SystemPromptConfigCpp>("cc.clareon.core", 1, 0, "SystemPromptConfigCpp",

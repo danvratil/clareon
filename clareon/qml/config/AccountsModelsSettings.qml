@@ -32,22 +32,119 @@ Kirigami.ScrollablePage {
             Controls.ComboBox {
                 id: backendComboBox
                 Kirigami.FormData.label: qsTr("Default backend:")
-                model: ["bedrock", "anthropic"]
+                model: ["openai", "bedrock", "anthropic"]
                 currentIndex: {
-                    let backend = root.config.default_backend || "bedrock"
+                    let backend = root.config.defaultBackend || "openai"
                     return model.indexOf(backend) >= 0 ? model.indexOf(backend) : 0
                 }
                 onActivated: {
-                    root.config.default_backend = model[currentIndex]
+                    root.config.defaultBackend = model[currentIndex]
                 }
             }
 
             Controls.Label {
-                text: qsTr("Choose which API to use for Claude models")
+                text: qsTr("Choose which API backend to use. OpenAI-compatible supports LiteLLM, OpenRouter, and other providers.")
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
                 color: Kirigami.Theme.disabledTextColor
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
+            }
+        }
+
+        // OpenAI-compatible API Configuration
+        ColumnLayout {
+            id: openaiSection
+            Layout.fillWidth: true
+            spacing: Kirigami.Units.largeSpacing
+            visible: backendComboBox.currentIndex === 0
+
+            Kirigami.FormLayout {
+                Layout.fillWidth: true
+
+                Kirigami.Separator {
+                    Kirigami.FormData.isSection: true
+                    Kirigami.FormData.label: qsTr("OpenAI-compatible API Configuration")
+                }
+
+                Controls.TextField {
+                    id: openaiApiKeyField
+                    Kirigami.FormData.label: qsTr("API Key:")
+                    placeholderText: qsTr("sk-...")
+                    text: root.config.backends.openai.apiKey || ""
+                    echoMode: TextInput.Password
+                    Layout.fillWidth: true
+                    onTextChanged: {
+                        let currentValue = root.config.backends.openai.apiKey || ""
+                        if (text !== currentValue) {
+                            root.config.backends.openai.apiKey = text || null
+                        }
+                    }
+                }
+
+                Controls.TextField {
+                    id: openaiBaseUrlField
+                    Kirigami.FormData.label: qsTr("Base URL:")
+                    placeholderText: qsTr("https://api.openai.com/v1 (leave empty for default)")
+                    text: root.config.backends.openai.baseUrl || ""
+                    Layout.fillWidth: true
+                    onTextChanged: {
+                        let currentValue = root.config.backends.openai.baseUrl || ""
+                        if (text !== currentValue) {
+                            root.config.backends.openai.baseUrl = text || null
+                        }
+                    }
+                }
+
+                Controls.Label {
+                    text: qsTr("Set the base URL to point to your LiteLLM, OpenRouter, or other OpenAI-compatible API endpoint.")
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    color: Kirigami.Theme.disabledTextColor
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                }
+            }
+
+            Kirigami.FormLayout {
+                Layout.fillWidth: true
+
+                Kirigami.Separator {
+                    Kirigami.FormData.isSection: true
+                    Kirigami.FormData.label: qsTr("Default Model")
+                }
+
+                Controls.TextField {
+                    id: openaiDefaultModelField
+                    Kirigami.FormData.label: qsTr("Default model:")
+                    placeholderText: "gpt-4o"
+                    text: root.config.defaultModel || "gpt-4o"
+                    Layout.fillWidth: true
+                    onTextChanged: {
+                        if (text !== root.config.defaultModel) {
+                            root.config.defaultModel = text
+                        }
+                    }
+                }
+
+                Controls.TextField {
+                    id: openaiTitleModelField
+                    Kirigami.FormData.label: qsTr("Title generation model:")
+                    placeholderText: "gpt-4o-mini"
+                    text: root.config.models.titleGeneration || "gpt-4o-mini"
+                    Layout.fillWidth: true
+                    onTextChanged: {
+                        if (text !== root.config.models.titleGeneration) {
+                            root.config.models.titleGeneration = text
+                        }
+                    }
+                }
+
+                Controls.Label {
+                    text: qsTr("Use the model ID as shown by your API provider (e.g., gpt-4o, claude-sonnet-4-5-20250929, etc.)")
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    color: Kirigami.Theme.disabledTextColor
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                }
             }
         }
 
@@ -56,7 +153,7 @@ Kirigami.ScrollablePage {
             id: bedrockSection
             Layout.fillWidth: true
             spacing: Kirigami.Units.largeSpacing
-            visible: backendComboBox.currentIndex === 0
+            visible: backendComboBox.currentIndex === 1
 
             Kirigami.FormLayout {
                 Layout.fillWidth: true
@@ -97,9 +194,9 @@ Kirigami.ScrollablePage {
                     id: promptCachingCheckBox
                     Kirigami.FormData.label: qsTr("Prompt caching:")
                     text: qsTr("Enable prompt caching (reduces costs)")
-                    checked: root.config.backends.bedrock.enable_prompt_caching !== undefined ? root.config.backends.bedrock.enable_prompt_caching : true
+                    checked: root.config.backends.bedrock.enablePromptCaching !== undefined ? root.config.backends.bedrock.enablePromptCaching : true
                     onToggled: {
-                        root.config.backends.bedrock.enable_prompt_caching = checked
+                        root.config.backends.bedrock.enablePromptCaching = checked
                     }
                 }
 
@@ -125,11 +222,11 @@ Kirigami.ScrollablePage {
                     id: bedrockDefaultModelField
                     Kirigami.FormData.label: qsTr("Default model:")
                     placeholderText: "anthropic.claude-sonnet-4-20250514-v1:0"
-                    text: root.config.default_model || "anthropic.claude-sonnet-4-20250514-v1:0"
+                    text: root.config.defaultModel || "anthropic.claude-sonnet-4-20250514-v1:0"
                     Layout.fillWidth: true
                     onTextChanged: {
-                        if (text !== root.config.default_model) {
-                            root.config.default_model = text
+                        if (text !== root.config.defaultModel) {
+                            root.config.defaultModel = text
                         }
                     }
                 }
@@ -138,11 +235,11 @@ Kirigami.ScrollablePage {
                     id: bedrockTitleModelField
                     Kirigami.FormData.label: qsTr("Title generation model:")
                     placeholderText: "anthropic.claude-3-5-haiku-20241022-v1:0"
-                    text: root.config.models.title_generation || "anthropic.claude-3-5-haiku-20241022-v1:0"
+                    text: root.config.models.titleGeneration || "anthropic.claude-3-5-haiku-20241022-v1:0"
                     Layout.fillWidth: true
                     onTextChanged: {
-                        if (text !== root.config.models.title_generation) {
-                            root.config.models.title_generation = text
+                        if (text !== root.config.models.titleGeneration) {
+                            root.config.models.titleGeneration = text
                         }
                     }
                 }
@@ -162,7 +259,7 @@ Kirigami.ScrollablePage {
             id: anthropicSection
             Layout.fillWidth: true
             spacing: Kirigami.Units.largeSpacing
-            visible: backendComboBox.currentIndex === 1
+            visible: backendComboBox.currentIndex === 2
 
             Kirigami.FormLayout {
                 Layout.fillWidth: true
@@ -176,9 +273,9 @@ Kirigami.ScrollablePage {
                     id: apiKeyInKeyringCheckBox
                     Kirigami.FormData.label: qsTr("API Key storage:")
                     text: qsTr("Store API key in system keyring")
-                    checked: root.config.backends.anthropic.api_key_in_keyring !== undefined ? root.config.backends.anthropic.api_key_in_keyring : true
+                    checked: root.config.backends.anthropic.apiKeyInKeyring !== undefined ? root.config.backends.anthropic.apiKeyInKeyring : true
                     onToggled: {
-                        root.config.backends.anthropic.api_key_in_keyring = checked
+                        root.config.backends.anthropic.apiKeyInKeyring = checked
                     }
                 }
 
@@ -194,12 +291,12 @@ Kirigami.ScrollablePage {
                     id: anthropicBaseUrlField
                     Kirigami.FormData.label: qsTr("Base URL:")
                     placeholderText: qsTr("https://api.anthropic.com (leave empty for default)")
-                    text: root.config.backends.anthropic.base_url || ""
+                    text: root.config.backends.anthropic.baseUrl || ""
                     Layout.fillWidth: true
                     onTextChanged: {
-                        let currentValue = root.config.backends.anthropic.base_url || ""
+                        let currentValue = root.config.backends.anthropic.baseUrl || ""
                         if (text !== currentValue) {
-                            root.config.backends.anthropic.base_url = text || null
+                            root.config.backends.anthropic.baseUrl = text || null
                         }
                     }
                 }
@@ -225,11 +322,11 @@ Kirigami.ScrollablePage {
                     id: anthropicDefaultModelField
                     Kirigami.FormData.label: qsTr("Default model:")
                     placeholderText: "claude-sonnet-4-5-20250514"
-                    text: root.config.default_model || "anthropic.claude-sonnet-4-20250514-v1:0"
+                    text: root.config.defaultModel || "anthropic.claude-sonnet-4-20250514-v1:0"
                     Layout.fillWidth: true
                     onTextChanged: {
-                        if (text !== root.config.default_model) {
-                            root.config.default_model = text
+                        if (text !== root.config.defaultModel) {
+                            root.config.defaultModel = text
                         }
                     }
                 }
@@ -238,11 +335,11 @@ Kirigami.ScrollablePage {
                     id: anthropicTitleModelField
                     Kirigami.FormData.label: qsTr("Title generation model:")
                     placeholderText: "claude-3-5-haiku-20241022"
-                    text: root.config.models.title_generation || "anthropic.claude-3-5-haiku-20241022-v1:0"
+                    text: root.config.models.titleGeneration || "anthropic.claude-3-5-haiku-20241022-v1:0"
                     Layout.fillWidth: true
                     onTextChanged: {
-                        if (text !== root.config.models.title_generation) {
-                            root.config.models.title_generation = text
+                        if (text !== root.config.models.titleGeneration) {
+                            root.config.models.titleGeneration = text
                         }
                     }
                 }

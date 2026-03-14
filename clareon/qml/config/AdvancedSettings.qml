@@ -62,9 +62,9 @@ Kirigami.ScrollablePage {
                 id: logToFileCheckBox
                 Kirigami.FormData.label: qsTr("Log to file:")
                 text: qsTr("Save logs to file")
-                checked: root.config.logging.log_to_file || false
+                checked: root.config.logging.logToFile || false
                 onToggled: {
-                    root.config.logging.log_to_file = checked
+                    root.config.logging.logToFile = checked
                 }
             }
 

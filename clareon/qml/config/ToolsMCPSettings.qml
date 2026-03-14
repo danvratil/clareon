@@ -43,10 +43,10 @@ Kirigami.ScrollablePage {
                 id: autoExecuteCheckBox
                 Kirigami.FormData.label: qsTr("Auto-execute:")
                 text: qsTr("Automatically execute tools without approval")
-                checked: root.config.tools?.auto_execute || true
+                checked: root.config.tools?.autoExecute || true
                 enabled: enableToolsCheckBox.checked
                 onToggled: {
-                    root.config.tools.auto_execute = checked
+                    root.config.tools.autoExecute = checked
                 }
             }
 
@@ -63,12 +63,12 @@ Kirigami.ScrollablePage {
                 Kirigami.FormData.label: qsTr("Tool timeout:")
                 from: 5
                 to: 300
-                value: root.config.tools?.default_timeout || 30
+                value: root.config.tools?.defaultTimeout || 30
                 stepSize: 5
                 enabled: enableToolsCheckBox.checked
                 onValueChanged: {
-                    if (value !== root.config.tools?.default_timeout) {
-                        root.config.tools.default_timeout = value
+                    if (value !== root.config.tools?.defaultTimeout) {
+                        root.config.tools.defaultTimeout = value
                     }
                 }
             }
@@ -104,12 +104,12 @@ Kirigami.ScrollablePage {
                     return modeNames[currentValue] || currentValue
                 }
                 currentIndex: {
-                    let mode = root.config.tools?.sandbox_mode || "strict"
+                    let mode = root.config.tools?.sandboxMode || "strict"
                     return model.indexOf(mode) >= 0 ? model.indexOf(mode) : 0
                 }
                 enabled: enableToolsCheckBox.checked
                 onActivated: {
-                    root.config.tools.sandbox_mode = model[currentIndex]
+                    root.config.tools.sandboxMode = model[currentIndex]
                 }
             }
 
@@ -138,12 +138,12 @@ Kirigami.ScrollablePage {
                 Kirigami.FormData.label: qsTr("Max workspace size:")
                 from: 50
                 to: 5000
-                value: root.config.tools?.max_workspace_size_mb || 500
+                value: root.config.tools?.maxWorkspaceSizeMb || 500
                 stepSize: 50
                 enabled: enableToolsCheckBox.checked
                 onValueChanged: {
-                    if (value !== root.config.tools?.max_workspace_size_mb) {
-                        root.config.tools.max_workspace_size_mb = value
+                    if (value !== root.config.tools?.maxWorkspaceSizeMb) {
+                        root.config.tools.maxWorkspaceSizeMb = value
                     }
                 }
             }
@@ -161,12 +161,12 @@ Kirigami.ScrollablePage {
                 Kirigami.FormData.label: qsTr("Max upload size:")
                 from: 10
                 to: 1000
-                value: root.config.tools?.max_upload_size_mb || 100
+                value: root.config.tools?.maxUploadSizeMb || 100
                 stepSize: 10
                 enabled: enableToolsCheckBox.checked
                 onValueChanged: {
-                    if (value !== root.config.tools?.max_upload_size_mb) {
-                        root.config.tools.max_upload_size_mb = value
+                    if (value !== root.config.tools?.maxUploadSizeMb) {
+                        root.config.tools.maxUploadSizeMb = value
                     }
                 }
             }
@@ -184,12 +184,12 @@ Kirigami.ScrollablePage {
                 Kirigami.FormData.label: qsTr("Workspace retention:")
                 from: 1
                 to: 365
-                value: root.config.tools?.workspace_retention_days || 30
+                value: root.config.tools?.workspaceRetentionDays || 30
                 stepSize: 1
                 enabled: enableToolsCheckBox.checked
                 onValueChanged: {
-                    if (value !== root.config.tools?.workspace_retention_days) {
-                        root.config.tools.workspace_retention_days = value
+                    if (value !== root.config.tools?.workspaceRetentionDays) {
+                        root.config.tools.workspaceRetentionDays = value
                     }
                 }
             }
