@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Clareon
 
-Clareon is an attempt at building a desktop AI assistant powered by Anthropic's Claude models. Unlike Claude Desktop it supports models from AWS Bedrock (as well as Anthropic API) and aims to be multiplatform with actual proper Linux support.
+Clareon is an attempt at building a desktop AI assistant similar to Claude Desktop. Unlike Claude Desktop it should support wide range of model providers and aims to be multiplatform with actual proper Linux support.
 
 ## Goals
 
@@ -15,15 +15,8 @@ Those are the main goals of the project:
 * Native application
 * Global shortcut to start a new conversation
 * Multiplatform (Linux, Windows, macOS)
-* Support for alternative model providers (AWS Bedrock)
+* Support for large variaty of model providers (Anthropic, OpenAI, OpenRouter, LiteLLM, etc.)
 * Local conversation history
-
-## Out-of-scope for now
-
-The following features are out of scope for now, but I may be added later as the project matures:
-
-* Alternative models (non-Anthropic)
-* Additional backends (local models, OpenAI, etc.)
 
 ## Non-goals
 
