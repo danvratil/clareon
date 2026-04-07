@@ -147,6 +147,13 @@ Kirigami.Page {
                     Kirigami.Separator {
                         Layout.fillWidth: true
                     }
+
+                    Controls.Label {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: qsTr("Model: %1").arg(ConfigManager.getConfig().defaultModel || "")
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                        color: Kirigami.Theme.disabledTextColor
+                    }
                 }
             }
         }
