@@ -892,9 +892,7 @@ impl ConversationManager {
     }
 
     /// List available models from the current backend
-    pub async fn available_models(
-        &self,
-    ) -> std::result::Result<Vec<ModelInfo>, BackendError> {
+    pub async fn available_models(&self) -> std::result::Result<Vec<ModelInfo>, BackendError> {
         self.backend.available_models().await
     }
 

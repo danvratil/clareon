@@ -132,10 +132,17 @@ fn generate_cpp_class_definition(
         let cpp_type = map_rust_type_to_cpp_owned(&field.rust_type, enums);
         let camel_name = to_camel_case(&field.name);
 
-        header.push_str(&format!(
-            "    Q_PROPERTY({} {} READ {} WRITE set{})\n",
-            cpp_type, camel_name, camel_name, camel_name
-        ));
+        if is_root {
+            header.push_str(&format!(
+                "    Q_PROPERTY({} {} READ {} WRITE set{} NOTIFY {}Changed)\n",
+                cpp_type, camel_name, camel_name, camel_name, camel_name
+            ));
+        } else {
+            header.push_str(&format!(
+                "    Q_PROPERTY({} {} READ {} WRITE set{})\n",
+                cpp_type, camel_name, camel_name, camel_name
+            ));
+        }
     }
     header.push('\n');
 
@@ -167,6 +174,16 @@ fn generate_cpp_class_definition(
     header.push('\n');
 
     header.push_str("    QVariantMap toVariantMap() const;\n\n");
+
+    // Q_SIGNALS section for QObject types
+    if is_root {
+        header.push_str("Q_SIGNALS:\n");
+        for field in &config_struct.fields {
+            let camel_name = to_camel_case(&field.name);
+            header.push_str(&format!("    void {}Changed();\n", camel_name));
+        }
+        header.push('\n');
+    }
 
     // Private members
     header.push_str("private:\n");
@@ -289,6 +306,9 @@ fn generate_cpp_class_implementation(
             class_name, camel_name, cpp_type
         ));
         impl_code.push_str(&format!("    {} = value;\n", member_name));
+        if is_root {
+            impl_code.push_str(&format!("    Q_EMIT {}Changed();\n", camel_name));
+        }
         impl_code.push_str("}\n\n");
     }
 
