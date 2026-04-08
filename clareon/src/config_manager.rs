@@ -100,11 +100,8 @@ impl ffi::ConfigManager {
                     Ok(()) => {
                         tracing::info!("Configuration saved successfully");
                         // Notify the service worker to reload with the new config
-                        if let Some(handle) =
-                            crate::service_controller::try_get_service_handle()
-                        {
-                            let _ =
-                                handle.send(crate::service::Command::ReloadConfig);
+                        if let Some(handle) = crate::service_controller::try_get_service_handle() {
+                            let _ = handle.send(crate::service::Command::ReloadConfig);
                         }
                         true
                     }

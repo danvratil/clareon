@@ -14,10 +14,10 @@ use tracing::{debug, info, warn};
 
 use super::title::TitleGenerator;
 use crate::backend::{
-    ChatRequest, ChatResponse, ContentDelta, LlmBackend, StopReason, StreamEvent, Usage,
+    ChatRequest, ChatResponse, ContentDelta, LlmBackend, ModelInfo, StopReason, StreamEvent, Usage,
 };
 use crate::config::Config;
-use crate::error::Result;
+use crate::error::{BackendError, Result};
 use crate::storage::Storage;
 use crate::tools::ToolExecutor;
 use crate::types::{
@@ -889,6 +889,11 @@ impl ConversationManager {
     /// Get the current backend name
     pub fn backend_name(&self) -> &'static str {
         self.backend.name()
+    }
+
+    /// List available models from the current backend
+    pub async fn available_models(&self) -> std::result::Result<Vec<ModelInfo>, BackendError> {
+        self.backend.available_models().await
     }
 
     /// Get the current model

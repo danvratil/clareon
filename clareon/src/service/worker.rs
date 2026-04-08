@@ -13,7 +13,7 @@ use clareon_core::{ConversationManager, StreamUpdate};
 
 use super::{
     command::Command,
-    response::{ArtifactData, ErrorCategory, ErrorInfo, MessageData, Response},
+    response::{ArtifactData, ErrorCategory, ErrorInfo, MessageData, ModelInfoData, Response},
 };
 
 /// Service worker that processes commands on the tokio runtime
@@ -120,6 +120,9 @@ impl ServiceWorker {
             }
             Command::ReloadConfig => {
                 self.handle_reload_config().await;
+            }
+            Command::FetchAvailableModels { provider: _ } => {
+                self.handle_fetch_available_models().await;
             }
         }
     }
@@ -882,6 +885,52 @@ impl ServiceWorker {
                 let _ = self.response_tx.send(Response::Error {
                     command: format!("SaveArtifact({}, {})", artifact_id, path),
                     error: format!("Failed to get artifact: {}", e),
+                });
+            }
+        }
+    }
+
+    async fn handle_fetch_available_models(&self) {
+        match self.manager.available_models().await {
+            Ok(models) => {
+                let model_data: Vec<ModelInfoData> = models
+                    .into_iter()
+                    .map(|m| ModelInfoData {
+                        id: m.id,
+                        name: m.name,
+                        context_window: m.context_window,
+                        max_output_tokens: m.max_output_tokens,
+                        description: m.description.unwrap_or_default(),
+                        owner: m.owner.unwrap_or_default(),
+                        pricing_prompt: m
+                            .pricing
+                            .as_ref()
+                            .and_then(|p| p.prompt.clone())
+                            .unwrap_or_default(),
+                        pricing_completion: m
+                            .pricing
+                            .as_ref()
+                            .and_then(|p| p.completion.clone())
+                            .unwrap_or_default(),
+                        input_modalities: m
+                            .modalities
+                            .as_ref()
+                            .map(|mod_| mod_.input.join(","))
+                            .unwrap_or_default(),
+                        output_modalities: m
+                            .modalities
+                            .map(|mod_| mod_.output.join(","))
+                            .unwrap_or_default(),
+                    })
+                    .collect();
+                let _ = self
+                    .response_tx
+                    .send(Response::ModelsLoaded { models: model_data });
+            }
+            Err(e) => {
+                error!("Failed to fetch available models: {}", e);
+                let _ = self.response_tx.send(Response::ModelsLoadFailed {
+                    error: e.to_string(),
                 });
             }
         }

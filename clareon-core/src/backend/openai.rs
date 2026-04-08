@@ -9,7 +9,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use async_openai::Client;
-use async_openai::config::OpenAIConfig as AsyncOpenAIConfig;
+use async_openai::config::{Config as AsyncOpenAIConfigTrait, OpenAIConfig as AsyncOpenAIConfig};
 use async_openai::types::chat::{
     ChatCompletionMessageToolCall, ChatCompletionMessageToolCalls,
     ChatCompletionRequestAssistantMessage, ChatCompletionRequestAssistantMessageContent,
@@ -22,14 +22,59 @@ use async_openai::types::chat::{
 };
 use async_trait::async_trait;
 use futures::{Stream, StreamExt};
+use secrecy::ExposeSecret;
+use serde::Deserialize;
 use tracing::{debug, info, warn};
 
 use super::traits::{
-    ChatRequest, ChatResponse, ContentDelta, LlmBackend, ModelInfo, StopReason, StreamEvent, Usage,
+    ChatRequest, ChatResponse, ContentDelta, LlmBackend, ModelInfo, ModelModalities, ModelPricing,
+    StopReason, StreamEvent, Usage,
 };
 use crate::config::{OpenAiBackendConfig, Provider};
 use crate::error::BackendError;
 use crate::types::{ContentBlock, ConversationId, Message, Role};
+
+// OpenRouter-specific model response types (BYOT for richer data)
+#[derive(Debug, Deserialize)]
+struct OpenRouterModel {
+    id: String,
+    name: Option<String>,
+    description: Option<String>,
+    context_length: Option<u32>,
+    pricing: Option<OpenRouterPricing>,
+    architecture: Option<OpenRouterArchitecture>,
+    top_provider: Option<OpenRouterTopProvider>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterPricing {
+    prompt: Option<String>,
+    completion: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterArchitecture {
+    input_modalities: Option<Vec<String>>,
+    output_modalities: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterTopProvider {
+    max_completion_tokens: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterModelsResponse {
+    data: Vec<OpenRouterModel>,
+}
+
+/// Parse owner from a model ID slug (e.g. "anthropic" from "anthropic/claude-sonnet-4-5")
+fn parse_owner(id: &str) -> Option<String> {
+    id.split('/')
+        .next()
+        .filter(|_| id.contains('/'))
+        .map(String::from)
+}
 
 /// OpenAI-compatible API backend
 ///
@@ -38,7 +83,6 @@ use crate::types::{ContentBlock, ConversationId, Message, Role};
 pub struct OpenAiBackend {
     client: Client<AsyncOpenAIConfig>,
     default_model: ModelInfo,
-    #[allow(dead_code)] // Will be used for provider-aware model fetching
     provider: Provider,
 }
 
@@ -80,6 +124,10 @@ impl OpenAiBackend {
             name: "GPT-4o".to_string(),
             context_window: 128000,
             max_output_tokens: 16384,
+            description: None,
+            owner: None,
+            pricing: None,
+            modalities: None,
         }
     }
 
@@ -258,6 +306,54 @@ impl OpenAiBackend {
                 })
                 .collect(),
         )
+    }
+
+    /// Fetch models from OpenRouter's API with rich metadata
+    async fn fetch_openrouter_models(&self) -> Result<Vec<ModelInfo>, BackendError> {
+        // async-openai's Config trait provides api_base() -> &str and api_key() -> &SecretString
+        let base_url = self.client.config().api_base();
+        let url = format!("{}/models", base_url.trim_end_matches('/'));
+
+        let client = reqwest::Client::new();
+        let mut request = client.get(&url);
+
+        // Add API key header if configured
+        let api_key = self.client.config().api_key().expose_secret().to_string();
+        if !api_key.is_empty() {
+            request = request.header("Authorization", format!("Bearer {}", api_key));
+        }
+
+        let response = request.send().await.map_err(BackendError::Http)?;
+
+        let models_response: OpenRouterModelsResponse =
+            response.json().await.map_err(BackendError::Http)?;
+
+        Ok(models_response
+            .data
+            .into_iter()
+            .map(|m| {
+                let owner = parse_owner(&m.id);
+                ModelInfo {
+                    id: m.id.clone(),
+                    name: m.name.unwrap_or_else(|| m.id.clone()),
+                    context_window: m.context_length.unwrap_or(0),
+                    max_output_tokens: m
+                        .top_provider
+                        .and_then(|tp| tp.max_completion_tokens)
+                        .unwrap_or(0),
+                    description: m.description,
+                    owner,
+                    pricing: m.pricing.map(|p| ModelPricing {
+                        prompt: p.prompt,
+                        completion: p.completion,
+                    }),
+                    modalities: m.architecture.map(|a| ModelModalities {
+                        input: a.input_modalities.unwrap_or_default(),
+                        output: a.output_modalities.unwrap_or_default(),
+                    }),
+                }
+            })
+            .collect())
     }
 
     /// Convert an OpenAI response message to our types
@@ -634,25 +730,35 @@ impl LlmBackend for OpenAiBackend {
     }
 
     async fn available_models(&self) -> Result<Vec<ModelInfo>, BackendError> {
-        let response = self
-            .client
-            .models()
-            .list()
-            .await
-            .map_err(map_openai_error)?;
+        match self.provider {
+            Provider::OpenRouter => self.fetch_openrouter_models().await,
+            _ => {
+                // Standard OpenAI-compatible path
+                let response = self
+                    .client
+                    .models()
+                    .list()
+                    .await
+                    .map_err(map_openai_error)?;
 
-        let models = response
-            .data
-            .into_iter()
-            .map(|m| ModelInfo {
-                id: m.id.clone(),
-                name: m.id,
-                context_window: 0, // OpenAI API doesn't provide this in the list endpoint
-                max_output_tokens: 0,
-            })
-            .collect();
+                let models = response
+                    .data
+                    .into_iter()
+                    .map(|m| ModelInfo {
+                        id: m.id.clone(),
+                        name: m.id,
+                        context_window: 0,
+                        max_output_tokens: 0,
+                        description: None,
+                        owner: None,
+                        pricing: None,
+                        modalities: None,
+                    })
+                    .collect();
 
-        Ok(models)
+                Ok(models)
+            }
+        }
     }
 
     fn default_model(&self) -> &ModelInfo {

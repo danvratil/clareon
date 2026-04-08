@@ -38,6 +38,9 @@ pub fn generate_config_cpp() -> GeneratedConfig {
     let impl_path = out_dir.join("config_generated.cpp");
     let moc_path = out_dir.join("moc_config_generated.cpp");
 
+    // Always tell Cargo to rerun when settings.rs changes (must be emitted unconditionally)
+    println!("cargo:rerun-if-changed={}", settings_rs_path.display());
+
     if !needs_to_regenerate(&settings_rs_path, &header_path, &impl_path) {
         println!("Config generation skipped, files are up to date");
         return GeneratedConfig {
@@ -74,9 +77,6 @@ pub fn generate_config_cpp() -> GeneratedConfig {
 
     // Run MOC on the generated header
     moc::run_moc(&header_path, &moc_path).expect("Failed to run MOC on config_generated.h");
-
-    // Tell Cargo to rerun if settings.rs changes
-    println!("cargo:rerun-if-changed={}", settings_rs_path.display());
 
     GeneratedConfig {
         header_path,
