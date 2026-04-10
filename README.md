@@ -36,6 +36,16 @@ Don't let the presence of `CMakeLists.txt` confuse you, for local development yo
 
 The CMake build is present to make installing and packaging the application easier, since Cargo doesn't support any of that. The `CMakeLists.txt` will compile the Rust code (through [`corrosion`](https://github.com/corrosion-rs/corrosion)), generate a `.desktop` file and install it alongside the main binary and icons to appropriate locations. It is also used to enforce QML runtime dependencies, which again, makes it easier especially for packagers to ensure all the required QML modules are present on the system.
 
+## Building on macOS
+
+Install dependencies via Homebrew:
+
+```bash
+brew install qt cmake
+```
+
+[Kirigami](https://invent.kde.org/frameworks/kirigami) and [KItemModels](https://invent.kde.org/frameworks/kitemmodels) are runtime dependencies that must be built and installed from source, as they are not available via Homebrew for Qt6.
+
 # License
 
 This project is licensed under the GNU General Public License v3.0 or later. See the [LICENSE](LICENSE) file for details.
