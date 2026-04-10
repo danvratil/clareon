@@ -14,9 +14,21 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-authors = ["Daniel Vratil <dvratil@kde.org>"]
+authors = ["Daniel Vratil <me@dvratil.cz>"]
 license = "GPL-3.0-or-later"
-repository = "https://github.com/dvratil/clareon"
+repository = "https://codeberg.ogr/danvratil/clareon"
+homepage = "https://clareon.cc"
+keywords = [
+    "ai",
+    "assistant",
+    "desktop",
+    "llm",
+]
+categories = [
+    "artificial-intelligence",
+]
+publish = false
+
 
 [workspace.dependencies]
 # Async runtime
