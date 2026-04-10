@@ -1,10 +1,10 @@
 <!DOCTYPE RCC>
 <RCC version="1.0">
   <qresource prefix="/">
-    <file alias="clareon-16.png">16-apps-clareon.png</file>
-    <file alias="clareon.svg">sc-apps-clareon.svg</file>
-    <file alias="clareon-48.png">48-apps-clareon.png</file>
-    <file alias="clareon-256.png">256-apps-clareon.png</file>
-    <file alias="clareon-32.png">32-apps-clareon.png</file>
+    <file alias="clareon-16.png">16-apps-cc.clareon.Clareon.png</file>
+    <file alias="clareon.svg">sc-apps-cc.clareon.Clareon.svg</file>
+    <file alias="clareon-48.png">48-apps-cc.clareon.Clareon.png</file>
+    <file alias="clareon-256.png">256-apps-cc.clareon.Clareon.png</file>
+    <file alias="clareon-32.png">32-apps-cc.clareon.Clareon.png</file>
   </qresource>
 </RCC>

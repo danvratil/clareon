@@ -125,7 +125,7 @@ fn main() {
     app.pin_mut()
         .set_organization_domain(&QString::from("clareon.cc"));
     app.pin_mut()
-        .set_desktop_file_name(&QString::from("cc.clareon"));
+        .set_desktop_file_name(&QString::from("cc.clareon.Clareon"));
 
     // Set window icon (Qt will automatically select appropriate size)
     let mut icon = QIcon::new();
