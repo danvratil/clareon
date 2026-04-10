@@ -35,7 +35,6 @@ corrosion_import_crate(
     MANIFEST_PATH Cargo.toml
     CRATES clareon
     CRATE_TYPES bin
-    FROZEN
 )
 
 corrosion_install(
