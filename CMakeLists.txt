@@ -51,6 +51,11 @@ install(
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications
 )
 
+install(
+    FILES ${CMAKE_SOURCE_DIR}/cc.clareon.Clareon.metainfo.xml
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/metainfo
+)
+
 ecm_install_icons(
     ICONS
         clareon/icons/16-apps-cc.clareon.Clareon.png
