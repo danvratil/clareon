@@ -34,6 +34,8 @@ FetchContent_MakeAvailable(Corrosion)
 corrosion_import_crate(
     MANIFEST_PATH Cargo.toml
     CRATES clareon
+    CRATE_TYPES bin
+    FROZEN
 )
 
 corrosion_install(
@@ -42,17 +44,25 @@ corrosion_install(
 )
 
 configure_file(
-    ${CMAKE_SOURCE_DIR}/cc.clareon.desktop.cmake
-    ${CMAKE_BINARY_DIR}/cc.clareon.desktop
+    ${CMAKE_SOURCE_DIR}/cc.clareon.Clareon.desktop.cmake
+    ${CMAKE_BINARY_DIR}/cc.clareon.Clareon.desktop
 )
-install(FILES ${CMAKE_BINARY_DIR}/cc.clareon.desktop DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)
+install(
+    FILES ${CMAKE_BINARY_DIR}/cc.clareon.Clareon.desktop
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications
+)
+
+install(
+    FILES ${CMAKE_SOURCE_DIR}/cc.clareon.Clareon.metainfo.xml
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/metainfo
+)
 
 ecm_install_icons(
     ICONS
-        clareon/icons/16-apps-clareon.png
-        clareon/icons/32-apps-clareon.png
-        clareon/icons/48-apps-clareon.png
-        clareon/icons/256-apps-clareon.png
-        clareon/icons/sc-apps-clareon.svg
+        clareon/icons/16-apps-cc.clareon.Clareon.png
+        clareon/icons/32-apps-cc.clareon.Clareon.png
+        clareon/icons/48-apps-cc.clareon.Clareon.png
+        clareon/icons/256-apps-cc.clareon.Clareon.png
+        clareon/icons/sc-apps-cc.clareon.Clareon.svg
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons
 )

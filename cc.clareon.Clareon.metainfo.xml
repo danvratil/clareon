@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-FileCopyrightText: 2026 Daniel Vrátil <me@dvratil.cz> -->
+<!--                                                               -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later                    -->
+<component type="desktop-application">
+  <id>cc.clareon.Clareon</id>
+
+  <name>Clareon</name>
+  <summary>AI assistant supporting multiple LLM backends</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <developer id="cz.dvratil">
+    <name>Daniel Vrátil</name>
+  </developer>
+
+  <description>
+    <p>
+      Clareon is an AI assistant for Linux that lets you chat with large language
+      models from multiple providers, including OpenAI-compatible APIs (such as
+      LiteLLM and OpenRouter), AWS Bedrock, and the Anthropic API directly.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>Real-time streaming responses</li>
+      <li>Persistent conversation history with full-text search</li>
+      <li>Automatic prompt caching for reduced latency and cost</li>
+      <li>Built-in file operation tools (read, write, list directory) with sandboxing</li>
+      <li>Per-conversation and global system prompt configuration</li>
+      <li>Token usage tracking</li>
+      <li>Workspace management for persistent context</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">cc.clareon.Clareon.desktop</launchable>
+
+  <url type="homepage">https://clareon.cc</url>
+  <url type="vcs-browser">https://codeberg.org/danvratil/clareon</url>
+  <url type="bugtracker">https://codeberg.org/danvratil/clareon/issues</url>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Title screen</caption>
+      <image>https://codeberg.org/danvratil/clareon/raw/branch/main/doc/screenshots/clareon-title-screen.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Chat screen</caption>
+      <image>https://codeberg.org/danvratil/clareon/raw/branch/main/doc/screenshots/clareon-chat-screen.png</image>
+    </screenshot>
+  </screenshots>
+
+  <categories>
+    <category>Utility</category>
+  </categories>
+
+  <keywords>
+    <keyword>ai</keyword>
+    <keyword>assistant</keyword>
+    <keyword>anthropic</keyword>
+    <keyword>claude</keyword>
+    <keyword>chat</keyword>
+    <keyword>llm</keyword>
+  </keywords>
+
+  <releases>
+    <release type="development" version="0.1.0" date="2026-04-10"/>
+  </releases>
+
+  <content_rating type="oars-1.1"/>
+
+</component>

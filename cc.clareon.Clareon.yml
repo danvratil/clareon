@@ -1,0 +1,58 @@
+id: cc.clareon.Clareon
+runtime: org.kde.Platform
+runtime-version: '6.10'
+sdk: org.kde.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: /app/bin/clareon
+finish-args:
+  # Let there be a window
+  - "--socket=fallback-x11"
+  - "--socket=wayland"
+  # We need to talk to the LLM providers
+  - "--share=network"
+  - "--share=ipc"
+  # HW accel for QML
+  - "--device=dri"
+  # Allow KDE StatusNotifierWatcher to find us, so that we get a system tray icon
+  - "--talk-name=org.kde.StatusNotifierWatcher"
+modules:
+  - name: corrosion
+    buildsystem: cmake
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+    sources:
+      - type: git
+        url: https://github.com/corrosion-rs/corrosion.git
+        tag: v0.6
+    cleanup:
+      - '*'
+  - name: clareon
+    buildsystem: cmake-ninja
+    builddir: true
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        # This is where the Rust crate will be pre-extracted, so that `cargo` finds them
+        # and doesn't try fetch them from the internet (which is not allowed in Flatpak build)
+        CARGO_HOME: /run/build/clareon/cargo
+        # Let cargo fail straight away if it tries to access the network
+        CARGO_NET_OFFLINE: 'true'
+        # Disable jitterentropy in aws-lc-sys crate - it's a C file the *requires* to be
+        # compiled with -O0, which somehow doesn't work with Flatpak, since it sets -O2 in CFLAGS
+        # env var.
+        AWS_LC_SYS_NO_JITTER_ENTROPY: "1"
+    config-opts:
+      # Use FindPackage() to find corrosion-rs we installed in previous module
+      # instead of trying to fetch it from the internet
+      - "-DFETCHCONTENT_TRY_FIND_PACKAGE_MODE=ALWAYS"
+    sources:
+      - type: git
+        url: file:///data/projects/clareon
+        branch: flatpak
+      - cargo-sources.json
+      - type: shell
+        commands:
+          - mkdir -p .cargo
+          - mv -vf cargo/config .cargo/config.toml
+
