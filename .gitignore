@@ -37,3 +37,7 @@ Thumbs.db
 *.a
 moc_*.cpp
 ui_*.h
+
+# AppImage
+AppDir
+*.AppImage

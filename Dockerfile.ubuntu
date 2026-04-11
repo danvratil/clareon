@@ -1,0 +1,37 @@
+# SPDX-FileCopyrightText: 2026 Daniel Vrátil <me@dvratil.cz>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Clareon build environment
+# Provides Rust, C++, Qt6, and KDE Frameworks 6 toolchains
+# along with all QML modules needed at runtime.
+#
+# Basic usage:
+#   docker build -t clareon-build .
+#
+
+FROM ubuntu:26.04
+
+
+# Install build tools, Qt6, KDE Frameworks 6, and system libraries
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential cmake ninja-build lld \
+        curl ca-certificates \
+        qt6-base-dev \
+        qt6-declarative-dev \
+        extra-cmake-modules \
+        qml6-module-org-kde-kirigami \
+        qml6-module-org-kde-kitemmodels \
+        qml6-module-qtquick-controls \
+        libsqlite3-dev \
+        libssl-dev \
+        libdbus-1-dev \
+        libfindbin-libs-perl \
+        git file gnupg2 appstream
+
+# Install Rust via rustup (need recent stable for edition 2024)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+WORKDIR /src
