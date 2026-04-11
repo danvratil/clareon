@@ -1,0 +1,46 @@
+# SPDX-FileCopyrightText: 2026 Daniel Vrátil <me@dvratil.cz>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+name: Build and Push Docker Image
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - Dockerfile.ubuntu
+
+jobs:
+  build-and-push:
+    runs-on: docker
+
+    steps:
+      - name: Derive registry host from server URL
+        run: echo "REGISTRY=$(echo '${{ github.server_url }}' | sed 's|https://||;s|http://||')" >> $GITHUB_ENV
+
+      - name: Log in to Forgejo container registry
+        uses: https://github.com/docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: https://github.com/docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}
+          tags: |
+            type=sha,format=short,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: https://github.com/docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          file: Dockerfile.ubuntu
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
