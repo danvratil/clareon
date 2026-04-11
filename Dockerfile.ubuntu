@@ -28,7 +28,8 @@ RUN apt-get update && \
         libssl-dev \
         libdbus-1-dev \
         libfindbin-libs-perl \
-        git file gnupg2 appstream
+        git file gnupg2 appstream \
+        nodejs
 
 # Install Rust via rustup (need recent stable for edition 2024)
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
