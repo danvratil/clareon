@@ -14,7 +14,7 @@ on:
 
 jobs:
   build-and-push:
-    runs-on: docker
+    runs-on: ubuntu-latest
 
     steps:
       - name: Derive registry host from server URL
