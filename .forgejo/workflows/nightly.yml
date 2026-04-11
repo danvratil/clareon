@@ -1,0 +1,57 @@
+# SPDX-FileCopyrightText: 2026 Daniel Vrátil <me@dvratil.cz>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+name: Nightly AppImage Build
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * *'
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      has-changes: ${{ steps.check.outputs.has-changes }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Check for commits in the last 25 hours
+        id: check
+        run: |
+          if git log --since="25 hours ago" --oneline | grep -q .; then
+            echo "has-changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has-changes=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-appimage:
+    needs: check-changes
+    if: needs.check-changes.outputs.has-changes == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Build AppImage
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/src" \
+            -w /src \
+            -e CI=true \
+            codeberg.org/danvratil/clareon:latest \
+            ./scripts/build-appimage.sh
+
+      - name: Upload AppImage artifact
+        uses: https://github.com/actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: clareon-appimage
+          path: Clareon*.AppImage
+          if-no-files-found: error
