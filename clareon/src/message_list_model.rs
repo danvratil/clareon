@@ -128,6 +128,8 @@ enum MessageRole {
     IsRetryable,
     RetryAfterSecs,
     PartialContent,
+    ContentBlocks,         // new
+    IsGroupedWithPrevious, // new
 }
 
 #[derive(Default, Debug)]
@@ -138,6 +140,10 @@ pub enum MessageState {
     Complete,
     Error,
 }
+
+/// Maximum time gap (seconds) between consecutive same-role messages
+/// for them to be considered visually grouped.
+const GROUPING_GAP_SECS: i64 = 300;
 
 impl From<MessageRole> for i32 {
     fn from(role: MessageRole) -> Self {
@@ -158,6 +164,7 @@ struct Message {
     // Token usage fields
     input_tokens: Option<i64>,
     output_tokens: Option<i64>,
+    is_grouped_with_previous: bool,
 }
 
 impl Message {
@@ -172,6 +179,7 @@ impl Message {
             partial_content: None,
             input_tokens: data.input_tokens,
             output_tokens: data.output_tokens,
+            is_grouped_with_previous: false,
         }
     }
 
@@ -186,6 +194,7 @@ impl Message {
             partial_content,
             input_tokens: None,
             output_tokens: None,
+            is_grouped_with_previous: false,
         }
     }
 }
@@ -217,12 +226,84 @@ impl Default for MessageListModelRust {
     }
 }
 
+/// Computes `is_grouped_with_previous` for every message in the slice.
+/// A message is grouped when it has the same role as its predecessor and
+/// the time gap is ≤ 300 seconds (5 minutes).
+fn compute_grouping(messages: &mut [Message]) {
+    for i in 1..messages.len() {
+        let same_role = messages[i - 1].role == messages[i].role;
+        let gap = messages[i].created_at - messages[i - 1].created_at;
+        messages[i].is_grouped_with_previous = same_role && gap <= GROUPING_GAP_SECS;
+    }
+}
+
+/// Splits message text into typed content blocks serialized as a JSON array.
+/// Each block is either `{"type":"text","content":"..."}` or
+/// `{"type":"code","language":"...","content":"..."}`.
+fn parse_content_blocks(text: &str) -> String {
+    #[derive(serde::Serialize)]
+    #[serde(tag = "type", rename_all = "lowercase")]
+    enum Block<'a> {
+        Text { content: &'a str },
+        Code { language: &'a str, content: &'a str },
+    }
+
+    let mut blocks: Vec<Block> = Vec::new();
+    let mut remaining = text;
+
+    while let Some(fence_start) = remaining.find("```") {
+        if fence_start > 0 {
+            blocks.push(Block::Text {
+                content: &remaining[..fence_start],
+            });
+        }
+        remaining = &remaining[fence_start + 3..];
+
+        let lang_end = remaining.find('\n').unwrap_or(remaining.len());
+        let language = remaining[..lang_end].trim();
+        remaining = if lang_end < remaining.len() {
+            &remaining[lang_end + 1..]
+        } else {
+            ""
+        };
+
+        if let Some(close) = remaining.find("```") {
+            blocks.push(Block::Code {
+                language,
+                content: &remaining[..close],
+            });
+            remaining = &remaining[close + 3..];
+            if remaining.starts_with('\n') {
+                remaining = &remaining[1..];
+            }
+        } else {
+            blocks.push(Block::Code {
+                language,
+                content: remaining,
+            });
+            remaining = "";
+        }
+    }
+
+    if !remaining.is_empty() {
+        blocks.push(Block::Text { content: remaining });
+    }
+
+    if blocks.is_empty() {
+        blocks.push(Block::Text { content: text });
+    }
+
+    serde_json::to_string(&blocks).unwrap_or_else(|_| "[]".to_string())
+}
+
 #[allow(dead_code)]
 impl ffi::MessageListModel {
     /// Set messages (replaces all existing messages)
     pub fn set_messages_internal(mut self: Pin<&mut Self>, messages: Vec<MessageData>) {
         self.as_mut().begin_reset_model();
-        self.as_mut().rust_mut().messages = messages.into_iter().map(Message::from).collect();
+        let mut msgs: Vec<Message> = messages.into_iter().map(Message::from).collect();
+        compute_grouping(&mut msgs);
+        self.as_mut().rust_mut().messages = msgs;
         self.as_mut().end_reset_model();
         self.as_mut().recalculate_token_totals();
     }
@@ -232,7 +313,12 @@ impl ffi::MessageListModel {
         let count = self.rust().messages.len();
         self.as_mut()
             .begin_insert_rows(&QModelIndex::default(), count as i32, count as i32);
-        let msg = Message::from(message);
+        let mut msg = Message::from(message);
+        if let Some(prev) = self.rust().messages.last() {
+            let same_role = prev.role == msg.role;
+            let gap = msg.created_at - prev.created_at;
+            msg.is_grouped_with_previous = same_role && gap <= GROUPING_GAP_SECS;
+        }
         self.as_mut().add_to_token_totals(&msg);
         self.as_mut().rust_mut().messages.push(msg);
         self.as_mut().end_insert_rows();
@@ -325,6 +411,7 @@ impl ffi::MessageListModel {
             partial_content: None,
             input_tokens: None,
             output_tokens: None,
+            is_grouped_with_previous: false,
         });
         self.as_mut().end_insert_rows();
     }
@@ -339,7 +426,11 @@ impl ffi::MessageListModel {
             self.as_mut().data_changed(
                 &index,
                 &index,
-                QList::from(&[MessageRole::Text.into(), MessageRole::MessageState.into()]),
+                QList::from(&[
+                    MessageRole::Text.into(),
+                    MessageRole::MessageState.into(),
+                    MessageRole::ContentBlocks.into(),
+                ]),
             );
         }
     }
@@ -352,9 +443,16 @@ impl ffi::MessageListModel {
             .map(|m| m.id == -1)
             .unwrap_or(false)
         {
-            let completed_msg = Message::from(message);
+            let mut completed_msg = Message::from(message);
+            // Compute grouping against the message before the streaming placeholder
+            let n = self.rust().messages.len();
+            if n >= 2 {
+                let prev = &self.rust().messages[n - 2];
+                let same_role = prev.role == completed_msg.role;
+                let gap = completed_msg.created_at - prev.created_at;
+                completed_msg.is_grouped_with_previous = same_role && gap <= GROUPING_GAP_SECS;
+            }
             self.as_mut().add_to_token_totals(&completed_msg);
-            // Now update the last message after token totals are updated
             if let Some(last_message) = self.as_mut().rust_mut().messages.last_mut() {
                 *last_message = completed_msg;
             }
@@ -369,6 +467,8 @@ impl ffi::MessageListModel {
                     MessageRole::Text.into(),
                     MessageRole::CreatedAt.into(),
                     MessageRole::MessageState.into(),
+                    MessageRole::IsGroupedWithPrevious.into(),
+                    MessageRole::ContentBlocks.into(),
                 ]),
             );
         }
@@ -477,6 +577,10 @@ impl ffi::MessageListModel {
             } else {
                 QVariant::default()
             }
+        } else if role == MessageRole::ContentBlocks as i32 {
+            QVariant::from(&QString::from(parse_content_blocks(&message.text).as_str()))
+        } else if role == MessageRole::IsGroupedWithPrevious as i32 {
+            QVariant::from(&message.is_grouped_with_previous)
         } else {
             QVariant::default()
         }
@@ -517,6 +621,14 @@ impl ffi::MessageListModel {
         roles.insert(
             MessageRole::PartialContent.into(),
             QByteArray::from("partialContent"),
+        );
+        roles.insert(
+            MessageRole::ContentBlocks.into(),
+            QByteArray::from("contentBlocks"),
+        );
+        roles.insert(
+            MessageRole::IsGroupedWithPrevious.into(),
+            QByteArray::from("isGroupedWithPrevious"),
         );
         roles
     }
@@ -668,5 +780,94 @@ impl Drop for MessageListModelRust {
         {
             task.abort();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_plain_text() {
+        let result = parse_content_blocks("Hello, world!");
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let blocks = parsed.as_array().unwrap();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["type"], "text");
+        assert_eq!(blocks[0]["content"], "Hello, world!");
+    }
+
+    #[test]
+    fn test_parse_single_code_block() {
+        let input = "Before\n```python\nprint('hi')\n```\nAfter";
+        let result = parse_content_blocks(input);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let blocks = parsed.as_array().unwrap();
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks[0]["type"], "text");
+        assert_eq!(blocks[1]["type"], "code");
+        assert_eq!(blocks[1]["language"], "python");
+        assert_eq!(blocks[1]["content"], "print('hi')\n");
+        assert_eq!(blocks[2]["type"], "text");
+        assert_eq!(blocks[2]["content"], "After");
+    }
+
+    #[test]
+    fn test_parse_code_block_no_language() {
+        let input = "```\nfoo()\n```";
+        let result = parse_content_blocks(input);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let blocks = parsed.as_array().unwrap();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["type"], "code");
+        assert_eq!(blocks[0]["language"], "");
+    }
+
+    #[test]
+    fn test_parse_multiple_code_blocks() {
+        let input = "Intro\n```rust\nfn main() {}\n```\nMiddle\n```python\npass\n```\nEnd";
+        let result = parse_content_blocks(input);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let blocks = parsed.as_array().unwrap();
+        assert_eq!(blocks.len(), 5);
+        assert_eq!(blocks[0]["type"], "text");
+        assert!(blocks[0]["content"].as_str().unwrap().contains("Intro"));
+        assert_eq!(blocks[1]["type"], "code");
+        assert_eq!(blocks[1]["language"], "rust");
+        assert_eq!(blocks[2]["type"], "text");
+        assert!(blocks[2]["content"].as_str().unwrap().contains("Middle"));
+        assert_eq!(blocks[3]["type"], "code");
+        assert_eq!(blocks[3]["language"], "python");
+        assert_eq!(blocks[4]["type"], "text");
+        assert!(blocks[4]["content"].as_str().unwrap().contains("End"));
+    }
+
+    #[test]
+    fn test_parse_unclosed_fence() {
+        // Simulates a streaming response where the code block hasn't closed yet
+        let input = "Here is some code:\n```rust\nfn foo() {";
+        let result = parse_content_blocks(input);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let blocks = parsed.as_array().unwrap();
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0]["type"], "text");
+        assert!(
+            blocks[0]["content"]
+                .as_str()
+                .unwrap()
+                .contains("Here is some code:")
+        );
+        assert_eq!(blocks[1]["type"], "code");
+        assert_eq!(blocks[1]["language"], "rust");
+        assert_eq!(blocks[1]["content"], "fn foo() {");
+    }
+
+    #[test]
+    fn test_parse_empty_string() {
+        let result = parse_content_blocks("");
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let blocks = parsed.as_array().unwrap();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["type"], "text");
     }
 }

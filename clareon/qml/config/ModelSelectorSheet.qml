@@ -190,7 +190,7 @@ Kirigami.OverlaySheet {
             model: gridModel
 
             Controls.ScrollBar.vertical: Controls.ScrollBar {
-                policy: Controls.ScrollBar.AsNeeded
+                policy: Controls.ScrollBar.Never
             }
 
             delegate: Item {
@@ -269,41 +269,26 @@ Kirigami.OverlaySheet {
                                 || modelContextWindow > 0
                                 || modelMaxOutputTokens > 0
 
-                            Repeater {
-                                model: modelInputModalities !== "" ? modelInputModalities.split(",") : []
-                                delegate: Kirigami.Chip {
-                                    text: modelData
-                                    closable: false
-                                    checkable: false
-                                }
+                            Controls.Label {
+                                visible: modelInputModalities !== ""
+                                text: qsTr("Input: %1").arg(modelInputModalities)
+                                font.pointSize: Kirigami.Theme.smallFont.pointSize
                             }
 
-                            Kirigami.Chip {
-                                text: qsTr("Prompt: %1").arg(modelPricingPrompt)
+                            Controls.Label {
                                 visible: modelPricingPrompt !== ""
-                                closable: false
-                                checkable: false
+                                text: qsTr("Price: ")
+                                font.pointSize: Kirigami.Theme.smallFont.pointSize
                             }
-
-                            Kirigami.Chip {
-                                text: qsTr("Completion: %1").arg(modelPricingCompletion)
-                                visible: modelPricingCompletion !== ""
-                                closable: false
-                                checkable: false
-                            }
-
-                            Kirigami.Chip {
-                                text: qsTr("Context: %1").arg(modelContextWindow.toLocaleString())
+                            Controls.Label {
                                 visible: modelContextWindow > 0
-                                closable: false
-                                checkable: false
+                                text: qsTr("Context: %1 tok").arg(modelContextWindow.toLocaleString())
+                                font.pointSize: Kirigami.Theme.smallFont.pointSize
                             }
-
-                            Kirigami.Chip {
-                                text: qsTr("Max output: %1").arg(modelMaxOutputTokens.toLocaleString())
+                            Controls.Label {
                                 visible: modelMaxOutputTokens > 0
-                                closable: false
-                                checkable: false
+                                text: qsTr("Max Output: %1 tok").arg(modelMaxOutputTokens.toLocaleString())
+                                font.pointSize: Kirigami.Theme.smallFont.pointSize
                             }
                         }
 
