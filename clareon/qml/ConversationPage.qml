@@ -8,6 +8,8 @@ import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import cz.dvratil.clareon 1.0
 import cc.clareon.core 1.0
+import "message"
+import "artifacts"
 
 Kirigami.Page {
     id: root
