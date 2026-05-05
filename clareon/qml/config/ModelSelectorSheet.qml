@@ -6,6 +6,8 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
+import org.kde.kitemmodels as KItemModels
+import cc.clareon.core 1.0
 import cz.dvratil.clareon
 
 Kirigami.OverlaySheet {
@@ -14,26 +16,10 @@ Kirigami.OverlaySheet {
     property string provider
     property bool loading: true
     property string errorMessage: ""
-    property var allModels: []
-    property var filteredModels: []
 
     signal modelSelected(string modelId, int contextWindow, int maxOutputTokens)
 
     title: qsTr("Select Model")
-
-    readonly property bool hasContextWindowData: {
-        for (let i = 0; i < allModels.length; i++) {
-            if (allModels[i].contextWindow > 0) return true
-        }
-        return false
-    }
-
-    readonly property bool hasPricingData: {
-        for (let i = 0; i < allModels.length; i++) {
-            if (allModels[i].pricingPrompt !== "") return true
-        }
-        return false
-    }
 
     function loadModels() {
         loading = true
@@ -41,53 +27,39 @@ Kirigami.OverlaySheet {
         ServiceController.fetchAvailableModels(provider)
     }
 
-    function applyFilter() {
-        let result = allModels.slice()
-        let query = searchField.text.toLowerCase()
-        if (query.length > 0) {
-            result = result.filter(m =>
-                m.name.toLowerCase().includes(query) ||
-                m.id.toLowerCase().includes(query) ||
-                m.owner.toLowerCase().includes(query) ||
-                m.description.toLowerCase().includes(query)
-            )
-        }
-        switch (sortCombo.currentIndex) {
-            case 0: result.sort((a, b) => a.name.localeCompare(b.name)); break
-            case 1: result.sort((a, b) => b.contextWindow - a.contextWindow); break
-            case 2: result.sort((a, b) => a.pricingPrompt.localeCompare(b.pricingPrompt)); break
-        }
-        filteredModels = result
-    }
-
     onOpened: loadModels()
 
-    Connections {
-        target: ServiceController
-        function onModelsLoaded() {
-            let models = []
-            let count = ServiceController.getModelCount()
-            for (let i = 0; i < count; i++) {
-                models.push({
-                    id: ServiceController.getModelId(i),
-                    name: ServiceController.getModelName(i),
-                    contextWindow: ServiceController.getModelContextWindow(i),
-                    maxOutputTokens: ServiceController.getModelMaxOutputTokens(i),
-                    description: ServiceController.getModelDescription(i),
-                    owner: ServiceController.getModelOwner(i),
-                    pricingPrompt: ServiceController.getModelPricingPrompt(i),
-                    pricingCompletion: ServiceController.getModelPricingCompletion(i),
-                    inputModalities: ServiceController.getModelInputModalities(i),
-                    outputModalities: ServiceController.getModelOutputModalities(i),
-                })
+    ModelListModel {
+        id: modelListModel
+    }
+
+    KItemModels.KSortFilterProxyModel {
+        id: filteredModels
+        sourceModel: modelListModel
+        filterRoleName: "searchable"
+        filterRegularExpression: {
+            if (searchField.text === "") return new RegExp()
+            return new RegExp(searchField.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "i")
+        }
+        sortRoleName: {
+            switch (sortCombo.currentIndex) {
+                case 1: return "modelContextWindow"
+                case 2: return "modelPricingPrompt"
+                default: return "modelName"
             }
-            allModels = models
-            applyFilter()
-            loading = false
+        }
+        sortOrder: sortCombo.currentIndex === 1 ? Qt.DescendingOrder : Qt.AscendingOrder
+    }
+
+    Connections {
+        target: modelListModel
+        function onModelsLoaded() {
+            sheet.loading = false
+            sheet.errorMessage = ""
         }
         function onModelsLoadFailed(error) {
-            errorMessage = error
-            loading = false
+            sheet.errorMessage = error
+            sheet.loading = false
         }
     }
 
@@ -98,47 +70,11 @@ Kirigami.OverlaySheet {
             id: searchField
             Layout.fillWidth: true
             placeholderText: qsTr("Search models...")
-            onTextChanged: applyFilter()
         }
 
         Controls.ComboBox {
             id: sortCombo
-            model: {
-                let options = [qsTr("Name")]
-                if (sheet.hasContextWindowData) {
-                    options.push(qsTr("Context Window"))
-                }
-                if (sheet.hasPricingData) {
-                    options.push(qsTr("Price"))
-                }
-                return options
-            }
-            onCurrentIndexChanged: applyFilter()
-        }
-    }
-
-    // ListModel for GridView - populated from filteredModels JS array
-    ListModel {
-        id: gridModel
-    }
-
-    // Sync filteredModels array to ListModel whenever it changes
-    onFilteredModelsChanged: {
-        gridModel.clear()
-        for (let i = 0; i < filteredModels.length; i++) {
-            let m = filteredModels[i]
-            gridModel.append({
-                modelId: m.id,
-                modelName: m.name,
-                modelContextWindow: m.contextWindow,
-                modelMaxOutputTokens: m.maxOutputTokens,
-                modelDescription: m.description,
-                modelOwner: m.owner,
-                modelPricingPrompt: m.pricingPrompt,
-                modelPricingCompletion: m.pricingCompletion,
-                modelInputModalities: m.inputModalities,
-                modelOutputModalities: m.outputModalities,
-            })
+            model: [qsTr("Name"), qsTr("Context Window"), qsTr("Price")]
         }
     }
 
@@ -170,7 +106,7 @@ Kirigami.OverlaySheet {
         // Empty state
         Kirigami.PlaceholderMessage {
             Layout.fillWidth: true
-            visible: !sheet.loading && sheet.errorMessage === "" && sheet.filteredModels.length === 0
+            visible: !sheet.loading && sheet.errorMessage === "" && filteredModels.rowCount() === 0
             text: qsTr("No models found")
             icon.name: "edit-find"
         }
@@ -181,13 +117,13 @@ Kirigami.OverlaySheet {
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.preferredHeight: Kirigami.Units.gridUnit * 30
-            visible: !sheet.loading && sheet.errorMessage === "" && sheet.filteredModels.length > 0
+            visible: !sheet.loading && sheet.errorMessage === "" && filteredModels.rowCount() > 0
 
             cellWidth: modelGrid.width / 2
             cellHeight: Kirigami.Units.gridUnit * 12
 
             clip: true
-            model: gridModel
+            model: filteredModels
 
             Controls.ScrollBar.vertical: Controls.ScrollBar {
                 policy: Controls.ScrollBar.Never

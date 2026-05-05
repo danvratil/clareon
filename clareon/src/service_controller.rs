@@ -4,8 +4,8 @@
 
 //! ServiceController - Qt bridge to the service layer
 
+use std::pin::Pin;
 use std::sync::OnceLock;
-use std::{ops::Deref, pin::Pin};
 
 use clareon_core::types::ConversationId;
 use cxx_qt::Threading;
@@ -49,50 +49,18 @@ mod ffi {
         #[qml_singleton]
         type ServiceController = super::ServiceControllerRust;
 
-        // Signals for conversation events
+        // Navigation signals
         #[qsignal]
         fn conversation_created(self: Pin<&mut ServiceController>, id: QString);
 
         #[qsignal]
-        fn conversations_changed(self: Pin<&mut ServiceController>);
-
-        #[qsignal]
         fn conversation_deleted(self: Pin<&mut ServiceController>, id: QString);
-
-        // Signals for message events
-        #[qsignal]
-        fn messages_loaded(self: Pin<&mut ServiceController>, conversation_id: QString);
-
-        #[qsignal]
-        fn messages_changed(self: Pin<&mut ServiceController>, conversation_id: QString);
-
-        // Signals for streaming
-        #[qsignal]
-        fn streaming_started(self: Pin<&mut ServiceController>, conversation_id: QString);
-
-        #[qsignal]
-        fn streaming_chunk(
-            self: Pin<&mut ServiceController>,
-            conversation_id: QString,
-            delta: QString,
-            accumulated: QString,
-        );
-
-        #[qsignal]
-        fn streaming_complete(self: Pin<&mut ServiceController>, conversation_id: QString);
 
         // Error signal
         #[qsignal]
         fn error_occurred(self: Pin<&mut ServiceController>, command: QString, error: QString);
 
-        // Search signal
-        #[qsignal]
-        fn search_results_ready(self: Pin<&mut ServiceController>);
-
         // Artifact signals
-        #[qsignal]
-        fn artifacts_loaded(self: Pin<&mut ServiceController>, conversation_id: QString);
-
         #[qsignal]
         fn artifact_loaded(
             self: Pin<&mut ServiceController>,
@@ -110,13 +78,6 @@ mod ffi {
 
         #[qsignal]
         fn quick_input_requested(self: Pin<&mut ServiceController>);
-
-        // Signals for model events
-        #[qsignal]
-        fn models_loaded(self: Pin<&mut ServiceController>);
-
-        #[qsignal]
-        fn models_load_failed(self: Pin<&mut ServiceController>, error: QString);
 
         // Actions (invokable from QML)
         #[qinvokable]
@@ -158,50 +119,15 @@ mod ffi {
         #[qinvokable]
         fn set_auto_start(self: &ServiceController, enabled: bool);
 
-        // Data access (synchronous, reads from cache)
-        #[qinvokable]
-        fn get_conversation_count(self: &ServiceController) -> i32;
-
         #[qinvokable]
         fn fetch_available_models(self: &ServiceController, provider: &QString);
-
-        #[qinvokable]
-        fn get_model_count(self: &ServiceController) -> i32;
-
-        #[qinvokable]
-        fn get_model_id(self: &ServiceController, index: i32) -> QString;
-
-        #[qinvokable]
-        fn get_model_name(self: &ServiceController, index: i32) -> QString;
-
-        #[qinvokable]
-        fn get_model_context_window(self: &ServiceController, index: i32) -> u32;
-
-        #[qinvokable]
-        fn get_model_max_output_tokens(self: &ServiceController, index: i32) -> u32;
-
-        #[qinvokable]
-        fn get_model_description(self: &ServiceController, index: i32) -> QString;
-
-        #[qinvokable]
-        fn get_model_owner(self: &ServiceController, index: i32) -> QString;
-
-        #[qinvokable]
-        fn get_model_pricing_prompt(self: &ServiceController, index: i32) -> QString;
-
-        #[qinvokable]
-        fn get_model_pricing_completion(self: &ServiceController, index: i32) -> QString;
-
-        #[qinvokable]
-        fn get_model_input_modalities(self: &ServiceController, index: i32) -> QString;
-
-        #[qinvokable]
-        fn get_model_output_modalities(self: &ServiceController, index: i32) -> QString;
     }
 
     impl cxx_qt::Threading for ServiceController {}
     impl cxx_qt::Initialize for ServiceController {}
 }
+
+use std::ops::Deref;
 
 use clareon_core::config::Provider;
 use cxx_qt_lib::{QList, QString, QStringList};
@@ -219,7 +145,6 @@ impl cxx_qt::Initialize for ffi::ServiceController {
         let mut response_rx = handle.subscribe();
         let qt_thread = self.qt_thread();
 
-        // Spawn task to forward responses to Qt thread
         crate::get_runtime().spawn(async move {
             while let Ok(response) = response_rx.recv().await {
                 let _ = qt_thread.queue(move |mut controller| {
@@ -227,9 +152,6 @@ impl cxx_qt::Initialize for ffi::ServiceController {
                 });
             }
         });
-
-        // Initial load of conversations
-        self.refresh_conversations();
     }
 }
 
@@ -238,122 +160,13 @@ impl ffi::ServiceController {
     fn handle_response(mut self: Pin<&mut Self>, response: Response) {
         match response {
             Response::ConversationCreated { conversation } => {
-                // Add to cache
-                crate::qt::conversations_cache()
-                    .lock()
-                    .unwrap()
-                    .push(conversation.clone());
-
-                // Emit signals
                 self.as_mut()
                     .conversation_created(QString::from(&conversation.id.to_string()));
-                self.as_mut().conversations_changed();
-            }
-
-            Response::ConversationsRefreshed { conversations } => {
-                // Update cache
-                *crate::qt::conversations_cache().lock().unwrap() = conversations;
-
-                // Emit signal
-                self.as_mut().conversations_changed();
             }
 
             Response::ConversationDeleted { id } => {
-                // Remove from cache
-                crate::qt::conversations_cache()
-                    .lock()
-                    .unwrap()
-                    .retain(|c| c.id != id);
-
-                // Emit signals
                 self.as_mut()
                     .conversation_deleted(QString::from(&id.to_string()));
-                self.as_mut().conversations_changed();
-            }
-
-            Response::MessagesLoaded { conv_id, .. } => {
-                // MessageListModel now handles this directly
-                // Emit signal for UI feedback
-                self.as_mut()
-                    .messages_loaded(QString::from(&conv_id.to_string()));
-            }
-
-            Response::MessageSent { conv_id, .. } => {
-                // MessageListModel now handles this directly
-                // Emit signal for UI feedback
-                self.as_mut()
-                    .messages_changed(QString::from(&conv_id.to_string()));
-            }
-
-            Response::StreamingStarted { conv_id } => {
-                self.as_mut()
-                    .streaming_started(QString::from(&conv_id.to_string()));
-            }
-
-            Response::StreamingChunk {
-                conv_id,
-                delta,
-                accumulated,
-            } => {
-                self.as_mut().streaming_chunk(
-                    QString::from(&conv_id.to_string()),
-                    QString::from(&delta),
-                    QString::from(&accumulated),
-                );
-            }
-
-            Response::StreamingComplete { conv_id, .. } => {
-                // MessageListModel now handles this directly
-                // Emit signals for UI feedback
-                self.as_mut()
-                    .streaming_complete(QString::from(&conv_id.to_string()));
-                self.as_mut()
-                    .messages_changed(QString::from(&conv_id.to_string()));
-            }
-
-            Response::ConversationLoaded { conversation: _ } => {
-                // Currently not used, but could be used for loading individual conversations
-            }
-
-            Response::SendMessageError {
-                conv_id,
-                error_info,
-                user_message_id: _,
-            } => {
-                // For now, emit error_occurred signal
-                // Later, MessageListModel will handle this directly
-                self.as_mut().error_occurred(
-                    QString::from(&format!("SendMessage({})", conv_id)),
-                    QString::from(&error_info.message),
-                );
-            }
-
-            Response::StreamingError {
-                conv_id,
-                error_info,
-                partial_text: _,
-            } => {
-                // For now, emit error_occurred signal
-                // Later, MessageListModel will handle this directly
-                self.as_mut().error_occurred(
-                    QString::from(&format!("StreamingError({})", conv_id)),
-                    QString::from(&error_info.message),
-                );
-            }
-
-            Response::SearchResults { results } => {
-                // Update cache
-                *crate::qt::search_results_cache().lock().unwrap() = results;
-
-                // Emit signal
-                self.as_mut().search_results_ready();
-            }
-
-            Response::ArtifactsLoaded { conv_id, .. } => {
-                // ArtifactListModel now handles this directly
-                // Emit signal for UI feedback
-                self.as_mut()
-                    .artifacts_loaded(QString::from(&conv_id.to_string()));
             }
 
             Response::ArtifactLoaded {
@@ -362,16 +175,13 @@ impl ffi::ServiceController {
                 mime_type,
                 content,
             } => {
-                // Convert content to UTF-8 string for text types, or base64 for binary
                 let content_str = if mime_type.starts_with("text/") {
                     String::from_utf8_lossy(&content).to_string()
                 } else {
-                    // For binary content, encode as base64
                     use base64::{Engine as _, engine::general_purpose};
                     general_purpose::STANDARD.encode(&content)
                 };
 
-                // Emit signal
                 self.as_mut().artifact_loaded(
                     artifact_id,
                     QString::from(&filename),
@@ -381,7 +191,6 @@ impl ffi::ServiceController {
             }
 
             Response::ArtifactSaved { artifact_id, path } => {
-                // Emit signal for UI feedback
                 self.as_mut()
                     .artifact_saved(artifact_id, QString::from(&path));
             }
@@ -399,14 +208,7 @@ impl ffi::ServiceController {
                 self.as_mut().quick_input_requested();
             }
 
-            Response::ModelsLoaded { models } => {
-                *crate::qt::models_cache().lock().unwrap() = models;
-                self.as_mut().models_loaded();
-            }
-
-            Response::ModelsLoadFailed { error } => {
-                self.as_mut().models_load_failed(QString::from(&error));
-            }
+            _ => {}
         }
     }
 
@@ -569,11 +371,6 @@ X-LXQt-Need-Tray=true"#,
         });
     }
 
-    /// Get the number of conversations
-    fn get_conversation_count(&self) -> i32 {
-        crate::qt::conversations_cache().lock().unwrap().len() as i32
-    }
-
     /// Fetch available models for a provider
     fn fetch_available_models(&self, provider: &QString) {
         let handle = get_service_handle();
@@ -588,99 +385,5 @@ X-LXQt-Need-Tray=true"#,
             }
         };
         let _ = handle.send(Command::FetchAvailableModels { provider });
-    }
-
-    fn get_model_count(&self) -> i32 {
-        crate::qt::models_cache().lock().unwrap().len() as i32
-    }
-
-    fn get_model_id(&self, index: i32) -> QString {
-        let arc = crate::qt::models_cache();
-        let cache = arc.lock().unwrap();
-        cache
-            .get(index as usize)
-            .map(|m| QString::from(&m.id))
-            .unwrap_or_default()
-    }
-
-    fn get_model_name(&self, index: i32) -> QString {
-        let arc = crate::qt::models_cache();
-        let cache = arc.lock().unwrap();
-        cache
-            .get(index as usize)
-            .map(|m| QString::from(&m.name))
-            .unwrap_or_default()
-    }
-
-    fn get_model_context_window(&self, index: i32) -> u32 {
-        let arc = crate::qt::models_cache();
-        let cache = arc.lock().unwrap();
-        cache
-            .get(index as usize)
-            .map(|m| m.context_window)
-            .unwrap_or(0)
-    }
-
-    fn get_model_max_output_tokens(&self, index: i32) -> u32 {
-        let arc = crate::qt::models_cache();
-        let cache = arc.lock().unwrap();
-        cache
-            .get(index as usize)
-            .map(|m| m.max_output_tokens)
-            .unwrap_or(0)
-    }
-
-    fn get_model_description(&self, index: i32) -> QString {
-        let arc = crate::qt::models_cache();
-        let cache = arc.lock().unwrap();
-        cache
-            .get(index as usize)
-            .map(|m| QString::from(&m.description))
-            .unwrap_or_default()
-    }
-
-    fn get_model_owner(&self, index: i32) -> QString {
-        let arc = crate::qt::models_cache();
-        let cache = arc.lock().unwrap();
-        cache
-            .get(index as usize)
-            .map(|m| QString::from(&m.owner))
-            .unwrap_or_default()
-    }
-
-    fn get_model_pricing_prompt(&self, index: i32) -> QString {
-        let arc = crate::qt::models_cache();
-        let cache = arc.lock().unwrap();
-        cache
-            .get(index as usize)
-            .map(|m| QString::from(&m.pricing_prompt))
-            .unwrap_or_default()
-    }
-
-    fn get_model_pricing_completion(&self, index: i32) -> QString {
-        let arc = crate::qt::models_cache();
-        let cache = arc.lock().unwrap();
-        cache
-            .get(index as usize)
-            .map(|m| QString::from(&m.pricing_completion))
-            .unwrap_or_default()
-    }
-
-    fn get_model_input_modalities(&self, index: i32) -> QString {
-        let arc = crate::qt::models_cache();
-        let cache = arc.lock().unwrap();
-        cache
-            .get(index as usize)
-            .map(|m| QString::from(&m.input_modalities))
-            .unwrap_or_default()
-    }
-
-    fn get_model_output_modalities(&self, index: i32) -> QString {
-        let arc = crate::qt::models_cache();
-        let cache = arc.lock().unwrap();
-        cache
-            .get(index as usize)
-            .map(|m| QString::from(&m.output_modalities))
-            .unwrap_or_default()
     }
 }

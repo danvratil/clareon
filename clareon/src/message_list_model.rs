@@ -6,17 +6,14 @@
 
 use chrono::DateTime;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
 use tracing::{debug, info};
 
 use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{
-    QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant,
-};
-use tokio::task::JoinHandle;
+use cxx_qt_lib::{QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
 
 use clareon_core::types::ConversationId;
 
+use crate::model_helpers::{Subscription, get_item, make_role_names};
 use crate::service::{Command, ErrorInfo, MessageData, Response};
 use crate::service_controller::try_get_service_handle;
 
@@ -206,24 +203,13 @@ impl From<MessageData> for Message {
 }
 
 /// Rust implementation of MessageListModel
+#[derive(Default)]
 pub struct MessageListModelRust {
     conversation_id: QString,
     messages: Vec<Message>,
-    subscription: Arc<Mutex<Option<JoinHandle<()>>>>,
+    subscription: Subscription,
     total_input_tokens: i64,
     total_output_tokens: i64,
-}
-
-impl Default for MessageListModelRust {
-    fn default() -> Self {
-        Self {
-            conversation_id: QString::default(),
-            messages: Vec::new(),
-            subscription: Arc::new(Mutex::new(None)),
-            total_input_tokens: 0,
-            total_output_tokens: 0,
-        }
-    }
 }
 
 /// Computes `is_grouped_with_previous` for every message in the slice.
@@ -507,12 +493,9 @@ impl ffi::MessageListModel {
     }
 
     fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
-        let row = index.row();
-        if row < 0 || row as usize >= self.rust().messages.len() {
+        let Some(message) = get_item(&self.rust().messages, index) else {
             return QVariant::default();
-        }
-
-        let message = &self.rust().messages[row as usize];
+        };
 
         if role == MessageRole::MessageId as i32 {
             QVariant::from(&message.id)
@@ -587,50 +570,25 @@ impl ffi::MessageListModel {
     }
 
     fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
-        let mut roles = QHash::default();
-        roles.insert(MessageRole::MessageId.into(), QByteArray::from("messageId"));
-        roles.insert(MessageRole::Role.into(), QByteArray::from("role"));
-        roles.insert(MessageRole::Text.into(), QByteArray::from("textContent"));
-        roles.insert(MessageRole::CreatedAt.into(), QByteArray::from("createdAt"));
-        roles.insert(
-            MessageRole::MessageState.into(),
-            QByteArray::from("messageState"),
-        );
-        // Error-related roles
-        roles.insert(MessageRole::IsError.into(), QByteArray::from("isError"));
-        roles.insert(
-            MessageRole::ErrorMessage.into(),
-            QByteArray::from("errorMessage"),
-        );
-        roles.insert(
-            MessageRole::ErrorDetails.into(),
-            QByteArray::from("errorDetails"),
-        );
-        roles.insert(
-            MessageRole::ErrorCategory.into(),
-            QByteArray::from("errorCategory"),
-        );
-        roles.insert(
-            MessageRole::IsRetryable.into(),
-            QByteArray::from("isRetryable"),
-        );
-        roles.insert(
-            MessageRole::RetryAfterSecs.into(),
-            QByteArray::from("retryAfterSecs"),
-        );
-        roles.insert(
-            MessageRole::PartialContent.into(),
-            QByteArray::from("partialContent"),
-        );
-        roles.insert(
-            MessageRole::ContentBlocks.into(),
-            QByteArray::from("contentBlocks"),
-        );
-        roles.insert(
-            MessageRole::IsGroupedWithPrevious.into(),
-            QByteArray::from("isGroupedWithPrevious"),
-        );
-        roles
+        make_role_names(&[
+            (MessageRole::MessageId.into(), "messageId"),
+            (MessageRole::Role.into(), "role"),
+            (MessageRole::Text.into(), "textContent"),
+            (MessageRole::CreatedAt.into(), "createdAt"),
+            (MessageRole::MessageState.into(), "messageState"),
+            (MessageRole::IsError.into(), "isError"),
+            (MessageRole::ErrorMessage.into(), "errorMessage"),
+            (MessageRole::ErrorDetails.into(), "errorDetails"),
+            (MessageRole::ErrorCategory.into(), "errorCategory"),
+            (MessageRole::IsRetryable.into(), "isRetryable"),
+            (MessageRole::RetryAfterSecs.into(), "retryAfterSecs"),
+            (MessageRole::PartialContent.into(), "partialContent"),
+            (MessageRole::ContentBlocks.into(), "contentBlocks"),
+            (
+                MessageRole::IsGroupedWithPrevious.into(),
+                "isGroupedWithPrevious",
+            ),
+        ])
     }
 
     /// Subscribe to broadcast events for the current conversation
@@ -658,7 +616,6 @@ impl ffi::MessageListModel {
         // Spawn async task to receive and filter events
         let task = crate::get_runtime().spawn(async move {
             while let Ok(response) = response_rx.recv().await {
-                // Filter by conversation_id
                 let is_relevant = match &response {
                     Response::MessagesLoaded { conv_id: id, .. } => *id == conv_id,
                     Response::MessageSent { conv_id: id, .. } => *id == conv_id,
@@ -674,37 +631,22 @@ impl ffi::MessageListModel {
                     continue;
                 }
 
-                // Queue update to Qt thread
                 let _ = qt_thread.queue(move |mut model| {
                     model.as_mut().handle_response(response);
                 });
             }
         });
 
-        // Store the task handle
-        *self
-            .rust()
-            .subscription
-            .lock()
-            .expect("Subscription lock poisoned") = Some(task);
+        self.rust().subscription.start(task);
     }
 
     /// Unsubscribe from broadcast events
     fn unsubscribe_from_events(self: Pin<&mut Self>) {
-        // Abort the subscription task
-        if let Some(task) = self
-            .rust()
-            .subscription
-            .lock()
-            .expect("Subscription lock poisoned")
-            .take()
-        {
-            debug!(
-                conversation_id = self.conversation_id().to_string(),
-                "Unsubscribing from conversation events for MessageListModel"
-            );
-            task.abort();
-        }
+        debug!(
+            conversation_id = self.conversation_id().to_string(),
+            "Unsubscribing from conversation events for MessageListModel"
+        );
+        self.rust().subscription.cancel();
     }
 
     /// Handle a filtered response
@@ -765,20 +707,6 @@ impl ffi::MessageListModel {
             _ => {
                 // Ignore other response types
             }
-        }
-    }
-}
-
-impl Drop for MessageListModelRust {
-    fn drop(&mut self) {
-        // Abort the subscription task when model is destroyed
-        if let Some(task) = self
-            .subscription
-            .lock()
-            .expect("Subscription lock poisoned")
-            .take()
-        {
-            task.abort();
         }
     }
 }

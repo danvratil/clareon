@@ -21,6 +21,8 @@ pub mod config_manager;
 pub mod conversation_list_model;
 pub mod logging;
 pub mod message_list_model;
+pub mod model_helpers;
+pub mod model_list_model;
 pub mod qml;
 pub mod qt;
 pub mod search_result_model;

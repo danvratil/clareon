@@ -52,30 +52,12 @@ Kirigami.GlobalDrawer {
     ]
 
     ConversationListModel {
-        id: conversationDataProvider
-
-        onDataChanged: {
-            // Rebuild the list model from data provider
-            conversationListModel.clear()
-            for (var i = 0; i < conversationDataProvider.count; i++) {
-                conversationListModel.append({
-                    conversationId: conversationDataProvider.getId(i),
-                    title: conversationDataProvider.getTitle(i),
-                    updatedAt: conversationDataProvider.getUpdatedAt(i),
-                    model: conversationDataProvider.getModel(i),
-                    messageCount: 0  // Not available yet
-                })
-            }
-        }
-    }
-
-    ListModel {
-        id: conversationListModel
+        id: conversationModel
     }
 
     KItemModels.KSortFilterProxyModel {
         id: filteredModel
-        sourceModel: conversationListModel
+        sourceModel: conversationModel
         filterRoleName: "title"
         filterRegularExpression: {
             if (searchField.text === "") return new RegExp()
@@ -83,13 +65,8 @@ Kirigami.GlobalDrawer {
         }
     }
 
-    // Connect to ServiceController signals
     Connections {
         target: ServiceController
-
-        function onConversationsChanged() {
-            conversationDataProvider.refresh()
-        }
 
         function onConversationCreated(id) {
             drawer.conversationSelected(id)

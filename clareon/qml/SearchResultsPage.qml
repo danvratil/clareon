@@ -43,34 +43,6 @@ Kirigami.Page {
 
     SearchResultModel {
         id: searchResultModel
-
-        onDataChanged: {
-            // Rebuild the list model from data provider
-            searchResultListModel.clear()
-            for (var i = 0; i < searchResultModel.count; i++) {
-                searchResultListModel.append({
-                    conversationId: searchResultModel.getConversationId(i),
-                    conversationTitle: searchResultModel.getConversationTitle(i),
-                    messageId: searchResultModel.getMessageId(i),
-                    role: searchResultModel.getRole(i),
-                    snippet: searchResultModel.getSnippet(i),
-                    createdAt: searchResultModel.getCreatedAt(i)
-                })
-            }
-        }
-    }
-
-    ListModel {
-        id: searchResultListModel
-    }
-
-    // Connect to ServiceController signals
-    Connections {
-        target: ServiceController
-
-        function onSearchResultsReady() {
-            searchResultModel.refresh()
-        }
     }
 
     Component {
@@ -128,7 +100,7 @@ Kirigami.Page {
                 anchors.fill: parent
                 clip: true
 
-                model: searchResultListModel
+                model: searchResultModel
 
                 delegate: SearchResultDelegate {
                     id: delegate

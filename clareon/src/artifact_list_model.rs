@@ -5,15 +5,14 @@
 //! ArtifactListModel - Qt model for artifacts in a conversation
 
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
 use tracing::{debug, info};
 
 use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
-use tokio::task::JoinHandle;
+use cxx_qt_lib::{QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 
 use clareon_core::types::ConversationId;
 
+use crate::model_helpers::{Subscription, get_item, make_role_names};
 use crate::service::{ArtifactData, Command, Response};
 use crate::service_controller::try_get_service_handle;
 
@@ -130,20 +129,11 @@ impl From<ArtifactData> for Artifact {
 }
 
 /// Rust implementation of ArtifactListModel
+#[derive(Default)]
 pub struct ArtifactListModelRust {
     conversation_id: QString,
     artifacts: Vec<Artifact>,
-    subscription: Arc<Mutex<Option<JoinHandle<()>>>>,
-}
-
-impl Default for ArtifactListModelRust {
-    fn default() -> Self {
-        Self {
-            conversation_id: QString::default(),
-            artifacts: Vec::new(),
-            subscription: Arc::new(Mutex::new(None)),
-        }
-    }
+    subscription: Subscription,
 }
 
 #[allow(dead_code)]
@@ -210,12 +200,9 @@ impl ffi::ArtifactListModel {
     }
 
     fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
-        let row = index.row();
-        if row < 0 || row as usize >= self.rust().artifacts.len() {
+        let Some(artifact) = get_item(&self.rust().artifacts, index) else {
             return QVariant::default();
-        }
-
-        let artifact = &self.rust().artifacts[row as usize];
+        };
 
         if role == ArtifactRole::ArtifactId as i32 {
             QVariant::from(&artifact.id)
@@ -239,34 +226,16 @@ impl ffi::ArtifactListModel {
     }
 
     fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
-        let mut roles = QHash::default();
-        roles.insert(
-            ArtifactRole::ArtifactId.into(),
-            QByteArray::from("artifactId"),
-        );
-        roles.insert(
-            ArtifactRole::MessageId.into(),
-            QByteArray::from("messageId"),
-        );
-        roles.insert(ArtifactRole::Filename.into(), QByteArray::from("filename"));
-        roles.insert(ArtifactRole::MimeType.into(), QByteArray::from("mimeType"));
-        roles.insert(
-            ArtifactRole::SizeBytes.into(),
-            QByteArray::from("sizeBytes"),
-        );
-        roles.insert(
-            ArtifactRole::ContentHash.into(),
-            QByteArray::from("contentHash"),
-        );
-        roles.insert(
-            ArtifactRole::CreatedAt.into(),
-            QByteArray::from("createdAt"),
-        );
-        roles.insert(
-            ArtifactRole::UpdatedAt.into(),
-            QByteArray::from("updatedAt"),
-        );
-        roles
+        make_role_names(&[
+            (ArtifactRole::ArtifactId.into(), "artifactId"),
+            (ArtifactRole::MessageId.into(), "messageId"),
+            (ArtifactRole::Filename.into(), "filename"),
+            (ArtifactRole::MimeType.into(), "mimeType"),
+            (ArtifactRole::SizeBytes.into(), "sizeBytes"),
+            (ArtifactRole::ContentHash.into(), "contentHash"),
+            (ArtifactRole::CreatedAt.into(), "createdAt"),
+            (ArtifactRole::UpdatedAt.into(), "updatedAt"),
+        ])
     }
 
     /// Subscribe to broadcast events for the current conversation
@@ -291,10 +260,8 @@ impl ffi::ArtifactListModel {
 
         let mut response_rx = handle.subscribe();
 
-        // Spawn async task to receive and filter events
         let task = crate::get_runtime().spawn(async move {
             while let Ok(response) = response_rx.recv().await {
-                // Filter by conversation_id
                 let is_relevant = match &response {
                     Response::ArtifactsLoaded { conv_id: id, .. } => *id == conv_id,
                     _ => false,
@@ -304,37 +271,22 @@ impl ffi::ArtifactListModel {
                     continue;
                 }
 
-                // Queue update to Qt thread
                 let _ = qt_thread.queue(move |mut model| {
                     model.as_mut().handle_response(response);
                 });
             }
         });
 
-        // Store the task handle
-        *self
-            .rust()
-            .subscription
-            .lock()
-            .expect("Subscription lock poisoned") = Some(task);
+        self.rust().subscription.start(task);
     }
 
     /// Unsubscribe from broadcast events
     fn unsubscribe_from_events(self: Pin<&mut Self>) {
-        // Abort the subscription task
-        if let Some(task) = self
-            .rust()
-            .subscription
-            .lock()
-            .expect("Subscription lock poisoned")
-            .take()
-        {
-            debug!(
-                conversation_id = self.conversation_id().to_string(),
-                "Unsubscribing from conversation events for ArtifactListModel"
-            );
-            task.abort();
-        }
+        debug!(
+            conversation_id = self.conversation_id().to_string(),
+            "Unsubscribing from conversation events for ArtifactListModel"
+        );
+        self.rust().subscription.cancel();
     }
 
     /// Handle a filtered response
@@ -346,20 +298,6 @@ impl ffi::ArtifactListModel {
             _ => {
                 // Ignore other response types
             }
-        }
-    }
-}
-
-impl Drop for ArtifactListModelRust {
-    fn drop(&mut self) {
-        // Abort the subscription task when model is destroyed
-        if let Some(task) = self
-            .subscription
-            .lock()
-            .expect("Subscription lock poisoned")
-            .take()
-        {
-            task.abort();
         }
     }
 }

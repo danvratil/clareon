@@ -54,6 +54,7 @@ fn main() {
         "src/service_controller.rs",
         "src/conversation_list_model.rs",
         "src/message_list_model.rs",
+        "src/model_list_model.rs",
         "src/search_result_model.rs",
         "src/config_manager.rs",
         "src/artifact_list_model.rs",
