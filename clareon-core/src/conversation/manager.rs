@@ -662,10 +662,15 @@ impl ConversationManager {
                     if let Ok(messages) = storage.get_messages(&conv_id).await
                         && let Some(last_msg) = messages.last() {
                             let assistant_text = last_msg.text().unwrap_or("");
-                            if let Ok(title) = title_generator.generate_title(&user_input, assistant_text).await {
-                                info!("Generated title: {}", title);
-                                conv_for_title.set_title(&title);
-                                let _ = storage.update_conversation(&conv_for_title).await;
+                            match title_generator.generate_title(&user_input, assistant_text).await {
+                                Ok(title) => {
+                                    info!("Generated title: {}", title);
+                                    conv_for_title.set_title(&title);
+                                    let _ = storage.update_conversation(&conv_for_title).await;
+                                }
+                                Err(e) => {
+                                    warn!("Failed to generate title: {}", e);
+                                }
                             }
                         }
                 }

@@ -372,6 +372,7 @@ impl ServiceWorker {
                         error!("Failed to reload messages after streaming: {}", e);
                     }
                 }
+                self.handle_refresh_conversations().await;
             }
             Err(e) => {
                 error!(
@@ -494,6 +495,7 @@ impl ServiceWorker {
                         error!("Failed to reload messages after streaming: {}", e);
                     }
                 }
+                self.handle_refresh_conversations().await;
             }
             Err(e) => {
                 error!(
@@ -691,6 +693,7 @@ impl ServiceWorker {
                         error!("Failed to reload messages after streaming: {}", e);
                     }
                 }
+                self.handle_refresh_conversations().await;
             }
             Err(e) => {
                 error!(
@@ -780,6 +783,7 @@ impl ServiceWorker {
                         error!("Failed to reload messages after retry streaming: {}", e);
                     }
                 }
+                self.handle_refresh_conversations().await;
             }
             Err(e) => {
                 error!(
