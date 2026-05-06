@@ -59,6 +59,9 @@ aws-smithy-types = "1"
 # OpenAI-compatible API
 async-openai = { version = "0.36", features = ["chat-completion", "model"] }
 
+# OpenRouter native API
+openrouter-rs = "0.9"
+
 # HTTP client (for Anthropic API)
 reqwest = { version = "0.13", features = ["json", "stream"] }
 

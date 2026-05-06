@@ -10,6 +10,7 @@
 mod anthropic;
 mod bedrock;
 mod openai;
+mod openrouter;
 mod traits;
 
 use std::sync::Arc;
@@ -18,6 +19,7 @@ use crate::{Config, config::Provider};
 pub use anthropic::AnthropicBackend;
 pub use bedrock::BedrockBackend;
 pub use openai::OpenAiBackend;
+pub use openrouter::OpenRouterBackend;
 pub use traits::*;
 
 /// Create an LLM backend instance based on the provided configuration
@@ -25,15 +27,18 @@ pub use traits::*;
 /// Maps user-facing providers to internal backend implementations.
 pub async fn create_backend_from_config(config: &Config) -> Result<Arc<dyn LlmBackend>, String> {
     match config.default_provider {
-        Provider::OpenAi | Provider::OpenRouter | Provider::LiteLlm => {
+        Provider::OpenAi | Provider::LiteLlm => {
             let provider_config = match config.default_provider {
                 Provider::OpenAi => &config.providers.openai,
-                Provider::OpenRouter => &config.providers.openrouter,
                 Provider::LiteLlm => &config.providers.litellm,
                 _ => unreachable!(),
             };
-            let backend =
-                OpenAiBackend::from_config(provider_config, config.default_provider.clone());
+            let backend = OpenAiBackend::from_config(provider_config);
+            Ok(Arc::new(backend))
+        }
+        Provider::OpenRouter => {
+            let backend = OpenRouterBackend::from_config(&config.providers.openrouter)
+                .map_err(|e| format!("Failed to create OpenRouter backend: {}", e))?;
             Ok(Arc::new(backend))
         }
         Provider::Anthropic => {
