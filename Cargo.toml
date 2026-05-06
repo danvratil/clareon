@@ -57,10 +57,10 @@ aws-sdk-bedrockruntime = "1"
 aws-smithy-types = "1"
 
 # OpenAI-compatible API
-async-openai = { version = "0.33", features = ["chat-completion", "model"] }
+async-openai = { version = "0.36", features = ["chat-completion", "model"] }
 
 # HTTP client (for Anthropic API)
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.13", features = ["json", "stream"] }
 
 # Secrets (rt-tokio-crypto-rust uses tokio runtime with pure Rust crypto)
 secret-service = { version = "4", features = ["rt-tokio-crypto-rust"] }
