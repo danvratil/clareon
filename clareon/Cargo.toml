@@ -48,6 +48,14 @@ base64 = "0.22"
 xdg = "3.0"
 clap.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+# Used for the Win32 named-mutex primitive in unique_app::windows.
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Threading",
+] }
+
 [features]
 qml-from-filesystem = []
 
