@@ -44,9 +44,13 @@ chrono = { workspace = true }
 # Encoding
 base64 = "0.22"
 
-# XDG Base Directory support
-xdg = "3.0"
+# Standard directory lookups (used by clareon::standard_dirs on Windows)
+directories = { workspace = true }
 clap.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+# XDG Base Directory support (used by clareon::standard_dirs on Unix)
+xdg = "3.0"
 
 [target.'cfg(windows)'.dependencies]
 # Used for the Win32 named-mutex primitive in unique_app::windows.

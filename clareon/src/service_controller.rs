@@ -322,11 +322,12 @@ impl ffi::ServiceController {
     }
 
     /// Set auto-start on login
+    #[cfg(unix)]
     fn set_auto_start(&self, enabled: bool) {
-        let xdg_dirs = xdg::BaseDirectories::new();
+        const AUTOSTART_FILE: &str = "autostart/cc.clareon.desktop";
 
         if enabled {
-            let desktop_file = match xdg_dirs.place_config_file("autostart/cc.clareon.desktop") {
+            let desktop_file = match crate::standard_dirs::place_config_file(AUTOSTART_FILE) {
                 Ok(path) => path,
                 Err(e) => {
                     tracing::error!("Failed to determine autostart desktop file path: {}", e);
@@ -355,12 +356,17 @@ X-LXQt-Need-Tray=true"#,
             .unwrap_or_else(|e| {
                 tracing::error!("Failed to write autostart desktop file: {}", e);
             });
-        } else if let Some(desktop_file) = xdg_dirs.get_config_file("autostart/cc.clareon.desktop")
-        {
+        } else if let Some(desktop_file) = crate::standard_dirs::get_config_file(AUTOSTART_FILE) {
             std::fs::remove_file(&desktop_file).unwrap_or_else(|e| {
                 tracing::error!("Failed to remove autostart desktop file: {}", e);
             });
         }
+    }
+
+    /// Set auto-start on login (not yet implemented on this platform).
+    #[cfg(not(unix))]
+    fn set_auto_start(&self, _enabled: bool) {
+        tracing::warn!("Auto-start is not yet supported on this platform");
     }
     /// Create a new conversation and immediately send a message
     /// Used for quick input flow

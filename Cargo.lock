@@ -986,6 +986,7 @@ dependencies = [
  "cxx-qt-build",
  "cxx-qt-lib",
  "cxx-qt-lib-extras",
+ "directories",
  "futures",
  "glob",
  "qt-build-utils",

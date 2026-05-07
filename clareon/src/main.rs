@@ -28,6 +28,7 @@ pub mod qt;
 pub mod search_result_model;
 pub mod service;
 pub mod service_controller;
+pub mod standard_dirs;
 pub mod unique_app;
 
 // Global service instance

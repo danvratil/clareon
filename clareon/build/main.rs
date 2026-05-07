@@ -39,6 +39,14 @@ fn main() {
         find_qml_files()
     };
 
+    // Windows Qt build doesn't support ZSTD compression for QRC files. But when
+    // cross-compiling on Linux, cxx-qt will use native Linux `rcc`, which does support
+    // ZSTD, resulting in undefined symbols when trying to link the final executable against
+    // Windows Qt libraries.
+    unsafe {
+        std::env::set_var("CXX_QT_AUTORCC_OPTIONS", "--no-zstd");
+    }
+
     CxxQtBuilder::new_qml_module(
         QmlModule::new("cz.dvratil.clareon")
             .qml_files(qml_files)
