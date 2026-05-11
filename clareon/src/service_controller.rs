@@ -385,6 +385,7 @@ X-LXQt-Need-Tray=true"#,
             "openai" => Provider::OpenAi,
             "openrouter" => Provider::OpenRouter,
             "litellm" => Provider::LiteLlm,
+            "ollama" => Provider::Ollama,
             _ => {
                 tracing::warn!("Unsupported provider for model fetching: {}", provider_str);
                 return;

@@ -62,6 +62,12 @@ async-openai = { version = "0.36", features = ["chat-completion", "model"] }
 # OpenRouter native API
 openrouter-rs = "0.9"
 
+# Ollama native API
+ollama-rs = { version = "0.3.4", features = ["stream"] }
+
+# JSON Schema (used by ollama-rs tool parameters)
+schemars = "1"
+
 # HTTP client (for Anthropic API)
 reqwest = { version = "0.13", features = ["json", "stream"] }
 

@@ -1,10 +1,10 @@
 # Clareon
 
-An AI assistant for Linux supporting multiple LLM backends (OpenAI-compatible APIs, AWS Bedrock, Anthropic), featuring a Qt/QML GUI with native desktop integration.
+An AI assistant for Linux supporting multiple LLM backends (OpenAI-compatible APIs, AWS Bedrock, Anthropic, Ollama), featuring a Qt/QML GUI with native desktop integration.
 
 ## Project Overview
 
-Clareon is a cross-platform AI assistant with integrated tool support, conversation management, and native Linux desktop integration. It provides a Qt/QML graphical interface for interacting with LLMs via OpenAI-compatible APIs (LiteLLM, OpenRouter, etc.), AWS Bedrock, or the Anthropic API, with local conversation storage, full-text search, and built-in file operation tools.
+Clareon is a cross-platform AI assistant with integrated tool support, conversation management, and native Linux desktop integration. It provides a Qt/QML graphical interface for interacting with LLMs via OpenAI-compatible APIs (LiteLLM, OpenRouter, etc.), AWS Bedrock, the Anthropic API, or a local Ollama daemon, with local conversation storage, full-text search, and built-in file operation tools.
 
 The project includes a terminal UI (clareon-cli) primarily used for testing and prototyping new features.
 
@@ -52,7 +52,7 @@ The project is organized as a Cargo workspace with four main crates:
 
 The core library is organized into functional modules:
 
-- `backend/`: LLM backend implementations (OpenAI-compatible, Anthropic API, AWS Bedrock) with streaming and prompt caching support
+- `backend/`: LLM backend implementations (OpenAI-compatible, Anthropic API, AWS Bedrock, Ollama) with streaming and prompt caching support
 - `config/`: Configuration management, XDG paths, and secret-service keyring integration
 - `conversation/`: Conversation management and Haiku-based title generation
 - `storage/`: SQLite database with FTS5 full-text search
@@ -136,13 +136,15 @@ CLAREON_QML_PATH=/path/to/qml cargo run -p clareon --features qml-from-filesyste
 Config file: `~/.config/clareon/config.json`
 
 Key configuration sections:
-- `default_backend`: Choose between "openai", "bedrock", or "anthropic"
+- `default_backend`: Choose between "openai", "bedrock", "anthropic", or "ollama"
 - `default_model`: Default model to use
 - `backends`: Backend-specific settings (API keys, base URLs, AWS region/profile, prompt caching)
   - `backends.openai.api_key`: API key for OpenAI-compatible endpoints
   - `backends.openai.base_url`: Custom API endpoint (e.g., LiteLLM, OpenRouter)
   - `backends.anthropic.base_url`: Custom API endpoint (useful for development/testing with mock server)
   - `backends.anthropic.api_key_in_keyring`: Whether to retrieve API key from system keyring
+  - `backends.ollama.base_url`: Custom Ollama daemon URL (defaults to `http://localhost:11434`). No API key required.
+  - `backends.ollama.default_model`: Default Ollama model name (e.g. `llama3.2:3b`). If unset, the first locally available model is used.
 - `ui`: UI preferences (theme, streaming)
 - `system_prompt`: System prompt configuration
 - `models`: Model selection for specific tasks (e.g., title generation)
@@ -157,7 +159,7 @@ See `clareon-core/src/config/settings.rs` for the full configuration schema.
 
 ### Core Features
 
-- **Multiple Backends**: OpenAI-compatible APIs (LiteLLM, OpenRouter, etc.), AWS Bedrock, and Anthropic API
+- **Multiple Backends**: OpenAI-compatible APIs (LiteLLM, OpenRouter, etc.), AWS Bedrock, Anthropic API, and a local Ollama daemon
 - **Streaming Responses**: Real-time message streaming
 - **Prompt Caching**: Automatic caching of system prompts (Claude Sonnet 3.5+, Opus 4, Nova models)
 - **Conversation Management**: Create, resume, search, and manage conversations

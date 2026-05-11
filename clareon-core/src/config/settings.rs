@@ -26,6 +26,7 @@ pub enum Provider {
     LiteLlm,
     Anthropic,
     Bedrock,
+    Ollama,
 }
 
 /// Main configuration struct
@@ -90,6 +91,10 @@ pub struct ProvidersConfig {
     /// AWS Bedrock configuration
     #[serde(default)]
     pub bedrock: BedrockConfig,
+
+    /// Ollama provider configuration
+    #[serde(default)]
+    pub ollama: OllamaConfig,
 }
 
 /// AWS Bedrock backend configuration
@@ -133,6 +138,23 @@ pub struct AnthropicConfig {
     /// Base URL for the API (for custom endpoints)
     #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
     pub base_url: Option<String>,
+}
+
+/// Ollama backend configuration
+///
+/// Ollama is auth-less by default. The default base URL is
+/// `http://localhost:11434`. If `default_model` is unset, the first
+/// locally available model is used on first chat request.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OllamaConfig {
+    /// Base URL for the Ollama HTTP API (e.g. `http://localhost:11434`)
+    #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
+    pub base_url: Option<String>,
+
+    /// Default model to use. If unset, the first locally available model
+    /// is selected lazily on the first chat request.
+    #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
+    pub default_model: Option<String>,
 }
 
 /// Configuration for OpenAI-compatible providers (OpenAI, OpenRouter, LiteLLM)
@@ -701,5 +723,55 @@ mod tests {
         let config: AnthropicConfig = serde_json::from_str(json).unwrap();
         assert!(!config.api_key_in_keyring);
         assert_eq!(config.base_url, None);
+    }
+
+    #[test]
+    fn test_serde_provider_ollama() {
+        let json = r#"{"default_provider": "ollama"}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.default_provider, Provider::Ollama);
+
+        let serialized = serde_json::to_string(&config).unwrap();
+        assert!(serialized.contains("\"default_provider\":\"ollama\""));
+    }
+
+    #[test]
+    fn test_serde_ollama_config_defaults() {
+        let json = r#"{}"#;
+        let config: OllamaConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.base_url, None);
+        assert_eq!(config.default_model, None);
+    }
+
+    #[test]
+    fn test_serde_ollama_config_with_values() {
+        let json = r#"{
+            "base_url": "http://192.168.1.10:11434",
+            "default_model": "llama3.2:3b"
+        }"#;
+        let config: OllamaConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            config.base_url,
+            Some("http://192.168.1.10:11434".to_string())
+        );
+        assert_eq!(config.default_model, Some("llama3.2:3b".to_string()));
+    }
+
+    #[test]
+    fn test_serde_ollama_config_in_providers() {
+        let json = r#"{
+            "default_provider": "ollama",
+            "providers": {
+                "ollama": {
+                    "default_model": "qwen2.5:7b"
+                }
+            }
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.default_provider, Provider::Ollama);
+        assert_eq!(
+            config.providers.ollama.default_model,
+            Some("qwen2.5:7b".to_string())
+        );
     }
 }

@@ -42,6 +42,10 @@ async-openai = { workspace = true }
 # OpenRouter native API
 openrouter-rs = { workspace = true }
 
+# Ollama native API
+ollama-rs = { workspace = true }
+schemars = { workspace = true }
+
 # HTTP client (for Anthropic API)
 reqwest = { workspace = true }
 
@@ -71,6 +75,9 @@ which = "8.0"
 
 # Base64 encoding
 base64 = { workspace = true }
+
+# URL parsing
+url = "2"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

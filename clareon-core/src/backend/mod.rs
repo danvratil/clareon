@@ -5,10 +5,11 @@
 //! LLM Backend implementations
 //!
 //! This module provides the trait definition and implementations for
-//! different LLM backends (Anthropic API, AWS Bedrock).
+//! different LLM backends (OpenAI-compatible, Anthropic API, AWS Bedrock, and Ollama).
 
 mod anthropic;
 mod bedrock;
+mod ollama;
 mod openai;
 mod openrouter;
 mod traits;
@@ -18,6 +19,7 @@ use std::sync::Arc;
 use crate::{Config, config::Provider};
 pub use anthropic::AnthropicBackend;
 pub use bedrock::BedrockBackend;
+pub use ollama::OllamaBackend;
 pub use openai::OpenAiBackend;
 pub use openrouter::OpenRouterBackend;
 pub use traits::*;
@@ -62,6 +64,10 @@ pub async fn create_backend_from_config(config: &Config) -> Result<Arc<dyn LlmBa
                     .map_err(|e| format!("Failed to create Bedrock backend: {}", e))?
             };
 
+            Ok(Arc::new(backend))
+        }
+        Provider::Ollama => {
+            let backend = OllamaBackend::from_config(&config.providers.ollama);
             Ok(Arc::new(backend))
         }
     }
