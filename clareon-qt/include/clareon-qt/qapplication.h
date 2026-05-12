@@ -12,5 +12,6 @@ namespace rust::clareon_qt {
 
 void qapplicationSetWindowIcon(QApplication& app, const QIcon& icon);
 void qapplicationSetDesktopFileName(QApplication& app, const QString& desktopFileName);
+void qapplicationSetStyle(QApplication &app, const QString& style);
 
 } // namespace rust::clareon_qt

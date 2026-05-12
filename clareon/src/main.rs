@@ -7,8 +7,8 @@ use tokio::runtime::Runtime;
 
 use clap::Parser;
 use clareon_core::ConfigManager;
-use clareon_qt::{QApplicationExt, QIcon};
-use cxx_qt_lib::{QQmlApplicationEngine, QString, QUrl};
+use clareon_qt::{QApplicationExt, QIcon, KIconTheme};
+use cxx_qt_lib::{QFont, QFontHintingPreference, QQmlApplicationEngine, QString, QUrl};
 use cxx_qt_lib_extras::QApplication;
 
 use service::ClareonService;
@@ -122,6 +122,10 @@ fn main() {
     // Initialize Qt - pass handle
     qt::init_service_handle(handle);
 
+    // We need to call this ourselves before QApplication, otherwise some icons are missing on
+    // Windows. No idea why, this is taken from NeoChat ;)
+    KIconTheme::init_theme();
+
     let mut app = QApplication::new();
     app.pin_mut()
         .set_application_name(&QString::from("Clareon"));
@@ -129,6 +133,15 @@ fn main() {
         .set_organization_domain(&QString::from("clareon.cc"));
     app.pin_mut()
         .set_desktop_file_name(&QString::from("cc.clareon.Clareon"));
+
+    if cfg!(target_os = "windows") {
+        app.pin_mut().set_style(&QString::from("breeze"));
+
+        let mut font = QFont::default();
+        font.from_string(&QString::from("Segoe UI"));
+        font.set_hinting_preference(QFontHintingPreference::PreferNoHinting);
+        app.pin_mut().set_application_font(&font);
+    }
 
     // Set window icon (Qt will automatically select appropriate size)
     let mut icon = QIcon::new();

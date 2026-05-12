@@ -14,4 +14,8 @@ void qapplicationSetDesktopFileName(QApplication& app, const QString& desktopFil
     app.setDesktopFileName(desktopFileName);
 }
 
+void qapplicationSetStyle(QApplication& app, const QString& style) {
+    app.setStyle(style);
+}
+
 } // namespace rust::clareon_qt

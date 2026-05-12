@@ -58,13 +58,26 @@ fn main() {
         }
     }
 
-    CxxQtBuilder::new()
+    let kiconthemes_pkg = find_package("KF6IconThemes").find().expect("Could not find KF6IconThemes package via CMake");
+    let kicontheme_tgt = kiconthemes_pkg.target("KF6::IconThemes").expect("Could not find KF6::IconThemes target in CMake package");
+    kicontheme_tgt.link();
+
+    let mut builder = CxxQtBuilder::new()
         .file("src/qicon.rs")
         .file("src/qapplication.rs")
+        .file("src/kiconthemes.rs")
         .cpp_file("src/cpp/qicon.cpp")
         .cpp_file("src/cpp/qapplication.cpp")
+        .cpp_file("src/cpp/kiconthemes.cpp")
         .include_dir("include")
         .qt_module("Gui")
-        .qt_module("Widgets")
-        .build();
+        .qt_module("Widgets");
+
+    unsafe {
+        builder = builder.cc_builder(|cc| {
+            cc.includes(kicontheme_tgt.include_directories.clone());
+        });
+    }
+
+    builder.build();
 }

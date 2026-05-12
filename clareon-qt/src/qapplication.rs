@@ -29,6 +29,10 @@ mod ffi {
         /// Sets the desktop file name for the application
         #[rust_name = "qapplication_set_desktop_file_name"]
         fn qapplicationSetDesktopFileName(app: Pin<&mut QApplication>, desktopFileName: &QString);
+
+        /// Sets the application style to use
+        #[rust_name = "qapplication_set_style"]
+        fn qapplicationSetStyle(app: Pin<&mut QApplication>, style: &QString);
     }
 }
 
@@ -39,6 +43,9 @@ pub trait QApplicationExt {
 
     /// Sets the desktop file name for the application
     fn set_desktop_file_name(self: Pin<&mut Self>, desktop_file_name: &QString);
+
+    /// Sets the application style to use
+    fn set_style(self: Pin<&mut Self>, style: &QString);
 }
 
 impl QApplicationExt for cxx_qt_lib_extras::QApplication {
@@ -48,5 +55,9 @@ impl QApplicationExt for cxx_qt_lib_extras::QApplication {
 
     fn set_desktop_file_name(self: Pin<&mut Self>, desktop_file_name: &QString) {
         ffi::qapplication_set_desktop_file_name(self, desktop_file_name);
+    }
+
+    fn set_style(self: Pin<&mut Self>, style: &QString) {
+        ffi::qapplication_set_style(self, style);
     }
 }

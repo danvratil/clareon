@@ -4,6 +4,8 @@
 
 mod qapplication;
 mod qicon;
+mod kiconthemes;
 
 pub use qapplication::QApplicationExt;
 pub use qicon::QIcon;
+pub use kiconthemes::KIconTheme;
