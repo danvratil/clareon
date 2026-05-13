@@ -289,6 +289,10 @@ Item {
 
         Kirigami.InlineMessage {
             id: errorMsg
+            // Kirigami.InlineMessage defaults to visible: false (it's designed
+            // to be shown/hidden on demand). We want it shown unconditionally
+            // when the delegate is instantiated for an error row.
+            visible: true
             width: parent.width
             property bool detailsExpanded: false
             property int retryCountdown: 0

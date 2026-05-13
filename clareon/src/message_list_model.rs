@@ -476,16 +476,25 @@ impl ffi::MessageListModel {
         error_info: ErrorInfo,
         partial: Option<String>,
     ) {
-        if let Some(last_message) = self.as_mut().rust_mut().messages.last_mut()
-            && last_message.id == -1
+        // Remove the streaming placeholder (id == -1) if present, then append
+        // a new error row via add_error_message. The remove+insert pair uses
+        // structural model signals which reliably refresh Repeater delegate
+        // bindings; an in-place mutation with data_changed(.., QList::default())
+        // does not always propagate boolean role changes (e.g. isError) through
+        // QML required properties, leaving the error invisible.
+        if let Some(last) = self.rust().messages.last()
+            && last.id == -1
         {
-            // Replace streaming placeholder with error
-            *last_message = Message::from_error(error_info, partial);
-            let row = (self.rust().messages.len() - 1) as i32;
-            let index = self.as_ref().index(row, 0, &QModelIndex::default());
-            // Notify all roles changed
-            self.as_mut().data_changed(&index, &index, QList::default());
+            let count = self.rust().messages.len();
+            self.as_mut().begin_remove_rows(
+                &QModelIndex::default(),
+                (count - 1) as i32,
+                (count - 1) as i32,
+            );
+            self.as_mut().rust_mut().messages.pop();
+            self.as_mut().end_remove_rows();
         }
+        self.as_mut().add_error_message(error_info, partial);
     }
 
     fn row_count(&self, _parent: &QModelIndex) -> i32 {
