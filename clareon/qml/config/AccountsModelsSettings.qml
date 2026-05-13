@@ -17,7 +17,8 @@ Kirigami.ScrollablePage {
     property bool isDirty: false
 
     readonly property string selectedProvider: providerComboBox.currentValue || "openai"
-    readonly property bool isOpenAiBacked: ["openai", "openrouter", "litellm"].indexOf(selectedProvider) !== -1
+    // Providers whose available_models() returns a usable list — gates "Browse Models..." UI.
+    readonly property bool isOpenAiBacked: ["openai", "openrouter", "litellm", "ollama"].indexOf(selectedProvider) !== -1
 
     ColumnLayout {
         width: root.width
@@ -35,14 +36,15 @@ Kirigami.ScrollablePage {
             Controls.ComboBox {
                 id: providerComboBox
                 Kirigami.FormData.label: qsTr("Provider:")
-                model: ["openai", "openrouter", "litellm", "anthropic", "bedrock"]
+                model: ["openai", "openrouter", "litellm", "anthropic", "bedrock", "ollama"]
                 displayText: {
                     const labels = {
                         "openai": "OpenAI",
                         "openrouter": "OpenRouter",
                         "litellm": "LiteLLM",
                         "anthropic": "Anthropic",
-                        "bedrock": "AWS Bedrock"
+                        "bedrock": "AWS Bedrock",
+                        "ollama": "Ollama"
                     }
                     return labels[currentValue] || currentValue
                 }
@@ -56,7 +58,8 @@ Kirigami.ScrollablePage {
                             "openrouter": "OpenRouter",
                             "litellm": "LiteLLM",
                             "anthropic": "Anthropic",
-                            "bedrock": "AWS Bedrock"
+                            "bedrock": "AWS Bedrock",
+                            "ollama": "Ollama"
                         }
                         return labels[modelData] || modelData
                     }
@@ -325,6 +328,43 @@ Kirigami.ScrollablePage {
 
                 Controls.Label {
                     text: qsTr("Prompt caching is only available for select models (Claude Sonnet 3.5+, Opus 4, Nova)")
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    color: Kirigami.Theme.disabledTextColor
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                }
+            }
+        }
+
+        // Ollama Configuration
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: Kirigami.Units.largeSpacing
+            visible: selectedProvider === "ollama"
+
+            Kirigami.FormLayout {
+                Layout.fillWidth: true
+
+                Kirigami.Separator {
+                    Kirigami.FormData.isSection: true
+                    Kirigami.FormData.label: qsTr("Ollama Configuration")
+                }
+
+                Controls.TextField {
+                    Kirigami.FormData.label: qsTr("Base URL:")
+                    placeholderText: qsTr("http://localhost:11434 (leave empty for default)")
+                    text: root.config.providers.ollama.baseUrl || ""
+                    Layout.fillWidth: true
+                    onTextChanged: {
+                        let currentValue = root.config.providers.ollama.baseUrl || ""
+                        if (text !== currentValue) {
+                            root.config.providers.ollama.baseUrl = text || null
+                        }
+                    }
+                }
+
+                Controls.Label {
+                    text: qsTr("Ollama runs locally and requires no API key. Pull models with `ollama pull <name>`.")
                     font.pointSize: Kirigami.Theme.smallFont.pointSize
                     color: Kirigami.Theme.disabledTextColor
                     Layout.fillWidth: true
