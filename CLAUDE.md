@@ -6,8 +6,6 @@ An AI assistant for Linux supporting multiple LLM backends (OpenAI-compatible AP
 
 Clareon is a cross-platform AI assistant with integrated tool support, conversation management, and native Linux desktop integration. It provides a Qt/QML graphical interface for interacting with LLMs via OpenAI-compatible APIs (LiteLLM, OpenRouter, etc.), AWS Bedrock, the Anthropic API, or a local Ollama daemon, with local conversation storage, full-text search, and built-in file operation tools.
 
-The project includes a terminal UI (clareon-cli) primarily used for testing and prototyping new features.
-
 ## Code Style & Licensing
 
 **IMPORTANT:** All source files must begin with SPDX license headers:
@@ -44,8 +42,8 @@ cargo clippy --all --locked --tests -- --deny clippy::all --deny warnings
 The project is organized as a Cargo workspace with four main crates:
 
 - **clareon-core**: Core library containing LLM backends, conversation management, storage, configuration, and tool execution
+- **clareon-qt**: Custom Qt bindings for types not yet available in the upstream cxx-qt project
 - **clareon**: Qt/QML GUI application with KDE Plasma integration
-- **clareon-cli**: Terminal UI for testing and prototyping (not production-ready)
 - **mock-anthropic**: Mock Anthropic API server for development and testing without API costs
 
 ### clareon-core Structure
@@ -108,12 +106,6 @@ The image is built and published by the `.github/workflows/docker.yml` workflow 
 ```bash
 # Start the QML GUI
 cargo run -p clareon
-
-# For testing: Start TUI with AWS Bedrock (default)
-cargo run -p clareon-cli
-
-# For testing: Start TUI with Anthropic API
-ANTHROPIC_API_KEY=sk-... cargo run -p clareon-cli -- --backend anthropic
 ```
 
 ### QML Development Mode
@@ -198,10 +190,10 @@ See `clareon-core/migrations/` for the complete schema.
 - `cxx-qt`: Qt/QML integration for Rust
 - `cxx-qt-lib`: Qt library bindings
 
-### clareon-cli (testing only)
-- `ratatui`: TUI framework
-- `crossterm`: Terminal backend
-- `clap`: CLI argument parsing
+### clareon-qt
+- `cxx`: C++/Rust FFI
+- `cxx-qt`: Qt/QML integration for Rust
+- `cxx-qt-lib`: Qt library bindings
 
 ## Design Decisions
 
@@ -240,4 +232,3 @@ Tests cover:
 - Tool execution requires explicit workspace configuration for security
 - Prompt caching can significantly reduce costs and latency for conversations with long system prompts
 - Database migrations are automatically applied on startup
-- The TUI (clareon-cli) is primarily for testing and lacks many features present in the GUI
