@@ -9,7 +9,7 @@ use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
 
 use clareon_core::types::{ContentBlock, ConversationId, ConversationSummary, Message};
-use clareon_core::{ConversationManager, StreamUpdate};
+use clareon_core::{ConversationManager, ConversationSession, Storage, StreamUpdate};
 
 use super::{
     command::Command,
@@ -152,8 +152,9 @@ impl ServiceWorker {
     }
 
     async fn handle_load_conversation(&self, id: clareon_core::types::ConversationId) {
-        match self.manager.load_conversation(&id).await {
-            Ok(conversation) => {
+        match self.manager.get_or_create_session(&id).await {
+            Ok(session) => {
+                let conversation = session.get_conversation().await;
                 let _ = self
                     .response_tx
                     .send(Response::ConversationLoaded { conversation });
@@ -201,7 +202,14 @@ impl ServiceWorker {
     }
 
     async fn handle_load_messages(&self, conv_id: clareon_core::types::ConversationId) {
-        match self.manager.get_messages(&conv_id).await {
+        let messages_result =
+            if let Some(session) = self.manager.get_session_if_exists(&conv_id).await {
+                Ok(session.get_messages().await)
+            } else {
+                self.manager.get_messages(&conv_id).await
+            };
+
+        match messages_result {
             Ok(messages) => {
                 let messages: Vec<MessageData> =
                     messages.into_iter().map(message_to_data).collect();
@@ -271,12 +279,20 @@ impl ServiceWorker {
     }
 
     async fn handle_send_message(&self, conv_id: ConversationId, text: String) {
-        // First store the user message to the conversation
-        let user_msg_id = match self
-            .manager
-            .append_user_message(conv_id.clone(), &text)
-            .await
-        {
+        let session = match self.manager.get_or_create_session(&conv_id).await {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Failed to get session for conversation {}: {}", conv_id, e);
+                let _ = self.response_tx.send(Response::SendMessageError {
+                    conv_id,
+                    error_info: error_to_info(&e),
+                    user_message_id: None,
+                });
+                return;
+            }
+        };
+
+        let user_msg_id = match session.append_user_message(&text).await {
             Ok(msg) => {
                 let msg_id = msg.id;
                 let _ = self.response_tx.send(Response::MessageSent {
@@ -290,103 +306,20 @@ impl ServiceWorker {
                     "Failed to append user message to conversation {}: {}",
                     conv_id, e
                 );
-                let error_info = error_to_info(&e);
                 let _ = self.response_tx.send(Response::SendMessageError {
                     conv_id,
-                    error_info,
+                    error_info: error_to_info(&e),
                     user_message_id: None,
                 });
                 return;
             }
         };
 
-        // Then load the conversation
-        let mut conversation = match self.manager.load_conversation(&conv_id).await {
-            Ok(conv) => conv,
-            Err(e) => {
-                error!(
-                    "Failed to load conversation {} for sending message: {}",
-                    conv_id, e
-                );
-                let error_info = error_to_info(&e);
-                let _ = self.response_tx.send(Response::SendMessageError {
-                    conv_id,
-                    error_info,
-                    user_message_id: user_msg_id,
-                });
-                return;
-            }
-        };
-
-        // Start streaming
-        let _ = self.response_tx.send(Response::StreamingStarted {
-            conv_id: conv_id.clone(),
+        let response_tx = self.response_tx.clone();
+        let storage = self.manager.storage();
+        tokio::spawn(async move {
+            Self::run_streaming_task(session, conv_id, user_msg_id, storage, response_tx).await;
         });
-
-        // Send message with streaming
-        match self.manager.send_message_stream(&mut conversation).await {
-            Ok(mut stream) => {
-                let mut accumulated = String::new();
-
-                // Process stream events
-                while let Some(result) = stream.next().await {
-                    match result {
-                        Ok(update) => {
-                            if let Some(text_delta) = extract_text_delta(&update) {
-                                accumulated.push_str(&text_delta);
-
-                                let _ = self.response_tx.send(Response::StreamingChunk {
-                                    conv_id: conv_id.clone(),
-                                    delta: text_delta,
-                                    accumulated: accumulated.clone(),
-                                });
-                            }
-                        }
-                        Err(e) => {
-                            error!("Streaming error for conversation {}: {}", conv_id, e);
-                            let error_info = error_to_info(&e);
-                            let _ = self.response_tx.send(Response::StreamingError {
-                                conv_id,
-                                error_info,
-                                partial_text: accumulated,
-                            });
-                            return;
-                        }
-                    }
-                }
-
-                // Streaming complete - reload messages to get the final message
-                match self.manager.get_messages(&conv_id).await {
-                    Ok(messages) => {
-                        if let Some(last_message) = messages.last() {
-                            let message_data = message_to_data(last_message.clone());
-                            let _ = self.response_tx.send(Response::StreamingComplete {
-                                conv_id,
-                                message: message_data,
-                            });
-                        } else {
-                            warn!("No messages found after streaming completed");
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to reload messages after streaming: {}", e);
-                    }
-                }
-                self.handle_refresh_conversations().await;
-            }
-            Err(e) => {
-                error!(
-                    "Failed to start streaming for conversation {}: {}",
-                    conv_id, e
-                );
-                let error_info = error_to_info(&e);
-                let _ = self.response_tx.send(Response::SendMessageError {
-                    conv_id,
-                    error_info,
-                    user_message_id: user_msg_id,
-                });
-            }
-        }
     }
 
     async fn handle_send_message_with_content(
@@ -394,12 +327,20 @@ impl ServiceWorker {
         conv_id: ConversationId,
         content: Vec<ContentBlock>,
     ) {
-        // First store the user message with content blocks to the conversation
-        let user_msg_id = match self
-            .manager
-            .append_user_message_with_content(conv_id.clone(), content)
-            .await
-        {
+        let session = match self.manager.get_or_create_session(&conv_id).await {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Failed to get session for conversation {}: {}", conv_id, e);
+                let _ = self.response_tx.send(Response::SendMessageError {
+                    conv_id,
+                    error_info: error_to_info(&e),
+                    user_message_id: None,
+                });
+                return;
+            }
+        };
+
+        let user_msg_id = match session.append_user_message_with_content(content).await {
             Ok(msg) => {
                 let msg_id = msg.id;
                 let _ = self.response_tx.send(Response::MessageSent {
@@ -413,103 +354,20 @@ impl ServiceWorker {
                     "Failed to append user message with content to conversation {}: {}",
                     conv_id, e
                 );
-                let error_info = error_to_info(&e);
                 let _ = self.response_tx.send(Response::SendMessageError {
                     conv_id,
-                    error_info,
+                    error_info: error_to_info(&e),
                     user_message_id: None,
                 });
                 return;
             }
         };
 
-        // Then load the conversation
-        let mut conversation = match self.manager.load_conversation(&conv_id).await {
-            Ok(conv) => conv,
-            Err(e) => {
-                error!(
-                    "Failed to load conversation {} for sending message: {}",
-                    conv_id, e
-                );
-                let error_info = error_to_info(&e);
-                let _ = self.response_tx.send(Response::SendMessageError {
-                    conv_id,
-                    error_info,
-                    user_message_id: user_msg_id,
-                });
-                return;
-            }
-        };
-
-        // Start streaming
-        let _ = self.response_tx.send(Response::StreamingStarted {
-            conv_id: conv_id.clone(),
+        let response_tx = self.response_tx.clone();
+        let storage = self.manager.storage();
+        tokio::spawn(async move {
+            Self::run_streaming_task(session, conv_id, user_msg_id, storage, response_tx).await;
         });
-
-        // Send message with streaming
-        match self.manager.send_message_stream(&mut conversation).await {
-            Ok(mut stream) => {
-                let mut accumulated = String::new();
-
-                // Process stream events
-                while let Some(result) = stream.next().await {
-                    match result {
-                        Ok(update) => {
-                            if let Some(text_delta) = extract_text_delta(&update) {
-                                accumulated.push_str(&text_delta);
-
-                                let _ = self.response_tx.send(Response::StreamingChunk {
-                                    conv_id: conv_id.clone(),
-                                    delta: text_delta,
-                                    accumulated: accumulated.clone(),
-                                });
-                            }
-                        }
-                        Err(e) => {
-                            error!("Streaming error for conversation {}: {}", conv_id, e);
-                            let error_info = error_to_info(&e);
-                            let _ = self.response_tx.send(Response::StreamingError {
-                                conv_id,
-                                error_info,
-                                partial_text: accumulated,
-                            });
-                            return;
-                        }
-                    }
-                }
-
-                // Streaming complete - reload messages to get the final message
-                match self.manager.get_messages(&conv_id).await {
-                    Ok(messages) => {
-                        if let Some(last_message) = messages.last() {
-                            let message_data = message_to_data(last_message.clone());
-                            let _ = self.response_tx.send(Response::StreamingComplete {
-                                conv_id,
-                                message: message_data,
-                            });
-                        } else {
-                            warn!("No messages found after streaming completed");
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to reload messages after streaming: {}", e);
-                    }
-                }
-                self.handle_refresh_conversations().await;
-            }
-            Err(e) => {
-                error!(
-                    "Failed to start streaming for conversation {}: {}",
-                    conv_id, e
-                );
-                let error_info = error_to_info(&e);
-                let _ = self.response_tx.send(Response::SendMessageError {
-                    conv_id,
-                    error_info,
-                    user_message_id: user_msg_id,
-                });
-            }
-        }
     }
 
     async fn handle_send_message_with_files(
@@ -521,12 +379,21 @@ impl ServiceWorker {
         use std::fs;
         use std::path::Path;
 
+        let session = match self.manager.get_or_create_session(&conv_id).await {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Failed to get session for conversation {}: {}", conv_id, e);
+                let _ = self.response_tx.send(Response::SendMessageError {
+                    conv_id,
+                    error_info: error_to_info(&e),
+                    user_message_id: None,
+                });
+                return;
+            }
+        };
+
         // First, store the user message
-        let user_msg_id = match self
-            .manager
-            .append_user_message(conv_id.clone(), &text)
-            .await
-        {
+        let user_msg_id = match session.append_user_message(&text).await {
             Ok(msg) => {
                 let msg_id = msg.id;
                 let _ = self.response_tx.send(Response::MessageSent {
@@ -540,10 +407,9 @@ impl ServiceWorker {
                     "Failed to append user message to conversation {}: {}",
                     conv_id, e
                 );
-                let error_info = error_to_info(&e);
                 let _ = self.response_tx.send(Response::SendMessageError {
                     conv_id,
-                    error_info,
+                    error_info: error_to_info(&e),
                     user_message_id: None,
                 });
                 return;
@@ -621,183 +487,37 @@ impl ServiceWorker {
             }
         }
 
-        // Then load the conversation and continue with streaming
-        let mut conversation = match self.manager.load_conversation(&conv_id).await {
-            Ok(conv) => conv,
-            Err(e) => {
-                error!(
-                    "Failed to load conversation {} for sending message: {}",
-                    conv_id, e
-                );
-                let error_info = error_to_info(&e);
-                let _ = self.response_tx.send(Response::SendMessageError {
-                    conv_id,
-                    error_info,
-                    user_message_id: Some(user_msg_id),
-                });
-                return;
-            }
-        };
-
-        // Start streaming
-        let _ = self.response_tx.send(Response::StreamingStarted {
-            conv_id: conv_id.clone(),
+        let response_tx = self.response_tx.clone();
+        let storage = self.manager.storage();
+        tokio::spawn(async move {
+            Self::run_streaming_task(session, conv_id, Some(user_msg_id), storage, response_tx)
+                .await;
         });
-
-        // Send message with streaming
-        match self.manager.send_message_stream(&mut conversation).await {
-            Ok(mut stream) => {
-                let mut accumulated = String::new();
-
-                // Process stream events
-                while let Some(result) = stream.next().await {
-                    match result {
-                        Ok(update) => {
-                            if let Some(text_delta) = extract_text_delta(&update) {
-                                accumulated.push_str(&text_delta);
-
-                                let _ = self.response_tx.send(Response::StreamingChunk {
-                                    conv_id: conv_id.clone(),
-                                    delta: text_delta,
-                                    accumulated: accumulated.clone(),
-                                });
-                            }
-                        }
-                        Err(e) => {
-                            error!("Streaming error for conversation {}: {}", conv_id, e);
-                            let error_info = error_to_info(&e);
-                            let _ = self.response_tx.send(Response::StreamingError {
-                                conv_id,
-                                error_info,
-                                partial_text: accumulated,
-                            });
-                            return;
-                        }
-                    }
-                }
-
-                // Streaming complete - reload messages to get the final message
-                match self.manager.get_messages(&conv_id).await {
-                    Ok(messages) => {
-                        if let Some(last_message) = messages.last() {
-                            let message_data = message_to_data(last_message.clone());
-                            let _ = self.response_tx.send(Response::StreamingComplete {
-                                conv_id,
-                                message: message_data,
-                            });
-                        } else {
-                            warn!("No messages found after streaming completed");
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to reload messages after streaming: {}", e);
-                    }
-                }
-                self.handle_refresh_conversations().await;
-            }
-            Err(e) => {
-                error!(
-                    "Failed to start streaming for conversation {}: {}",
-                    conv_id, e
-                );
-                let error_info = error_to_info(&e);
-                let _ = self.response_tx.send(Response::SendMessageError {
-                    conv_id,
-                    error_info,
-                    user_message_id: Some(user_msg_id),
-                });
-            }
-        }
     }
 
     async fn handle_retry_last_message(&self, conv_id: ConversationId) {
-        // Load the conversation to get the last user message
-        let mut conversation = match self.manager.load_conversation(&conv_id).await {
-            Ok(conv) => conv,
+        // The last user message is already in storage/cache — just stream from current state
+        let session = match self.manager.get_or_create_session(&conv_id).await {
+            Ok(s) => s,
             Err(e) => {
-                error!("Failed to load conversation for retry: {}", e);
-                let error_info = error_to_info(&e);
+                error!(
+                    "Failed to get session for retry on conversation {}: {}",
+                    conv_id, e
+                );
                 let _ = self.response_tx.send(Response::SendMessageError {
                     conv_id,
-                    error_info,
+                    error_info: error_to_info(&e),
                     user_message_id: None,
                 });
                 return;
             }
         };
 
-        // Start streaming (the conversation already has the user message)
-        let _ = self.response_tx.send(Response::StreamingStarted {
-            conv_id: conv_id.clone(),
+        let response_tx = self.response_tx.clone();
+        let storage = self.manager.storage();
+        tokio::spawn(async move {
+            Self::run_streaming_task(session, conv_id, None, storage, response_tx).await;
         });
-
-        // Send message with streaming
-        match self.manager.send_message_stream(&mut conversation).await {
-            Ok(mut stream) => {
-                let mut accumulated = String::new();
-
-                // Process stream events
-                while let Some(result) = stream.next().await {
-                    match result {
-                        Ok(update) => {
-                            if let Some(text_delta) = extract_text_delta(&update) {
-                                accumulated.push_str(&text_delta);
-
-                                let _ = self.response_tx.send(Response::StreamingChunk {
-                                    conv_id: conv_id.clone(),
-                                    delta: text_delta,
-                                    accumulated: accumulated.clone(),
-                                });
-                            }
-                        }
-                        Err(e) => {
-                            error!(
-                                "Streaming error during retry for conversation {}: {}",
-                                conv_id, e
-                            );
-                            let error_info = error_to_info(&e);
-                            let _ = self.response_tx.send(Response::StreamingError {
-                                conv_id,
-                                error_info,
-                                partial_text: accumulated,
-                            });
-                            return;
-                        }
-                    }
-                }
-
-                // Streaming complete - reload messages to get the final message
-                match self.manager.get_messages(&conv_id).await {
-                    Ok(messages) => {
-                        if let Some(last_message) = messages.last() {
-                            let message_data = message_to_data(last_message.clone());
-                            let _ = self.response_tx.send(Response::StreamingComplete {
-                                conv_id,
-                                message: message_data,
-                            });
-                        } else {
-                            warn!("No messages found after retry streaming completed");
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to reload messages after retry streaming: {}", e);
-                    }
-                }
-                self.handle_refresh_conversations().await;
-            }
-            Err(e) => {
-                error!(
-                    "Failed to start streaming for retry in conversation {}: {}",
-                    conv_id, e
-                );
-                let error_info = error_to_info(&e);
-                let _ = self.response_tx.send(Response::SendMessageError {
-                    conv_id,
-                    error_info,
-                    user_message_id: None,
-                });
-            }
-        }
     }
 
     async fn handle_load_artifacts(&self, conv_id: ConversationId) {
@@ -935,6 +655,89 @@ impl ServiceWorker {
                 error!("Failed to fetch available models: {}", e);
                 let _ = self.response_tx.send(Response::ModelsLoadFailed {
                     error: e.to_string(),
+                });
+            }
+        }
+    }
+
+    /// Drive a streaming response for a conversation session in a spawned task.
+    ///
+    /// This is called by the streaming command handlers after appending the user message.
+    /// It runs independently of the command loop, allowing other conversations to stream
+    /// concurrently.
+    async fn run_streaming_task(
+        session: std::sync::Arc<ConversationSession>,
+        conv_id: ConversationId,
+        user_message_id: Option<i64>,
+        storage: std::sync::Arc<Storage>,
+        response_tx: tokio::sync::broadcast::Sender<Response>,
+    ) {
+        let _ = response_tx.send(Response::StreamingStarted {
+            conv_id: conv_id.clone(),
+        });
+
+        match session.send_message_stream().await {
+            Ok(mut stream) => {
+                let mut accumulated = String::new();
+
+                while let Some(result) = stream.next().await {
+                    match result {
+                        Ok(update) => {
+                            if let Some(text_delta) = extract_text_delta(&update) {
+                                accumulated.push_str(&text_delta);
+                                let _ = response_tx.send(Response::StreamingChunk {
+                                    conv_id: conv_id.clone(),
+                                    delta: text_delta,
+                                    accumulated: accumulated.clone(),
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            error!("Streaming error for conversation {}: {}", conv_id, e);
+                            let _ = response_tx.send(Response::StreamingError {
+                                conv_id,
+                                error_info: error_to_info(&e),
+                                partial_text: accumulated,
+                            });
+                            return;
+                        }
+                    }
+                }
+
+                // Get final message from session cache - no extra DB query needed
+                let messages = session.get_messages().await;
+                if let Some(last_message) = messages.last() {
+                    let _ = response_tx.send(Response::StreamingComplete {
+                        conv_id: conv_id.clone(),
+                        message: message_to_data(last_message.clone()),
+                    });
+                } else {
+                    warn!(
+                        "No messages found after streaming completed for {}",
+                        conv_id
+                    );
+                }
+
+                // Refresh conversation list so the UI sees the updated timestamp/title
+                match storage.list_conversations().await {
+                    Ok(conversations) => {
+                        let _ =
+                            response_tx.send(Response::ConversationsRefreshed { conversations });
+                    }
+                    Err(e) => {
+                        error!("Failed to refresh conversations after streaming: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Failed to start streaming for conversation {}: {}",
+                    conv_id, e
+                );
+                let _ = response_tx.send(Response::SendMessageError {
+                    conv_id,
+                    error_info: error_to_info(&e),
+                    user_message_id,
                 });
             }
         }

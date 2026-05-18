@@ -22,4 +22,3 @@ impl KIconTheme {
         ffi::kicontheme_init_theme();
     }
 }
-

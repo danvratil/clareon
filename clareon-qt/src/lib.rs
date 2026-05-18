@@ -2,10 +2,10 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+mod kiconthemes;
 mod qapplication;
 mod qicon;
-mod kiconthemes;
 
+pub use kiconthemes::KIconTheme;
 pub use qapplication::QApplicationExt;
 pub use qicon::QIcon;
-pub use kiconthemes::KIconTheme;

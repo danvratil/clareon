@@ -7,7 +7,7 @@ use tokio::runtime::Runtime;
 
 use clap::Parser;
 use clareon_core::ConfigManager;
-use clareon_qt::{QApplicationExt, QIcon, KIconTheme};
+use clareon_qt::{KIconTheme, QApplicationExt, QIcon};
 use cxx_qt_lib::{QFont, QFontHintingPreference, QQmlApplicationEngine, QString, QUrl};
 use cxx_qt_lib_extras::QApplication;
 

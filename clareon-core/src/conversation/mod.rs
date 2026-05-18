@@ -8,7 +8,9 @@
 //! orchestrating the interaction between storage, backends, and title generation.
 
 mod manager;
+mod session;
 mod title;
 
-pub use manager::{ConversationManager, StreamUpdate};
+pub use manager::{ConversationManager, StreamUpdate, ToolExecutionStatus};
+pub use session::ConversationSession;
 pub use title::TitleGenerator;

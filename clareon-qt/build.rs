@@ -58,8 +58,12 @@ fn main() {
         }
     }
 
-    let kiconthemes_pkg = find_package("KF6IconThemes").find().expect("Could not find KF6IconThemes package via CMake");
-    let kicontheme_tgt = kiconthemes_pkg.target("KF6::IconThemes").expect("Could not find KF6::IconThemes target in CMake package");
+    let kiconthemes_pkg = find_package("KF6IconThemes")
+        .find()
+        .expect("Could not find KF6IconThemes package via CMake");
+    let kicontheme_tgt = kiconthemes_pkg
+        .target("KF6::IconThemes")
+        .expect("Could not find KF6::IconThemes target in CMake package");
     kicontheme_tgt.link();
 
     let mut builder = CxxQtBuilder::new()
