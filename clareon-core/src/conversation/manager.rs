@@ -10,8 +10,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::{Stream, StreamExt};
+use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
+use super::session::ConversationSession;
 use super::title::TitleGenerator;
 use crate::backend::{
     ChatRequest, ChatResponse, ContentDelta, LlmBackend, ModelInfo, StopReason, StreamEvent, Usage,
@@ -75,6 +77,7 @@ pub struct ConversationManager {
     title_generator: Arc<TitleGenerator>,
     config: Config,
     tool_executor: Option<Arc<ToolExecutor>>,
+    sessions: Arc<RwLock<HashMap<ConversationId, Arc<ConversationSession>>>>,
 }
 
 impl ConversationManager {
@@ -94,6 +97,7 @@ impl ConversationManager {
             title_generator: Arc::new(title_generator),
             config,
             tool_executor: None,
+            sessions: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -120,6 +124,50 @@ impl ConversationManager {
     /// Get a reference to the tool executor (if configured)
     pub fn tool_executor(&self) -> Option<Arc<ToolExecutor>> {
         self.tool_executor.clone()
+    }
+
+    /// Get an existing session for a conversation, or create one by loading from storage.
+    ///
+    /// Sessions are cached in memory for the lifetime of the manager. Creating a session
+    /// loads all messages from the database once; subsequent accesses use the in-memory cache.
+    pub async fn get_or_create_session(
+        &self,
+        id: &ConversationId,
+    ) -> Result<Arc<ConversationSession>> {
+        // Fast path: session already exists
+        if let Some(session) = self.sessions.read().await.get(id) {
+            return Ok(Arc::clone(session));
+        }
+
+        // Slow path: load from DB under write lock, with double-check to avoid races
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get(id) {
+            return Ok(Arc::clone(session));
+        }
+
+        let conversation = self.storage.get_conversation(id).await?;
+        let messages = self.storage.get_messages(id).await?;
+
+        let session = Arc::new(ConversationSession::new_with_messages(
+            conversation,
+            Arc::clone(&self.backend),
+            Arc::clone(&self.storage),
+            messages,
+            self.config.clone(),
+            Arc::clone(&self.title_generator),
+            self.tool_executor.clone(),
+        ));
+
+        sessions.insert(id.clone(), Arc::clone(&session));
+        Ok(session)
+    }
+
+    /// Return an existing session if one is open, without creating a new one.
+    pub async fn get_session_if_exists(
+        &self,
+        id: &ConversationId,
+    ) -> Option<Arc<ConversationSession>> {
+        self.sessions.read().await.get(id).cloned()
     }
 
     /// Start a new conversation

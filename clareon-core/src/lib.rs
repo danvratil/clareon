@@ -20,7 +20,7 @@ pub use backend::{
     AnthropicBackend, BedrockBackend, ChatRequest, ChatResponse, LlmBackend, StopReason,
 };
 pub use config::{Config, ConfigManager, SandboxModeConfig, SecretStore};
-pub use conversation::{ConversationManager, StreamUpdate};
+pub use conversation::{ConversationManager, ConversationSession, StreamUpdate};
 pub use error::{Error, Result};
 pub use storage::Storage;
 pub use tools::{

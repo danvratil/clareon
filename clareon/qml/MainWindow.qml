@@ -20,6 +20,27 @@ Kirigami.ApplicationWindow {
     property string currentConversationId: ""
     property var config: ConfigManager.getConfig()
 
+    // Cache of ConversationPage instances keyed by conversationId. Keeping a
+    // page around across navigation preserves its MessageListModel — in
+    // particular, an in-flight streaming placeholder — so quickly switching
+    // between active conversations doesn't tear down state mid-stream.
+    property var conversationPages: ({})
+
+    // Off-screen Item that owns cached ConversationPage instances when they
+    // are not currently displayed in pageStack. Parenting cached pages here
+    // (instead of leaving them owned by pageStack) keeps them alive across
+    // pageStack.clear()/replace() calls.
+    //
+    // Sized to match pageStack so that cached pages layout their (potentially
+    // large) Repeater-based message lists against the correct dimensions and
+    // don't have to relayout when reparented back into pageStack on switch.
+    Item {
+        id: pageCacheHolder
+        visible: false
+        width: pageStack.width
+        height: pageStack.height
+    }
+
     // Override close event to hide instead of quit (if minimize to tray is enabled)
     onClosing: function(close) {
         if (config.ui.minimizeToTray) {
@@ -66,9 +87,18 @@ Kirigami.ApplicationWindow {
         target: ServiceController
 
         function onConversationDeleted(conversationId) {
-            // If the currently open conversation was deleted, navigate to title page
-            if (root.currentConversationId === conversationId) {
+            const wasCurrent = root.currentConversationId === conversationId
+            const cached = root.conversationPages[conversationId]
+
+            // Navigate away first so the page being destroyed isn't the
+            // currently-displayed one in pageStack.
+            if (wasCurrent) {
                 root.openTitlePage()
+            }
+
+            if (cached) {
+                delete root.conversationPages[conversationId]
+                cached.destroy()
             }
         }
 
@@ -121,19 +151,42 @@ Kirigami.ApplicationWindow {
         }
     }
 
-    function openConversation(conversationId) {
-        const page = converstationPage.createObject(null, {
-            conversationId: conversationId,
-        })
-
-        if (page) {
-            pageStack.clear()
-            pageStack.replace(page)
-            root.currentConversationId = conversationId
-            globalDrawer.currentConversationId = conversationId
-        } else {
-            console.error("Failed to create ")
+    // If the page currently shown in pageStack is one of our cached
+    // ConversationPages, reparent it back to pageCacheHolder so the upcoming
+    // pageStack mutation can't destroy it.
+    function _detachActiveCachedPage() {
+        if (pageStack.depth === 0) {
+            return
         }
+        const top = pageStack.currentItem
+        if (top && top.conversationId !== undefined
+                && root.conversationPages[top.conversationId] === top) {
+            top.parent = pageCacheHolder
+        }
+    }
+
+    function openConversation(conversationId) {
+        let page = root.conversationPages[conversationId]
+        if (!page) {
+            page = converstationPage.createObject(pageCacheHolder, {
+                conversationId: conversationId,
+            })
+            if (!page) {
+                console.error("Failed to create ConversationPage")
+                return
+            }
+            root.conversationPages[conversationId] = page
+        }
+
+        if (pageStack.depth > 0 && pageStack.currentItem === page) {
+            return
+        }
+
+        _detachActiveCachedPage()
+        pageStack.clear()
+        pageStack.replace(page)
+        root.currentConversationId = conversationId
+        globalDrawer.currentConversationId = conversationId
     }
 
     function openConfiguration() {
@@ -154,6 +207,7 @@ Kirigami.ApplicationWindow {
             searchPage.onSelectedConversationIdChanged.connect(function() {
                 globalDrawer.currentConversationId = searchPage.selectedConversationId
             })
+            _detachActiveCachedPage()
             pageStack.replace(searchPage)
         } else {
             console.error("Failed to create SearchResultsPage")
@@ -166,6 +220,7 @@ Kirigami.ApplicationWindow {
             page.conversationStarted.connect(function(conversationId) {
                 openConversation(conversationId)
             })
+            _detachActiveCachedPage()
             pageStack.clear()
             pageStack.replace(page)
             root.currentConversationId = ""
