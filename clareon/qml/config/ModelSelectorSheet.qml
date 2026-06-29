@@ -287,6 +287,15 @@ Kirigami.Dialog {
                                 wrapMode: Text.WordWrap
                             }
 
+                            // OpenRouter hosts per-model detail pages at openrouter.ai/<modelId>
+                            Kirigami.LinkButton {
+                                text: qsTr("Show more")
+                                visible: sheet.provider === "openrouter" && modelDescription !== ""
+                                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                                Layout.alignment: Qt.AlignLeft
+                                onClicked: Qt.openUrlExternally("https://openrouter.ai/" + modelId)
+                            }
+
                             Item {
                                 Layout.fillHeight: true
                                 Layout.minimumHeight: 0
