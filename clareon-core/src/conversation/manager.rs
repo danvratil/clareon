@@ -249,9 +249,17 @@ impl ConversationManager {
                 // Get conversation history
                 let messages = self.storage.get_messages(&conversation.id).await?;
 
+                // Use live configured default model so settings changes apply immediately
+                let model = self.config.default_model.clone();
+                if conversation.model != model {
+                    conversation.model = model.clone();
+                    conversation.touch();
+                    self.storage.update_conversation(conversation).await?;
+                }
+
                 // Build request with tool definitions
                 let system_prompt = self.get_effective_system_prompt(conversation);
-                let mut request = ChatRequest::new(messages, &conversation.model)
+                let mut request = ChatRequest::new(messages, &model)
                     .with_system_prompt(system_prompt)
                     .with_max_tokens(4096);
 
@@ -329,8 +337,15 @@ impl ConversationManager {
             // Simple single call without tools
             let messages = self.storage.get_messages(&conversation.id).await?;
 
+            let model = self.config.default_model.clone();
+            if conversation.model != model {
+                conversation.model = model.clone();
+                conversation.touch();
+                self.storage.update_conversation(conversation).await?;
+            }
+
             let system_prompt = self.get_effective_system_prompt(conversation);
-            let request = ChatRequest::new(messages, &conversation.model)
+            let request = ChatRequest::new(messages, &model)
                 .with_system_prompt(system_prompt)
                 .with_max_tokens(4096);
 
@@ -405,7 +420,13 @@ impl ConversationManager {
         let storage = self.storage.clone();
         let backend = self.backend.clone();
         let conv_id = conversation.id.clone();
-        let model = conversation.model.clone();
+        // Use live configured default model so settings changes apply immediately
+        let model = self.config.default_model.clone();
+        if conversation.model != model {
+            conversation.model = model.clone();
+            conversation.touch();
+            self.storage.update_conversation(conversation).await?;
+        }
         let title_generator = self.title_generator.clone();
         let tool_executor = self.tool_executor.clone();
         let config = self.config.clone();
@@ -818,8 +839,14 @@ impl ConversationManager {
 
         // Build the request
         let system_prompt = self.get_effective_system_prompt(conversation);
+        let model = self.config.default_model.clone();
+        if conversation.model != model {
+            conversation.model = model.clone();
+            conversation.touch();
+            self.storage.update_conversation(conversation).await?;
+        }
 
-        let request = ChatRequest::new(messages, &conversation.model)
+        let request = ChatRequest::new(messages, &model)
             .with_system_prompt(system_prompt)
             .with_max_tokens(4096);
 

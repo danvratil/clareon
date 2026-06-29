@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::pin::Pin;
+
 #[cxx_qt::bridge]
 mod ffi {
     unsafe extern "C++" {
@@ -51,11 +53,17 @@ mod ffi {
         /// Returns true on success, false on error
         #[qinvokable]
         #[rust_name = "save_config"]
-        fn saveConfig(self: &ConfigManager, config: *mut ConfigCpp) -> bool;
+        fn saveConfig(self: Pin<&mut ConfigManager>, config: *mut ConfigCpp) -> bool;
 
         /// Reload configuration from disk, discarding any unsaved changes
         #[qinvokable]
-        fn reload(self: &ConfigManager) -> bool;
+        fn reload(self: Pin<&mut ConfigManager>) -> bool;
+
+        /// Emitted after configuration is successfully saved or reloaded from disk.
+        /// QML should re-fetch via getConfig() to pick up the new values.
+        #[qsignal]
+        #[rust_name = "config_changed"]
+        fn configChanged(self: Pin<&mut ConfigManager>);
     }
 }
 
@@ -83,7 +91,7 @@ impl ffi::ConfigManager {
     }
 
     /// Save configuration from ConfigCpp
-    fn save_config(&self, config: *mut ffi::ConfigCpp) -> bool {
+    fn save_config(self: Pin<&mut Self>, config: *mut ffi::ConfigCpp) -> bool {
         if config.is_null() {
             tracing::error!("Received null ConfigCpp pointer");
             return false;
@@ -103,6 +111,8 @@ impl ffi::ConfigManager {
                         if let Some(handle) = crate::service_controller::try_get_service_handle() {
                             let _ = handle.send(crate::service::Command::ReloadConfig);
                         }
+                        // Notify QML bindings (TitlePage model label, etc.)
+                        self.config_changed();
                         true
                     }
                     Err(e) => {
@@ -119,10 +129,11 @@ impl ffi::ConfigManager {
     }
 
     /// Reload configuration from disk
-    fn reload(&self) -> bool {
+    fn reload(self: Pin<&mut Self>) -> bool {
         match clareon_core::ConfigManager::get().reload() {
             Ok(()) => {
                 tracing::info!("Configuration reloaded successfully");
+                self.config_changed();
                 true
             }
             Err(e) => {

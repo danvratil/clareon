@@ -137,14 +137,24 @@ impl ConversationSession {
                 // Read from cache - no database query needed
                 let messages = session.messages.read().await.clone();
 
-                // Read model and system prompt under a single lock acquisition,
-                // then drop the guard before any await point
-                let (model, system_prompt) = {
+                // Use the live configured default model so settings changes apply
+                // without restart. Keep conversation.model in sync for metadata/UI.
+                let model = session.config.default_model.clone();
+                {
+                    let mut conv = session.conversation.write().await;
+                    if conv.model != model {
+                        conv.model = model.clone();
+                        conv.touch();
+                        let conv_snapshot = conv.clone();
+                        drop(conv);
+                        if let Err(e) = session.storage.update_conversation(&conv_snapshot).await {
+                            warn!("Failed to sync conversation model: {}", e);
+                        }
+                    }
+                }
+                let system_prompt = {
                     let conv = session.conversation.read().await;
-                    (
-                        conv.model.clone(),
-                        Self::build_system_prompt(&session.config, &conv),
-                    )
+                    Self::build_system_prompt(&session.config, &conv)
                 };
 
                 let mut request = ChatRequest::new(messages, &model)

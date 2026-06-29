@@ -19,6 +19,20 @@ Kirigami.Page {
     // Store the pending message to send after conversation is created
     property string pendingMessage: ""
 
+    // Track default model reactively so settings changes apply without restart
+    property string defaultModel: ConfigManager.getConfig().defaultModel || ""
+
+    function refreshDefaultModel() {
+        defaultModel = ConfigManager.getConfig().defaultModel || ""
+    }
+
+    Connections {
+        target: ConfigManager
+        function onConfigChanged() {
+            root.refreshDefaultModel()
+        }
+    }
+
     Connections {
         target: ServiceController
 
@@ -150,7 +164,7 @@ Kirigami.Page {
 
                     Controls.Label {
                         Layout.alignment: Qt.AlignHCenter
-                        text: qsTr("Model: %1").arg(ConfigManager.getConfig().defaultModel || "")
+                        text: qsTr("Model: %1").arg(root.defaultModel)
                         font.pointSize: Kirigami.Theme.smallFont.pointSize
                         color: Kirigami.Theme.disabledTextColor
                     }

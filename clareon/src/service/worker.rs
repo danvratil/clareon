@@ -121,8 +121,8 @@ impl ServiceWorker {
             Command::ReloadConfig => {
                 self.handle_reload_config().await;
             }
-            Command::FetchAvailableModels { provider: _ } => {
-                self.handle_fetch_available_models().await;
+            Command::FetchAvailableModels { provider } => {
+                self.handle_fetch_available_models(provider).await;
             }
         }
     }
@@ -614,8 +614,24 @@ impl ServiceWorker {
         }
     }
 
-    async fn handle_fetch_available_models(&self) {
-        match self.manager.available_models().await {
+    async fn handle_fetch_available_models(&self, provider: clareon_core::config::Provider) {
+        // Build a temporary config targeting the requested provider so the model
+        // browser works even before the user applies a provider change in settings.
+        let mut config = clareon_core::ConfigManager::get().config();
+        config.default_provider = provider;
+
+        let backend = match clareon_core::backend::create_backend_from_config(&config).await {
+            Ok(b) => b,
+            Err(e) => {
+                error!("Failed to create backend for model fetch: {}", e);
+                let _ = self.response_tx.send(Response::ModelsLoadFailed {
+                    error: format!("Failed to connect to provider: {}", e),
+                });
+                return;
+            }
+        };
+
+        match backend.available_models().await {
             Ok(models) => {
                 let model_data: Vec<ModelInfoData> = models
                     .into_iter()

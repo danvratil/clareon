@@ -11,6 +11,13 @@ Item {
 
     property var config: ConfigManager.getConfig()
 
+    Connections {
+        target: ConfigManager
+        function onConfigChanged() {
+            app.config = ConfigManager.getConfig()
+        }
+    }
+
     MainWindow {
         id: mainWindow
         visible: false

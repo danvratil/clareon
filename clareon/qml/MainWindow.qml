@@ -20,6 +20,13 @@ Kirigami.ApplicationWindow {
     property string currentConversationId: ""
     property var config: ConfigManager.getConfig()
 
+    Connections {
+        target: ConfigManager
+        function onConfigChanged() {
+            root.config = ConfigManager.getConfig()
+        }
+    }
+
     // Cache of ConversationPage instances keyed by conversationId. Keeping a
     // page around across navigation preserves its MessageListModel — in
     // particular, an in-flight streaming placeholder — so quickly switching
