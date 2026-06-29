@@ -29,9 +29,33 @@ Kirigami.Dialog {
     preferredWidth: Kirigami.Units.gridUnit * 42
     preferredHeight: Kirigami.Units.gridUnit * 34
 
-    // Format OpenRouter-style per-token price as "$X.XX/MTok"
+    function parsePerToken(perTokenStr) {
+        if (perTokenStr === "" || perTokenStr === undefined || perTokenStr === null)
+            return NaN
+        return parseFloat(perTokenStr)
+    }
+
+    function isFreePrice(perTokenStr) {
+        const n = parsePerToken(perTokenStr)
+        return !isNaN(n) && n <= 0
+    }
+
+    // True when both sides are free (or only one side is present and free).
+    function isFreeModel(prompt, completion) {
+        const hasPrompt = prompt !== "" && prompt !== undefined && prompt !== null
+        const hasCompletion = completion !== "" && completion !== undefined && completion !== null
+        if (!hasPrompt && !hasCompletion)
+            return false
+        if (hasPrompt && !isFreePrice(prompt))
+            return false
+        if (hasCompletion && !isFreePrice(completion))
+            return false
+        return (hasPrompt && isFreePrice(prompt)) || (hasCompletion && isFreePrice(completion))
+    }
+
+    // Format OpenRouter-style per-token price as "$X.XX/MTok" (empty if free/missing)
     function formatPerMillion(perTokenStr) {
-        const n = parseFloat(perTokenStr)
+        const n = parsePerToken(perTokenStr)
         if (isNaN(n) || n <= 0)
             return ""
         const perMillion = n * 1e6
@@ -126,11 +150,18 @@ Kirigami.Dialog {
                 id: searchField
                 Layout.fillWidth: true
                 placeholderText: qsTr("Search models...")
+                Accessible.name: qsTr("Search models")
+            }
+
+            Controls.Label {
+                text: qsTr("Sort by:")
+                Accessible.ignored: true
             }
 
             Controls.ComboBox {
                 id: sortCombo
                 model: [qsTr("Name"), qsTr("Context Window"), qsTr("Price")]
+                Accessible.name: qsTr("Sort by")
             }
         }
 
@@ -203,8 +234,9 @@ Kirigami.Dialog {
                     required property string modelInputModalities
                     required property string modelOutputModalities
 
-                    readonly property string promptPriceText: sheet.formatPerMillion(modelPricingPrompt)
-                    readonly property string completionPriceText: sheet.formatPerMillion(modelPricingCompletion)
+                    readonly property bool freeModel: sheet.isFreeModel(modelPricingPrompt, modelPricingCompletion)
+                    readonly property string promptPriceText: freeModel ? "" : sheet.formatPerMillion(modelPricingPrompt)
+                    readonly property string completionPriceText: freeModel ? "" : sheet.formatPerMillion(modelPricingCompletion)
                     readonly property string modalityText: sheet.formatModality(modelInputModalities, modelOutputModalities)
 
                     Kirigami.AbstractCard {
@@ -272,10 +304,14 @@ Kirigami.Dialog {
                                         const chips = []
                                         if (modalityText)
                                             chips.push(modalityText)
-                                        if (promptPriceText)
-                                            chips.push("↑ " + promptPriceText)
-                                        if (completionPriceText)
-                                            chips.push("↓ " + completionPriceText)
+                                        if (freeModel)
+                                            chips.push(qsTr("free"))
+                                        else {
+                                            if (promptPriceText)
+                                                chips.push("↑ " + promptPriceText)
+                                            if (completionPriceText)
+                                                chips.push("↓ " + completionPriceText)
+                                        }
                                         if (modelContextWindow > 0)
                                             chips.push(qsTr("%1 ctx").arg(sheet.formatTokenCount(modelContextWindow)))
                                         return chips
