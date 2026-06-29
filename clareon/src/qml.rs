@@ -9,7 +9,11 @@ mod ffi {
 
         #[cxx_name = "registerClareonQmlTypes"]
         fn register_clareon_qml_types();
+
+        /// Enable QML/JS debug server (QMLMCP / Qt Creator). Call before any QML engine.
+        #[cxx_name = "enableQmlDebugger"]
+        fn enable_qml_debugger(port: i32) -> bool;
     }
 }
 
-pub use ffi::register_clareon_qml_types;
+pub use ffi::{enable_qml_debugger, register_clareon_qml_types};

@@ -6,3 +6,8 @@
 #pragma once
 
 void registerClareonQmlTypes();
+
+/// Enable the QML/JS debug server so tools like QMLMCP can attach.
+/// Must be called before creating any QQmlEngine / QQmlApplicationEngine.
+/// Returns true if the TCP debug server started successfully.
+bool enableQmlDebugger(int port);

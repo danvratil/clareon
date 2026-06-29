@@ -49,6 +49,11 @@ pub fn get_runtime() -> &'static Runtime {
 pub struct Args {
     #[arg(short, long, action = clap::ArgAction::SetTrue, help = "Show a quick input window to start a new conversation")]
     pub quick_input: bool,
+
+    /// Enable the QML/JS debug TCP server (for QMLMCP / Qt Creator).
+    /// Optional port (default 3768). Can also set CLAREON_QML_DEBUGGER=<port>.
+    #[arg(long, value_name = "PORT", num_args = 0..=1, default_missing_value = "3768")]
+    pub qml_debugger: Option<u16>,
 }
 
 fn main() {
@@ -150,6 +155,29 @@ fn main() {
     icon.add_file(&QString::from(":/clareon-48.png"));
     icon.add_file(&QString::from(":/clareon-256.png"));
     app.pin_mut().set_window_icon(&icon);
+
+    // QML debug server must start before any QQmlEngine exists.
+    let qml_debugger_port = args.qml_debugger.or_else(|| {
+        std::env::var("CLAREON_QML_DEBUGGER")
+            .ok()
+            .and_then(|v| v.parse::<u16>().ok())
+    });
+    if let Some(port) = qml_debugger_port {
+        if qml::enable_qml_debugger(port as i32) {
+            tracing::info!(
+                port,
+                "QML debugger listening (QMLMCP: connect host=127.0.0.1 port={})",
+                port
+            );
+            eprintln!(
+                "QML debugger listening on 127.0.0.1:{} (services: DebugMessages,QmlDebugger,QmlInspector)",
+                port
+            );
+        } else {
+            tracing::error!(port, "Failed to start QML debugger");
+            eprintln!("Failed to start QML debugger on port {}", port);
+        }
+    }
 
     let mut engine = QQmlApplicationEngine::new();
 

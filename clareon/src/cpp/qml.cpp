@@ -12,6 +12,31 @@
 #include "clareon/config_generated.h"
 
 #include <qqml.h>
+#include <QtQml/qqmldebug.h>
+
+#include <QStringList>
+
+bool enableQmlDebugger(int port)
+{
+#if QT_CONFIG(qml_debug)
+    // Programmatic enable (avoids needing QT_QML_DEBUG compile define and
+    // avoids clap consuming the -qmljsdebugger CLI flag before Qt sees it).
+    QQmlDebuggingEnabler::enableDebugging(true);
+
+    // Services expected by QMLMCP: DebugMessages, QmlDebugger, QmlInspector
+    QStringList services;
+    services << QStringLiteral("DebugMessages")
+             << QStringLiteral("QmlDebugger")
+             << QStringLiteral("QmlInspector");
+    QQmlDebuggingEnabler::setServices(services);
+
+    return QQmlDebuggingEnabler::startTcpDebugServer(
+        port, QQmlDebuggingEnabler::DoNotWaitForClient);
+#else
+    Q_UNUSED(port);
+    return false;
+#endif
+}
 
 void registerClareonQmlTypes() {
     qmlRegisterType<ArtifactListModel>("cc.clareon.core", 1, 0, "ArtifactListModel");
