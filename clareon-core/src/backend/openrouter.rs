@@ -517,9 +517,12 @@ impl LlmBackend for OpenRouterBackend {
                         prompt: Some(m.pricing.prompt),
                         completion: Some(m.pricing.completion),
                     }),
+                    // OpenRouter exposes a single "text+image->text" style string.
+                    // Keep it on the input side so the UI can render it as one chip
+                    // (splitting on "->" for display).
                     modalities: Some(ModelModalities {
-                        input: vec![m.architecture.modality.clone()],
-                        output: vec![m.architecture.modality],
+                        input: vec![m.architecture.modality],
+                        output: vec![],
                     }),
                     id: m.id,
                 }
