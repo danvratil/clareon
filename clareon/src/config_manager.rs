@@ -23,6 +23,8 @@ mod ffi {
         type SystemPromptConfigCpp;
         type ModelsConfigCpp;
         type ToolsConfigCpp;
+        type McpConfigCpp;
+        type McpServerConfigCpp;
         type LoggingConfigCpp;
     }
 

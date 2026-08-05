@@ -19,7 +19,10 @@ pub mod types;
 pub use backend::{
     AnthropicBackend, BedrockBackend, ChatRequest, ChatResponse, LlmBackend, StopReason,
 };
-pub use config::{Config, ConfigManager, SandboxModeConfig, SecretStore};
+pub use config::{
+    Config, ConfigManager, McpConfig, McpServerConfig, McpTransportConfig, SandboxModeConfig,
+    SecretStore, import_mcp_servers_json, merge_imported_servers,
+};
 pub use conversation::{ConversationManager, ConversationSession, StreamUpdate};
 pub use error::{Error, Result};
 pub use storage::Storage;

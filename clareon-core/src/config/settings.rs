@@ -56,6 +56,10 @@ pub struct Config {
     #[serde(default)]
     pub tools: ToolsConfig,
 
+    /// Model Context Protocol (MCP) server configuration
+    #[serde(default)]
+    pub mcp: McpConfig,
+
     /// Logging configuration
     #[serde(default)]
     pub logging: LoggingConfig,
@@ -313,6 +317,114 @@ impl Default for ToolsConfig {
     }
 }
 
+/// Model Context Protocol (MCP) configuration
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct McpConfig {
+    /// Master switch for MCP (independent of built-in tools)
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Stable server id → definition (matches Claude Desktop `mcpServers` map shape)
+    #[serde(default)]
+    pub servers: HashMap<String, McpServerConfig>,
+}
+
+impl Default for McpConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            servers: HashMap::new(),
+        }
+    }
+}
+
+/// Transport used to connect to an MCP server
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum McpTransportConfig {
+    /// Local process over stdin/stdout
+    #[default]
+    Stdio,
+    /// Legacy SSE remote transport
+    Sse,
+    /// Streamable HTTP remote transport
+    Http,
+}
+
+/// Single MCP server definition
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct McpServerConfig {
+    /// Whether this server should be started
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Optional display name; map key is the stable id used in tool name prefixes
+    #[serde(default)]
+    pub name: Option<String>,
+
+    /// How to connect to the server
+    #[serde(default)]
+    pub transport: McpTransportConfig,
+
+    /// Executable for stdio transport
+    #[serde(default)]
+    pub command: Option<String>,
+
+    /// Arguments for stdio transport
+    #[serde(default)]
+    pub args: Vec<String>,
+
+    /// Extra environment variables for stdio transport
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+
+    /// Working directory for stdio transport
+    #[serde(default)]
+    pub cwd: Option<String>,
+
+    /// URL for remote (sse/http) transport
+    #[serde(default)]
+    pub url: Option<String>,
+
+    /// HTTP headers for remote transport
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+
+    /// Optional per-server tool-call timeout override (seconds)
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
+}
+
+impl Default for McpServerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            name: None,
+            transport: McpTransportConfig::default(),
+            command: None,
+            args: Vec::new(),
+            env: HashMap::new(),
+            cwd: None,
+            url: None,
+            headers: HashMap::new(),
+            timeout_secs: None,
+        }
+    }
+}
+
+impl McpServerConfig {
+    /// Infer transport when importing configs that omit an explicit `transport` field.
+    pub fn infer_transport(&mut self) {
+        match self.transport {
+            McpTransportConfig::Stdio if self.command.is_none() && self.url.is_some() => {
+                // Prefer streamable HTTP for bare URLs; callers can set sse explicitly.
+                self.transport = McpTransportConfig::Http;
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Logging configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoggingConfig {
@@ -403,6 +515,7 @@ impl Default for Config {
             system_prompt: SystemPromptConfig::default(),
             models: ModelsConfig::default(),
             tools: ToolsConfig::default(),
+            mcp: McpConfig::default(),
             logging: LoggingConfig::default(),
             ui: UiConfig::default(),
         }
@@ -579,6 +692,54 @@ mod tests {
         let json = r#"{"default_provider": "anthropic"}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.default_provider, Provider::Anthropic);
+        // MCP defaults when omitted
+        assert!(config.mcp.enabled);
+        assert!(config.mcp.servers.is_empty());
+    }
+
+    #[test]
+    fn test_mcp_config_roundtrip() {
+        let mut config = Config::default();
+        config.mcp.servers.insert(
+            "filesystem".into(),
+            McpServerConfig {
+                name: Some("Filesystem".into()),
+                transport: McpTransportConfig::Stdio,
+                command: Some("npx".into()),
+                args: vec![
+                    "-y".into(),
+                    "@modelcontextprotocol/server-filesystem".into(),
+                ],
+                env: HashMap::from([("FOO".into(), "bar".into())]),
+                ..Default::default()
+            },
+        );
+        config.mcp.servers.insert(
+            "remote".into(),
+            McpServerConfig {
+                transport: McpTransportConfig::Http,
+                url: Some("https://example.com/mcp".into()),
+                headers: HashMap::from([("Authorization".into(), "Bearer t".into())]),
+                timeout_secs: Some(60),
+                ..Default::default()
+            },
+        );
+
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let loaded: Config = serde_json::from_str(&json).unwrap();
+        assert_eq!(config.mcp, loaded.mcp);
+    }
+
+    #[test]
+    fn test_mcp_server_infer_transport() {
+        let mut server = McpServerConfig {
+            url: Some("https://example.com/mcp".into()),
+            command: None,
+            ..Default::default()
+        };
+        assert_eq!(server.transport, McpTransportConfig::Stdio);
+        server.infer_transport();
+        assert_eq!(server.transport, McpTransportConfig::Http);
     }
 
     #[test]

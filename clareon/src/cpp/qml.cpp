@@ -56,6 +56,10 @@ void registerClareonQmlTypes() {
                                       QStringLiteral("OpenAiBackendConfigCpp is not creatable from QML"));
     qmlRegisterUncreatableType<ToolsConfigCpp>("cc.clareon.core", 1, 0, "ToolsConfigCpp",
                                       QStringLiteral("ToolsConfigCpp is not creatable from QML"));
+    qmlRegisterUncreatableType<McpConfigCpp>("cc.clareon.core", 1, 0, "McpConfigCpp",
+                                      QStringLiteral("McpConfigCpp is not creatable from QML"));
+    qmlRegisterUncreatableType<McpServerConfigCpp>("cc.clareon.core", 1, 0, "McpServerConfigCpp",
+                                      QStringLiteral("McpServerConfigCpp is not creatable from QML"));
     qmlRegisterUncreatableType<SystemPromptConfigCpp>("cc.clareon.core", 1, 0, "SystemPromptConfigCpp",
                                       QStringLiteral("SystemPromptConfigCpp is not creatable from QML"));
 }

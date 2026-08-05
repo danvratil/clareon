@@ -7,6 +7,7 @@ fn map_rust_type_to_cpp(rust_type: &str) -> &str {
         "u64" => "quint64",
         "i32" => "qint32",
         "HashMap" => "QVariantMap",
+        "Vec" => "QStringList",
         // Nested config structs - convert XyzConfig to XyzConfigCpp
         s if s.ends_with("Config") => {
             // Return a static string - we'll need to handle this differently
@@ -92,6 +93,7 @@ pub fn generate_cpp_header(structs: &[ConfigStruct], enums: &[String]) -> String
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QVariantMap>
 
 "#,
@@ -265,6 +267,7 @@ fn generate_cpp_class_implementation(
             "quint64" => "toULongLong()",
             "QString" => "toString()",
             "QVariantMap" => "toMap()",
+            "QStringList" => "toStringList()",
             // Nested gadgets need construction from variant map
             _ if cpp_type.ends_with("Cpp") => {
                 impl_code.push_str(&format!(

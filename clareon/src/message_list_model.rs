@@ -685,7 +685,6 @@ impl ffi::MessageListModel {
             }
             Response::SendMessageError {
                 error_info,
-                user_message_id: _,
                 ..
             } => {
                 // Remove "thinking" placeholder if present
