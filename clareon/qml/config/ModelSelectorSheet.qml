@@ -120,10 +120,20 @@ Kirigami.Dialog {
         id: filteredModels
         sourceModel: modelListModel
         filterRoleName: "searchable"
+        // Word-by-word AND: every token must appear somewhere in the searchable
+        // blob (name, id, owner, description). e.g. "gemma free" matches
+        // "google/gemma-2-9b-it:free".
         filterRegularExpression: {
-            if (sheet.filterText === "")
+            const raw = sheet.filterText.trim()
+            if (raw === "")
                 return new RegExp()
-            return new RegExp(sheet.filterText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "i")
+            const words = raw.split(/\s+/).filter(w => w.length > 0)
+            const escaped = words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+            if (escaped.length === 1)
+                return new RegExp(escaped[0], "i")
+            // Positive lookaheads so word order does not matter.
+            const pattern = escaped.map(w => `(?=.*${w})`).join("") + ".*"
+            return new RegExp(pattern, "i")
         }
         sortRoleName: {
             switch (sortCombo.currentIndex) {
