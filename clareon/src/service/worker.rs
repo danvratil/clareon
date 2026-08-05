@@ -8,8 +8,10 @@ use futures::StreamExt;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
 
+use std::sync::Arc;
+
 use clareon_core::types::{ContentBlock, ConversationId, ConversationSummary, Message};
-use clareon_core::{ConversationManager, ConversationSession, Storage, StreamUpdate};
+use clareon_core::{ConversationManager, ConversationSession, McpManager, Storage, StreamUpdate};
 
 use super::{
     command::Command,
@@ -19,6 +21,7 @@ use super::{
 /// Service worker that processes commands on the tokio runtime
 pub struct ServiceWorker {
     manager: ConversationManager,
+    mcp_manager: Arc<McpManager>,
     command_rx: broadcast::Receiver<Command>,
     response_tx: broadcast::Sender<Response>,
 }
@@ -27,11 +30,13 @@ impl ServiceWorker {
     /// Create a new service worker
     pub fn new(
         manager: ConversationManager,
+        mcp_manager: Arc<McpManager>,
         command_rx: broadcast::Receiver<Command>,
         response_tx: broadcast::Sender<Response>,
     ) -> Self {
         Self {
             manager,
+            mcp_manager,
             command_rx,
             response_tx,
         }
@@ -123,6 +128,38 @@ impl ServiceWorker {
             }
             Command::FetchAvailableModels { provider } => {
                 self.handle_fetch_available_models(provider).await;
+            }
+            Command::ListMcpServers => {
+                self.handle_list_mcp_servers().await;
+            }
+            Command::ListMcpResources { server_id } => {
+                self.handle_list_mcp_resources(server_id).await;
+            }
+            Command::ReadMcpResource { server_id, uri } => {
+                self.handle_read_mcp_resource(server_id, uri).await;
+            }
+            Command::ListMcpPrompts { server_id } => {
+                self.handle_list_mcp_prompts(server_id).await;
+            }
+            Command::GetMcpPrompt {
+                server_id,
+                name,
+                arguments_json,
+            } => {
+                self.handle_get_mcp_prompt(server_id, name, arguments_json)
+                    .await;
+            }
+            Command::InjectMcpPrompt {
+                conv_id,
+                server_id,
+                name,
+                arguments_json,
+            } => {
+                self.handle_inject_mcp_prompt(conv_id, server_id, name, arguments_json)
+                    .await;
+            }
+            Command::RestartMcpServers => {
+                self.handle_restart_mcp_servers().await;
             }
         }
     }
@@ -760,7 +797,7 @@ impl ServiceWorker {
     }
 
     async fn handle_reload_config(&mut self) {
-        info!("Reloading configuration and recreating backend");
+        info!("Reloading configuration and recreating backend + MCP");
 
         let config = clareon_core::ConfigManager::get().config();
 
@@ -788,16 +825,178 @@ impl ServiceWorker {
             }
         };
 
-        // Rebuild the ConversationManager, preserving storage and tool executor
+        // Rebuild tools + MCP connections from the new config
         let storage = self.manager.storage();
-        let tool_executor = self.manager.tool_executor();
+        let (tool_executor, mcp_manager) = match super::build_tools(&config, storage.clone()).await
+        {
+            Ok(pair) => pair,
+            Err(e) => {
+                error!("Failed to rebuild tools after config reload: {}", e);
+                let _ = self.response_tx.send(Response::Error {
+                    command: "ReloadConfig".to_string(),
+                    error: format!("Failed to rebuild tools: {e}"),
+                });
+                return;
+            }
+        };
+        self.mcp_manager = mcp_manager;
+
         let mut new_manager = ConversationManager::new(storage, backend, title_backend, config);
         if let Some(executor) = tool_executor {
             new_manager = new_manager.with_tools(executor);
         }
 
         self.manager = new_manager;
-        info!("Configuration reloaded successfully, backend recreated");
+        info!("Configuration reloaded successfully, backend and MCP recreated");
+
+        // Push updated MCP status to UI
+        self.handle_list_mcp_servers().await;
+    }
+
+    async fn handle_list_mcp_servers(&self) {
+        let servers = self.mcp_manager.server_statuses().await;
+        let _ = self
+            .response_tx
+            .send(Response::McpServersStatus { servers });
+    }
+
+    async fn handle_list_mcp_resources(&self, server_id: Option<String>) {
+        let resources = self.mcp_manager.list_resources(server_id.as_deref()).await;
+        let _ = self
+            .response_tx
+            .send(Response::McpResourcesListed { resources });
+    }
+
+    async fn handle_read_mcp_resource(&self, server_id: String, uri: String) {
+        match self.mcp_manager.read_resource(&server_id, &uri).await {
+            Ok(text) => {
+                let _ = self.response_tx.send(Response::McpResourceRead {
+                    server_id,
+                    uri,
+                    text,
+                });
+            }
+            Err(e) => {
+                let _ = self.response_tx.send(Response::Error {
+                    command: "ReadMcpResource".to_string(),
+                    error: e,
+                });
+            }
+        }
+    }
+
+    async fn handle_list_mcp_prompts(&self, server_id: Option<String>) {
+        let prompts = self.mcp_manager.list_prompts(server_id.as_deref()).await;
+        let _ = self
+            .response_tx
+            .send(Response::McpPromptsListed { prompts });
+    }
+
+    async fn handle_get_mcp_prompt(&self, server_id: String, name: String, arguments_json: String) {
+        let arguments = parse_prompt_args(&arguments_json);
+        match self
+            .mcp_manager
+            .get_prompt(&server_id, &name, arguments)
+            .await
+        {
+            Ok(result) => {
+                let _ = self
+                    .response_tx
+                    .send(Response::McpPromptResolved { result });
+            }
+            Err(e) => {
+                let _ = self.response_tx.send(Response::Error {
+                    command: "GetMcpPrompt".to_string(),
+                    error: e,
+                });
+            }
+        }
+    }
+
+    async fn handle_inject_mcp_prompt(
+        &self,
+        conv_id: ConversationId,
+        server_id: String,
+        name: String,
+        arguments_json: String,
+    ) {
+        let arguments = parse_prompt_args(&arguments_json);
+        let result = match self
+            .mcp_manager
+            .get_prompt(&server_id, &name, arguments)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                let _ = self.response_tx.send(Response::Error {
+                    command: "InjectMcpPrompt".to_string(),
+                    error: e,
+                });
+                return;
+            }
+        };
+
+        // Inject as a user message containing the flattened prompt text.
+        let text = if result.text.is_empty() {
+            format!("(MCP prompt `{name}` produced no content)")
+        } else {
+            result.text
+        };
+
+        // Prefer session path so the in-memory cache stays consistent
+        match self.manager.get_or_create_session(&conv_id).await {
+            Ok(session) => {
+                if let Err(e) = session.append_user_message(&text).await {
+                    let _ = self.response_tx.send(Response::Error {
+                        command: "InjectMcpPrompt".to_string(),
+                        error: e.to_string(),
+                    });
+                    return;
+                }
+            }
+            Err(e) => {
+                let _ = self.response_tx.send(Response::Error {
+                    command: "InjectMcpPrompt".to_string(),
+                    error: e.to_string(),
+                });
+                return;
+            }
+        }
+        self.handle_load_messages(conv_id.clone()).await;
+        let _ = self
+            .response_tx
+            .send(Response::McpPromptInjected { conv_id });
+    }
+
+    async fn handle_restart_mcp_servers(&mut self) {
+        // Full tool rebuild (same as config reload without backend swap)
+        let config = clareon_core::ConfigManager::get().config();
+        let storage = self.manager.storage();
+        match super::build_tools(&config, storage).await {
+            Ok((tool_executor, mcp_manager)) => {
+                self.mcp_manager = mcp_manager;
+                self.manager.set_config(config);
+                self.manager.set_tool_executor(tool_executor);
+                self.handle_list_mcp_servers().await;
+            }
+            Err(e) => {
+                let _ = self.response_tx.send(Response::Error {
+                    command: "RestartMcpServers".to_string(),
+                    error: e.to_string(),
+                });
+            }
+        }
+    }
+}
+
+fn parse_prompt_args(arguments_json: &str) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let trimmed = arguments_json.trim();
+    if trimmed.is_empty() || trimmed == "{}" {
+        return None;
+    }
+    match serde_json::from_str::<serde_json::Value>(trimmed) {
+        Ok(serde_json::Value::Object(map)) => Some(map),
+        _ => None,
     }
 }
 

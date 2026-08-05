@@ -18,12 +18,51 @@ use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
 use clareon_core::{
-    Config, ConfigManager, ConversationManager, Error, Result, Storage,
+    Config, ConfigManager, ConversationManager, Error, McpManager, Result, Storage,
     tools::{
         ArtifactManager, BubblewrapSandbox, NoneSandbox, SandboxMode, ToolExecutor, ToolRegistry,
         WorkspaceManager, register_builtin_tools,
     },
 };
+
+/// Build tool executor (builtins + MCP tools) and return MCP manager.
+async fn build_tools(
+    config: &Config,
+    storage: Arc<Storage>,
+) -> Result<(Option<Arc<ToolExecutor>>, Arc<McpManager>)> {
+    let mcp_manager = Arc::new(McpManager::new(config.tools.default_timeout));
+    if config.mcp.enabled {
+        mcp_manager.reload(&config.mcp).await;
+    }
+
+    let need_executor = config.tools.enabled || config.mcp.enabled;
+    if !need_executor {
+        return Ok((None, mcp_manager));
+    }
+
+    let mut registry = ToolRegistry::default();
+    if config.tools.enabled {
+        register_builtin_tools(&mut registry);
+    }
+    if config.mcp.enabled {
+        mcp_manager.register_tools(&mut registry).await;
+    }
+    let registry = Arc::new(registry);
+
+    use clareon_core::config::SandboxModeConfig;
+    let sandbox: Arc<dyn clareon_core::tools::Sandbox> = match config.tools.sandbox_mode {
+        SandboxModeConfig::Strict => Arc::new(BubblewrapSandbox::new(SandboxMode::Strict)),
+        SandboxModeConfig::Basic => Arc::new(BubblewrapSandbox::new(SandboxMode::Basic)),
+        SandboxModeConfig::None => Arc::new(NoneSandbox),
+    };
+
+    let workspace_dir = Config::workspace_cache_dir().map_err(std::io::Error::other)?;
+    let workspace_manager = Arc::new(WorkspaceManager::new(workspace_dir, Arc::clone(&storage)));
+    let artifact_manager = Arc::new(ArtifactManager::new(Arc::clone(&storage)));
+    let executor = ToolExecutor::new(registry, sandbox, workspace_manager, artifact_manager);
+
+    Ok((Some(Arc::new(executor)), mcp_manager))
+}
 
 /// Handle for sending commands to the service and receiving responses
 #[derive(Clone)]
@@ -80,44 +119,7 @@ impl ClareonService {
                 .await
                 .map_err(std::io::Error::other)?;
 
-            // Create tool executor if tools are enabled
-            let tool_executor = if config.tools.enabled {
-                // Create tool registry with built-in tools
-                let mut registry = ToolRegistry::default();
-                register_builtin_tools(&mut registry);
-                let registry = Arc::new(registry);
-
-                // Create sandbox based on config
-                use clareon_core::config::SandboxModeConfig;
-                let sandbox: Arc<dyn clareon_core::tools::Sandbox> = match config.tools.sandbox_mode
-                {
-                    SandboxModeConfig::Strict => {
-                        Arc::new(BubblewrapSandbox::new(SandboxMode::Strict))
-                    }
-                    SandboxModeConfig::Basic => {
-                        Arc::new(BubblewrapSandbox::new(SandboxMode::Basic))
-                    }
-                    SandboxModeConfig::None => Arc::new(NoneSandbox),
-                };
-
-                // Get workspace cache directory
-                let workspace_dir = Config::workspace_cache_dir().map_err(std::io::Error::other)?;
-
-                // Create workspace manager
-                let workspace_manager =
-                    Arc::new(WorkspaceManager::new(workspace_dir, Arc::clone(&storage)));
-
-                // Create artifact manager (shares storage with workspace manager)
-                let artifact_manager = Arc::new(ArtifactManager::new(Arc::clone(&storage)));
-
-                // Create tool executor
-                let executor =
-                    ToolExecutor::new(registry, sandbox, workspace_manager, artifact_manager);
-
-                Some(Arc::new(executor))
-            } else {
-                None
-            };
+            let (tool_executor, mcp_manager) = build_tools(&config, Arc::clone(&storage)).await?;
 
             // Create conversation manager
             let mut manager = ConversationManager::new(
@@ -132,15 +134,17 @@ impl ClareonService {
                 manager = manager.with_tools(executor);
             }
 
-            Ok::<_, Error>(manager)
+            Ok::<_, Error>((manager, mcp_manager))
         })?;
+
+        let (manager, mcp_manager) = manager;
 
         // Create channels for command/response
         let (command_tx, command_rx) = broadcast::channel(100);
         let (response_tx, _) = broadcast::channel(100);
 
         // Create and spawn worker
-        let worker = ServiceWorker::new(manager, command_rx, response_tx.clone());
+        let worker = ServiceWorker::new(manager, mcp_manager, command_rx, response_tx.clone());
         let worker_handle = runtime.spawn(async move {
             worker.run().await;
         });

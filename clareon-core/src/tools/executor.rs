@@ -197,6 +197,11 @@ impl ToolExecutor {
     pub fn artifact_manager(&self) -> &ArtifactManager {
         &self.artifact_manager
     }
+
+    /// Whether any tools are registered
+    pub fn has_tools(&self) -> bool {
+        !self.registry.list_names().is_empty()
+    }
 }
 
 // Implement Clone for ToolExecutor to enable parallel execution

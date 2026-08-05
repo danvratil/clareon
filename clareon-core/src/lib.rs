@@ -12,6 +12,7 @@ pub mod config;
 pub mod conversation;
 pub mod error;
 pub mod logging;
+pub mod mcp;
 pub mod storage;
 pub mod tools;
 pub mod types;
@@ -25,6 +26,10 @@ pub use config::{
 };
 pub use conversation::{ConversationManager, ConversationSession, StreamUpdate};
 pub use error::{Error, Result};
+pub use mcp::{
+    McpManager, McpPromptMessage, McpPromptRef, McpPromptResult, McpResourceRef, McpServerStatus,
+    McpServerStatusInfo,
+};
 pub use storage::Storage;
 pub use tools::{
     ArtifactManager, BubblewrapSandbox, ExecutionContext, NoneSandbox, PersistentWorkspace,

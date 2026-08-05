@@ -184,4 +184,34 @@ pub enum Response {
 
     /// Failed to load available models
     ModelsLoadFailed { error: String },
+
+    /// MCP server status list
+    McpServersStatus {
+        servers: Vec<clareon_core::McpServerStatusInfo>,
+    },
+
+    /// MCP resources list
+    McpResourcesListed {
+        resources: Vec<clareon_core::McpResourceRef>,
+    },
+
+    /// MCP resource contents
+    McpResourceRead {
+        server_id: String,
+        uri: String,
+        text: String,
+    },
+
+    /// MCP prompts list
+    McpPromptsListed {
+        prompts: Vec<clareon_core::McpPromptRef>,
+    },
+
+    /// MCP prompt resolved
+    McpPromptResolved {
+        result: clareon_core::McpPromptResult,
+    },
+
+    /// MCP prompt was injected into a conversation
+    McpPromptInjected { conv_id: ConversationId },
 }

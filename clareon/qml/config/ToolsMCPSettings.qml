@@ -227,9 +227,9 @@ Kirigami.ScrollablePage {
 
             Kirigami.InlineMessage {
                 Layout.fillWidth: true
-                type: Kirigami.MessageType.Information
-                text: qsTr("Servers can be configured and saved now. Live connections and tool discovery land in a follow-up.")
-                visible: true
+                type: Kirigami.MessageType.Warning
+                text: qsTr("MCP servers run with your user privileges. Only enable servers you trust.")
+                visible: enableMcpCheckBox.checked
             }
 
             Controls.CheckBox {
@@ -243,7 +243,7 @@ Kirigami.ScrollablePage {
                 }
             }
 
-            // Server list from config.mcp.servers (id → object map)
+            // Server list from config.mcp.servers (id → object map), merged with live status
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: Math.max(serverListView.contentHeight + Kirigami.Units.smallSpacing * 2, 120)
@@ -271,6 +271,11 @@ Kirigami.ScrollablePage {
                         required property string transport
                         required property bool serverEnabled
                         required property string summary
+                        required property string status
+                        required property string statusError
+                        required property int toolCount
+                        required property int resourceCount
+                        required property int promptCount
 
                         Controls.CheckBox {
                             checked: serverEnabled
@@ -281,17 +286,50 @@ Kirigami.ScrollablePage {
                             Layout.fillWidth: true
                             spacing: 0
 
-                            Controls.Label {
-                                text: displayName
-                                font.bold: true
-                                elide: Text.ElideRight
+                            RowLayout {
                                 Layout.fillWidth: true
+                                Controls.Label {
+                                    text: displayName
+                                    font.bold: true
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                                Rectangle {
+                                    radius: 3
+                                    color: {
+                                        switch (status) {
+                                        case "connected": return Kirigami.Theme.positiveTextColor
+                                        case "failed": return Kirigami.Theme.negativeTextColor
+                                        case "connecting": return Kirigami.Theme.neutralTextColor
+                                        default: return Kirigami.Theme.disabledTextColor
+                                        }
+                                    }
+                                    implicitHeight: statusLabel.implicitHeight + 2
+                                    implicitWidth: statusLabel.implicitWidth + 8
+                                    Controls.Label {
+                                        id: statusLabel
+                                        anchors.centerIn: parent
+                                        text: status || qsTr("unknown")
+                                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                                        color: Kirigami.Theme.backgroundColor
+                                    }
+                                }
                             }
 
                             Controls.Label {
-                                text: qsTr("%1 · %2").arg(transport).arg(summary)
+                                text: {
+                                    let parts = [transport, summary]
+                                    if (toolCount > 0 || resourceCount > 0 || promptCount > 0)
+                                        parts.push(qsTr("%1 tools · %2 res · %3 prompts")
+                                            .arg(toolCount).arg(resourceCount).arg(promptCount))
+                                    if (statusError)
+                                        parts.push(statusError)
+                                    return parts.filter(Boolean).join(" · ")
+                                }
                                 font.pointSize: Kirigami.Theme.smallFont.pointSize
-                                color: Kirigami.Theme.disabledTextColor
+                                color: status === "failed"
+                                       ? Kirigami.Theme.negativeTextColor
+                                       : Kirigami.Theme.disabledTextColor
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
                             }
@@ -332,26 +370,175 @@ Kirigami.ScrollablePage {
                     onClicked: importDialog.open()
                 }
 
+                Controls.Button {
+                    text: qsTr("Reconnect")
+                    icon.name: "view-refresh"
+                    enabled: enableMcpCheckBox.checked
+                    onClicked: ServiceController.restartMcpServers()
+                }
+
                 Item {
                     Layout.fillWidth: true
+                }
+            }
+
+            // Resources & prompts browsers
+            Kirigami.Heading {
+                text: qsTr("Resources")
+                level: 4
+                visible: enableMcpCheckBox.checked
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                visible: enableMcpCheckBox.checked
+
+                Controls.Button {
+                    text: qsTr("Refresh resources")
+                    icon.name: "view-refresh"
+                    onClicked: ServiceController.listMcpResources("")
+                }
+                Item { Layout.fillWidth: true }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 100
+                visible: enableMcpCheckBox.checked
+                color: Kirigami.Theme.alternateBackgroundColor
+                border.color: Kirigami.Theme.separatorColor
+                border.width: 1
+                radius: 4
+                clip: true
+
+                ListView {
+                    id: resourceListView
+                    anchors.fill: parent
+                    anchors.margins: Kirigami.Units.smallSpacing
+                    model: root.resourceListModel
+                    clip: true
+                    delegate: Controls.ItemDelegate {
+                        width: resourceListView.width
+                        required property string serverId
+                        required property string uri
+                        required property string resourceName
+                        text: qsTr("%1 · %2").arg(serverId).arg(resourceName || uri)
+                        onClicked: ServiceController.readMcpResource(serverId, uri)
+                    }
+                    Kirigami.PlaceholderMessage {
+                        anchors.centerIn: parent
+                        visible: resourceListView.count === 0
+                        text: qsTr("No resources")
+                        explanation: qsTr("Connect a server that advertises resources, then refresh.")
+                    }
+                }
+            }
+
+            Controls.TextArea {
+                id: resourcePreview
+                Layout.fillWidth: true
+                Layout.preferredHeight: 80
+                visible: enableMcpCheckBox.checked && text.length > 0
+                readOnly: true
+                wrapMode: TextEdit.Wrap
+                placeholderText: qsTr("Resource preview")
+            }
+
+            Kirigami.Heading {
+                text: qsTr("Prompts")
+                level: 4
+                visible: enableMcpCheckBox.checked
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                visible: enableMcpCheckBox.checked
+                Controls.Button {
+                    text: qsTr("Refresh prompts")
+                    icon.name: "view-refresh"
+                    onClicked: ServiceController.listMcpPrompts("")
+                }
+                Item { Layout.fillWidth: true }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 100
+                visible: enableMcpCheckBox.checked
+                color: Kirigami.Theme.alternateBackgroundColor
+                border.color: Kirigami.Theme.separatorColor
+                border.width: 1
+                radius: 4
+                clip: true
+
+                ListView {
+                    id: promptListView
+                    anchors.fill: parent
+                    anchors.margins: Kirigami.Units.smallSpacing
+                    model: root.promptListModel
+                    clip: true
+                    delegate: Controls.ItemDelegate {
+                        width: promptListView.width
+                        required property string serverId
+                        required property string promptName
+                        required property string promptDescription
+                        text: qsTr("%1 · %2").arg(serverId).arg(promptName)
+                        onClicked: {
+                            root.selectedPromptServer = serverId
+                            root.selectedPromptName = promptName
+                            ServiceController.getMcpPrompt(serverId, promptName, "{}")
+                        }
+                    }
+                    Kirigami.PlaceholderMessage {
+                        anchors.centerIn: parent
+                        visible: promptListView.count === 0
+                        text: qsTr("No prompts")
+                    }
+                }
+            }
+
+            Controls.TextArea {
+                id: promptPreview
+                Layout.fillWidth: true
+                Layout.preferredHeight: 80
+                visible: enableMcpCheckBox.checked && text.length > 0
+                readOnly: true
+                wrapMode: TextEdit.Wrap
+            }
+
+            Controls.Button {
+                text: qsTr("Inject prompt into current conversation")
+                icon.name: "document-import"
+                visible: enableMcpCheckBox.checked && root.selectedPromptName !== ""
+                enabled: root.currentConversationId !== ""
+                onClicked: {
+                    ServiceController.injectMcpPrompt(
+                        root.currentConversationId,
+                        root.selectedPromptServer,
+                        root.selectedPromptName,
+                        "{}")
                 }
             }
         }
     }
 
-    // --- MCP helpers (config-only until runtime lands) ---
+    // --- MCP helpers ---
 
-    /// Flatten config.mcp.servers map into a ListModel for the ListView.
     property ListModel serverListModel: ListModel {}
+    property ListModel resourceListModel: ListModel {}
+    property ListModel promptListModel: ListModel {}
+    /// Live status map: id → status object from service
+    property var liveStatus: ({})
+    property string selectedPromptServer: ""
+    property string selectedPromptName: ""
+    /// Optional: set by parent when a conversation is active
+    property string currentConversationId: ""
 
     function ensureMcp() {
-        if (!root.config.mcp) {
-            // Should not happen once codegen includes McpConfig; keep a soft guard.
+        if (!root.config.mcp)
             return
-        }
-        if (root.config.mcp.servers === undefined || root.config.mcp.servers === null) {
+        if (root.config.mcp.servers === undefined || root.config.mcp.servers === null)
             root.config.mcp.servers = {}
-        }
     }
 
     function refreshServerList() {
@@ -371,13 +558,66 @@ Kirigami.ScrollablePage {
             } else {
                 summary = s.url || ""
             }
+            const live = root.liveStatus[id] || {}
             serverListModel.append({
                 serverId: id,
                 displayName: s.name || id,
                 transport: transport,
                 serverEnabled: s.enabled !== false,
-                summary: summary || qsTr("(incomplete)")
+                summary: summary || qsTr("(incomplete)"),
+                status: live.status || "disconnected",
+                statusError: live.error || "",
+                toolCount: live.tool_count || 0,
+                resourceCount: live.resource_count || 0,
+                promptCount: live.prompt_count || 0
             })
+        }
+    }
+
+    function applyLiveStatus(jsonStr) {
+        try {
+            const arr = JSON.parse(jsonStr)
+            const map = {}
+            for (let i = 0; i < arr.length; i++)
+                map[arr[i].id] = arr[i]
+            root.liveStatus = map
+            refreshServerList()
+        } catch (e) {
+            console.warn("Failed to parse MCP status:", e)
+        }
+    }
+
+    function applyResources(jsonStr) {
+        resourceListModel.clear()
+        try {
+            const arr = JSON.parse(jsonStr)
+            for (let i = 0; i < arr.length; i++) {
+                const r = arr[i]
+                resourceListModel.append({
+                    serverId: r.server_id || "",
+                    uri: r.uri || "",
+                    resourceName: r.name || r.uri || ""
+                })
+            }
+        } catch (e) {
+            console.warn("Failed to parse MCP resources:", e)
+        }
+    }
+
+    function applyPrompts(jsonStr) {
+        promptListModel.clear()
+        try {
+            const arr = JSON.parse(jsonStr)
+            for (let i = 0; i < arr.length; i++) {
+                const p = arr[i]
+                promptListModel.append({
+                    serverId: p.server_id || "",
+                    promptName: p.name || "",
+                    promptDescription: p.description || ""
+                })
+            }
+        } catch (e) {
+            console.warn("Failed to parse MCP prompts:", e)
         }
     }
 
@@ -414,7 +654,30 @@ Kirigami.ScrollablePage {
         refreshServerList()
     }
 
-    Component.onCompleted: refreshServerList()
+    Component.onCompleted: {
+        refreshServerList()
+        ServiceController.refreshMcpServers()
+        ServiceController.listMcpResources("")
+        ServiceController.listMcpPrompts("")
+    }
+
+    Connections {
+        target: ServiceController
+        function onMcpServersUpdated(json) { root.applyLiveStatus(json) }
+        function onMcpResourcesUpdated(json) { root.applyResources(json) }
+        function onMcpResourceRead(serverId, uri, text) {
+            resourcePreview.text = text
+        }
+        function onMcpPromptsUpdated(json) { root.applyPrompts(json) }
+        function onMcpPromptResolved(json) {
+            try {
+                const r = JSON.parse(json)
+                promptPreview.text = r.text || ""
+            } catch (e) {
+                promptPreview.text = json
+            }
+        }
+    }
 
     Kirigami.Dialog {
         id: addServerDialog

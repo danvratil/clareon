@@ -161,18 +161,16 @@ impl ConversationSession {
                     .with_system_prompt(system_prompt)
                     .with_max_tokens(4096);
 
-                if let Some(ref executor) = session.tool_executor
-                    && session.config.tools.enabled
-                {
+                if let Some(ref executor) = session.tool_executor {
                     let tools = executor.registry.tool_definitions();
-                    debug!("Adding {} tools to request (iteration {})", tools.len(), iteration);
+                    debug!(
+                        "Adding {} tools to request (iteration {})",
+                        tools.len(),
+                        iteration
+                    );
                     request.tools = tools;
                 } else {
-                    debug!(
-                        "Not adding tools - executor: {}, enabled: {}",
-                        session.tool_executor.is_some(),
-                        session.config.tools.enabled
-                    );
+                    debug!("Not adding tools - no tool executor");
                 }
 
                 info!(

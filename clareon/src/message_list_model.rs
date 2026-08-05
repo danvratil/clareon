@@ -683,10 +683,7 @@ impl ffi::MessageListModel {
             Response::StreamingComplete { message, .. } => {
                 self.as_mut().complete_streaming_message(message);
             }
-            Response::SendMessageError {
-                error_info,
-                ..
-            } => {
+            Response::SendMessageError { error_info, .. } => {
                 // Remove "thinking" placeholder if present
                 if let Some(last) = self.rust().messages.last()
                     && last.id == -1

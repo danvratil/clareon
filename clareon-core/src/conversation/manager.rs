@@ -126,6 +126,22 @@ impl ConversationManager {
         self.tool_executor.clone()
     }
 
+    /// Replace the tool executor (e.g. after MCP reconnect). Existing sessions
+    /// keep their old executor until recreated.
+    pub fn set_tool_executor(&mut self, executor: Option<Arc<ToolExecutor>>) {
+        self.tool_executor = executor;
+    }
+
+    /// Replace the in-memory config snapshot used by new sessions.
+    pub fn set_config(&mut self, config: Config) {
+        self.config = config;
+    }
+
+    /// Chat backend handle (for reloads that preserve the backend).
+    pub fn backend(&self) -> Arc<dyn LlmBackend> {
+        Arc::clone(&self.backend)
+    }
+
     /// Get an existing session for a conversation, or create one by loading from storage.
     ///
     /// Sessions are cached in memory for the lifetime of the manager. Creating a session
@@ -206,7 +222,9 @@ impl ConversationManager {
 
     /// Check if tools should be enabled for requests
     fn should_use_tools(&self) -> bool {
-        self.tool_executor.is_some() && self.config.tools.enabled
+        self.tool_executor
+            .as_ref()
+            .is_some_and(|e| e.has_tools() || self.config.tools.enabled || self.config.mcp.enabled)
     }
 
     /// Send a user message and get the assistant's response
@@ -472,16 +490,18 @@ impl ConversationManager {
                     .with_system_prompt(system_prompt)
                     .with_max_tokens(4096);
 
-                // Add tool definitions if tools are enabled
-                if let Some(ref executor) = tool_executor
-                    && config.tools.enabled {
-                        let tools = executor.registry.tool_definitions();
-                        debug!("Adding {} tools to request (iteration {})", tools.len(), iteration);
-                        request.tools = tools;
-                    } else {
-                        debug!("Not adding tools - executor: {}, enabled: {}",
-                            tool_executor.is_some(), config.tools.enabled);
-                    }
+                // Add tool definitions when a tool executor is present
+                if let Some(ref executor) = tool_executor {
+                    let tools = executor.registry.tool_definitions();
+                    debug!(
+                        "Adding {} tools to request (iteration {})",
+                        tools.len(),
+                        iteration
+                    );
+                    request.tools = tools;
+                } else {
+                    debug!("Not adding tools - no tool executor");
+                }
 
                 // Start backend stream
                 info!(

@@ -79,6 +79,35 @@ mod ffi {
         #[qsignal]
         fn quick_input_requested(self: Pin<&mut ServiceController>);
 
+        /// MCP server statuses as a JSON array
+        #[qsignal]
+        fn mcp_servers_updated(self: Pin<&mut ServiceController>, json: QString);
+
+        /// MCP resources as a JSON array
+        #[qsignal]
+        fn mcp_resources_updated(self: Pin<&mut ServiceController>, json: QString);
+
+        /// MCP resource body text
+        #[qsignal]
+        fn mcp_resource_read(
+            self: Pin<&mut ServiceController>,
+            server_id: QString,
+            uri: QString,
+            text: QString,
+        );
+
+        /// MCP prompts as a JSON array
+        #[qsignal]
+        fn mcp_prompts_updated(self: Pin<&mut ServiceController>, json: QString);
+
+        /// Resolved MCP prompt (JSON of McpPromptResult)
+        #[qsignal]
+        fn mcp_prompt_resolved(self: Pin<&mut ServiceController>, json: QString);
+
+        /// MCP prompt was injected into a conversation
+        #[qsignal]
+        fn mcp_prompt_injected(self: Pin<&mut ServiceController>, conversation_id: QString);
+
         // Actions (invokable from QML)
         #[qinvokable]
         fn new_conversation(self: &ServiceController);
@@ -121,6 +150,38 @@ mod ffi {
 
         #[qinvokable]
         fn fetch_available_models(self: &ServiceController, provider: &QString);
+
+        #[qinvokable]
+        fn refresh_mcp_servers(self: &ServiceController);
+
+        #[qinvokable]
+        fn list_mcp_resources(self: &ServiceController, server_id: &QString);
+
+        #[qinvokable]
+        fn read_mcp_resource(self: &ServiceController, server_id: &QString, uri: &QString);
+
+        #[qinvokable]
+        fn list_mcp_prompts(self: &ServiceController, server_id: &QString);
+
+        #[qinvokable]
+        fn get_mcp_prompt(
+            self: &ServiceController,
+            server_id: &QString,
+            name: &QString,
+            arguments_json: &QString,
+        );
+
+        #[qinvokable]
+        fn inject_mcp_prompt(
+            self: &ServiceController,
+            conversation_id: &QString,
+            server_id: &QString,
+            name: &QString,
+            arguments_json: &QString,
+        );
+
+        #[qinvokable]
+        fn restart_mcp_servers(self: &ServiceController);
     }
 
     impl cxx_qt::Threading for ServiceController {}
@@ -206,6 +267,38 @@ impl ffi::ServiceController {
 
             Response::ActivateQuickInput => {
                 self.as_mut().quick_input_requested();
+            }
+
+            Response::McpServersStatus { servers } => {
+                let json = serde_json::to_string(&servers).unwrap_or_else(|_| "[]".into());
+                self.as_mut().mcp_servers_updated(QString::from(&json));
+            }
+            Response::McpResourcesListed { resources } => {
+                let json = serde_json::to_string(&resources).unwrap_or_else(|_| "[]".into());
+                self.as_mut().mcp_resources_updated(QString::from(&json));
+            }
+            Response::McpResourceRead {
+                server_id,
+                uri,
+                text,
+            } => {
+                self.as_mut().mcp_resource_read(
+                    QString::from(&server_id),
+                    QString::from(&uri),
+                    QString::from(&text),
+                );
+            }
+            Response::McpPromptsListed { prompts } => {
+                let json = serde_json::to_string(&prompts).unwrap_or_else(|_| "[]".into());
+                self.as_mut().mcp_prompts_updated(QString::from(&json));
+            }
+            Response::McpPromptResolved { result } => {
+                let json = serde_json::to_string(&result).unwrap_or_else(|_| "{}".into());
+                self.as_mut().mcp_prompt_resolved(QString::from(&json));
+            }
+            Response::McpPromptInjected { conv_id } => {
+                self.as_mut()
+                    .mcp_prompt_injected(QString::from(&conv_id.to_string()));
             }
 
             _ => {}
@@ -392,5 +485,64 @@ X-LXQt-Need-Tray=true"#,
             }
         };
         let _ = handle.send(Command::FetchAvailableModels { provider });
+    }
+
+    fn refresh_mcp_servers(&self) {
+        let handle = get_service_handle();
+        let _ = handle.send(Command::ListMcpServers);
+    }
+
+    fn list_mcp_resources(&self, server_id: &QString) {
+        let handle = get_service_handle();
+        let id = server_id.to_string();
+        let server_id = if id.is_empty() { None } else { Some(id) };
+        let _ = handle.send(Command::ListMcpResources { server_id });
+    }
+
+    fn read_mcp_resource(&self, server_id: &QString, uri: &QString) {
+        let handle = get_service_handle();
+        let _ = handle.send(Command::ReadMcpResource {
+            server_id: server_id.to_string(),
+            uri: uri.to_string(),
+        });
+    }
+
+    fn list_mcp_prompts(&self, server_id: &QString) {
+        let handle = get_service_handle();
+        let id = server_id.to_string();
+        let server_id = if id.is_empty() { None } else { Some(id) };
+        let _ = handle.send(Command::ListMcpPrompts { server_id });
+    }
+
+    fn get_mcp_prompt(&self, server_id: &QString, name: &QString, arguments_json: &QString) {
+        let handle = get_service_handle();
+        let _ = handle.send(Command::GetMcpPrompt {
+            server_id: server_id.to_string(),
+            name: name.to_string(),
+            arguments_json: arguments_json.to_string(),
+        });
+    }
+
+    fn inject_mcp_prompt(
+        &self,
+        conversation_id: &QString,
+        server_id: &QString,
+        name: &QString,
+        arguments_json: &QString,
+    ) {
+        use clareon_core::types::ConversationId;
+        let handle = get_service_handle();
+        let conv_id = ConversationId::from(conversation_id.to_string());
+        let _ = handle.send(Command::InjectMcpPrompt {
+            conv_id,
+            server_id: server_id.to_string(),
+            name: name.to_string(),
+            arguments_json: arguments_json.to_string(),
+        });
+    }
+
+    fn restart_mcp_servers(&self) {
+        let handle = get_service_handle();
+        let _ = handle.send(Command::RestartMcpServers);
     }
 }

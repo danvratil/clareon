@@ -77,4 +77,35 @@ pub enum Command {
 
     /// Fetch available models for a provider
     FetchAvailableModels { provider: Provider },
+
+    /// List MCP server connection statuses
+    ListMcpServers,
+
+    /// List MCP resources (optional server filter)
+    ListMcpResources { server_id: Option<String> },
+
+    /// Read an MCP resource
+    ReadMcpResource { server_id: String, uri: String },
+
+    /// List MCP prompts (optional server filter)
+    ListMcpPrompts { server_id: Option<String> },
+
+    /// Get an MCP prompt template with optional arguments (JSON object string)
+    GetMcpPrompt {
+        server_id: String,
+        name: String,
+        /// JSON object of argument name → string/value
+        arguments_json: String,
+    },
+
+    /// Inject an MCP prompt into the current conversation as a user message
+    InjectMcpPrompt {
+        conv_id: ConversationId,
+        server_id: String,
+        name: String,
+        arguments_json: String,
+    },
+
+    /// Restart a single MCP server (reload all for simplicity)
+    RestartMcpServers,
 }
