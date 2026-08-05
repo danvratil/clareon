@@ -10,6 +10,9 @@ members = [
     "clareon",
     "mock-anthropic",
 ]
+# Prefer the GUI app (and its libs) for bare `cargo run` / `cargo test` / `cargo build`.
+# mock-anthropic remains available via `-p mock-anthropic`.
+default-members = ["clareon", "clareon-core", "clareon-qt"]
 
 [workspace.package]
 version = "0.1.0"
