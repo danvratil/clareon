@@ -95,10 +95,25 @@ Kirigami.Dialog {
         ServiceController.fetchAvailableModels(provider)
     }
 
-    onOpened: loadModels()
+    onOpened: {
+        // Sync filter in case the sheet was closed mid-debounce.
+        filterDebounceTimer.stop()
+        filterText = searchField.text
+        loadModels()
+    }
 
     ModelListModel {
         id: modelListModel
+    }
+
+    // Debounced filter text so OpenRouter's 1000+ models are not re-filtered on every keystroke.
+    property string filterText: ""
+
+    Timer {
+        id: filterDebounceTimer
+        interval: 100
+        repeat: false
+        onTriggered: sheet.filterText = searchField.text
     }
 
     KItemModels.KSortFilterProxyModel {
@@ -106,9 +121,9 @@ Kirigami.Dialog {
         sourceModel: modelListModel
         filterRoleName: "searchable"
         filterRegularExpression: {
-            if (searchField.text === "")
+            if (sheet.filterText === "")
                 return new RegExp()
-            return new RegExp(searchField.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "i")
+            return new RegExp(sheet.filterText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "i")
         }
         sortRoleName: {
             switch (sortCombo.currentIndex) {
@@ -151,6 +166,15 @@ Kirigami.Dialog {
                 Layout.fillWidth: true
                 placeholderText: qsTr("Search models...")
                 Accessible.name: qsTr("Search models")
+                onTextChanged: {
+                    // Apply immediately when clearing so empty results reset without delay.
+                    if (text === "") {
+                        filterDebounceTimer.stop()
+                        sheet.filterText = ""
+                        return
+                    }
+                    filterDebounceTimer.restart()
+                }
             }
 
             Controls.Label {
