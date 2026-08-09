@@ -5,7 +5,6 @@
 //! OAuth helpers for remote MCP servers (browser authorization-code flow).
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -330,22 +329,63 @@ pub fn oauth_logged_in(server_id: &str) -> bool {
 }
 
 /// Open a URL with the system default browser (best-effort).
-pub fn open_in_browser(url: &str) {
-    // Prefer xdg-open / open; ignore failures — UI may also open the URL.
-    #[cfg(target_os = "linux")]
-    {
-        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+///
+/// Returns `true` if a browser process was successfully spawned.
+pub fn open_in_browser(url: &str) -> bool {
+    info!("Opening OAuth URL in browser: {url}");
+
+    let attempts: &[(&str, &[&str])] = {
+        #[cfg(target_os = "linux")]
+        {
+            &[
+                ("xdg-open", &[url]),
+                ("gio", &["open", url]),
+                ("kde-open5", &[url]),
+                ("kde-open", &[url]),
+            ]
+        }
+        #[cfg(target_os = "macos")]
+        {
+            &[("open", &[url])]
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // Handled below — cmd /C start needs different argv shape
+            &[]
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        {
+            &[]
+        }
+    };
+
+    for (bin, args) in attempts {
+        match std::process::Command::new(bin).args(*args).spawn() {
+            Ok(child) => {
+                info!("Spawned '{bin}' (pid {}) for OAuth URL", child.id());
+                return true;
+            }
+            Err(e) => {
+                warn!("Failed to spawn '{bin}' for OAuth URL: {e}");
+            }
+        }
     }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("open").arg(url).spawn();
-    }
+
     #[cfg(target_os = "windows")]
     {
-        let _ = std::process::Command::new("cmd")
+        match std::process::Command::new("cmd")
             .args(["/C", "start", "", url])
-            .spawn();
+            .spawn()
+        {
+            Ok(child) => {
+                info!("Spawned browser (pid {}) for OAuth URL", child.id());
+                return true;
+            }
+            Err(e) => {
+                warn!("Failed to spawn browser for OAuth URL: {e}");
+            }
+        }
     }
-    let _ = url;
-    let _ = Arc::new(()); // silence unused on some cfgs
+
+    false
 }

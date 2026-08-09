@@ -995,13 +995,21 @@ impl ServiceWorker {
     }
 
     async fn handle_start_mcp_oauth_login(&mut self, server_id: String) {
+        info!("Handling StartMcpOAuthLogin for '{server_id}'");
+        let _ = self.response_tx.send(Response::McpOAuthStatus {
+            server_id: server_id.clone(),
+            message: "Starting OAuth login…".into(),
+        });
+
         // Always use the latest saved config so OAuth flags/URLs match Settings.
         let config = clareon_core::ConfigManager::get().config();
-        let Some(cfg) = config.mcp.servers.get(&server_id) else {
+        let Some(cfg) = config.mcp.servers.get(&server_id).cloned() else {
             let _ = self.response_tx.send(Response::McpOAuthFinished {
                 server_id,
                 success: false,
-                message: "Unknown MCP server (save settings first)".into(),
+                message:
+                    "Unknown MCP server — save settings (Apply/OK) first, then try Log in again."
+                        .into(),
             });
             return;
         };
@@ -1009,30 +1017,81 @@ impl ServiceWorker {
             let _ = self.response_tx.send(Response::McpOAuthFinished {
                 server_id,
                 success: false,
-                message: "OAuth is not enabled for this server (edit the server and enable OAuth)"
+                message: "OAuth is not enabled for this server. Edit the server, enable “Use browser OAuth login”, save, then Log in."
                     .into(),
             });
             return;
         }
+        if cfg
+            .url
+            .as_ref()
+            .map(|u| u.trim().is_empty())
+            .unwrap_or(true)
+        {
+            let _ = self.response_tx.send(Response::McpOAuthFinished {
+                server_id,
+                success: false,
+                message: "Server has no URL configured.".into(),
+            });
+            return;
+        }
 
-        let begin = match clareon_core::PendingOAuthLogin::begin(&server_id, cfg).await {
-            Ok(v) => v,
-            Err(e) => {
+        let _ = self.response_tx.send(Response::McpOAuthStatus {
+            server_id: server_id.clone(),
+            message: format!(
+                "Contacting authorization server at {}…",
+                cfg.url.as_deref().unwrap_or("?")
+            ),
+        });
+
+        // Discovery can take a while; bound it so the UI is not stuck forever.
+        let begin = match tokio::time::timeout(
+            std::time::Duration::from_secs(60),
+            clareon_core::PendingOAuthLogin::begin(&server_id, &cfg),
+        )
+        .await
+        {
+            Ok(Ok(v)) => v,
+            Ok(Err(e)) => {
+                error!("OAuth begin failed for '{server_id}': {e}");
                 let _ = self.response_tx.send(Response::McpOAuthFinished {
                     server_id,
                     success: false,
-                    message: e,
+                    message: format!("OAuth start failed: {e}"),
+                });
+                return;
+            }
+            Err(_) => {
+                error!("OAuth begin timed out for '{server_id}'");
+                let _ = self.response_tx.send(Response::McpOAuthFinished {
+                    server_id,
+                    success: false,
+                    message: "Timed out contacting the authorization server (60s). Check the URL and network.".into(),
                 });
                 return;
             }
         };
 
         let (url, pending) = begin;
+        info!("OAuth authorization URL for '{server_id}': {url}");
         let _ = self.response_tx.send(Response::McpOAuthUrl {
             server_id: server_id.clone(),
             url: url.clone(),
         });
-        clareon_core::open_in_browser(&url);
+        let _ = self.response_tx.send(Response::McpOAuthStatus {
+            server_id: server_id.clone(),
+            message: "Opening browser for login… complete sign-in in the browser window.".into(),
+        });
+
+        if !clareon_core::open_in_browser(&url) {
+            warn!("open_in_browser failed for '{server_id}'; relying on QML Qt.openUrlExternally");
+            let _ = self.response_tx.send(Response::McpOAuthStatus {
+                server_id: server_id.clone(),
+                message: format!(
+                    "Could not spawn a browser automatically. Open this URL manually:\n{url}"
+                ),
+            });
+        }
 
         match pending.complete().await {
             Ok(()) => {
@@ -1045,6 +1104,7 @@ impl ServiceWorker {
                 self.handle_restart_mcp_servers().await;
             }
             Err(e) => {
+                error!("OAuth complete failed for '{server_id}': {e}");
                 let _ = self.response_tx.send(Response::McpOAuthFinished {
                     server_id,
                     success: false,

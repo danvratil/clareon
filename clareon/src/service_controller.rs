@@ -108,6 +108,14 @@ mod ffi {
         #[qsignal]
         fn mcp_prompt_injected(self: Pin<&mut ServiceController>, conversation_id: QString);
 
+        /// OAuth progress message for the settings UI
+        #[qsignal]
+        fn mcp_oauth_status(
+            self: Pin<&mut ServiceController>,
+            server_id: QString,
+            message: QString,
+        );
+
         /// OAuth authorization URL for the UI to open (also opened server-side via xdg-open)
         #[qsignal]
         fn mcp_oauth_url(self: Pin<&mut ServiceController>, server_id: QString, url: QString);
@@ -319,7 +327,12 @@ impl ffi::ServiceController {
                 self.as_mut()
                     .mcp_prompt_injected(QString::from(&conv_id.to_string()));
             }
+            Response::McpOAuthStatus { server_id, message } => {
+                self.as_mut()
+                    .mcp_oauth_status(QString::from(&server_id), QString::from(&message));
+            }
             Response::McpOAuthUrl { server_id, url } => {
+                tracing::info!("MCP OAuth URL for {server_id}: {url}");
                 self.as_mut()
                     .mcp_oauth_url(QString::from(&server_id), QString::from(&url));
             }
@@ -328,6 +341,11 @@ impl ffi::ServiceController {
                 success,
                 message,
             } => {
+                if success {
+                    tracing::info!("MCP OAuth finished for {server_id}: {message}");
+                } else {
+                    tracing::warn!("MCP OAuth failed for {server_id}: {message}");
+                }
                 self.as_mut().mcp_oauth_finished(
                     QString::from(&server_id),
                     success,
@@ -581,10 +599,14 @@ X-LXQt-Need-Tray=true"#,
     }
 
     fn start_mcp_oauth_login(&self, server_id: &QString) {
+        let id = server_id.to_string();
+        tracing::info!("start_mcp_oauth_login requested for '{id}'");
         let handle = get_service_handle();
-        let _ = handle.send(Command::StartMcpOAuthLogin {
-            server_id: server_id.to_string(),
-        });
+        if let Err(e) = handle.send(Command::StartMcpOAuthLogin {
+            server_id: id.clone(),
+        }) {
+            tracing::error!("Failed to send StartMcpOAuthLogin: {e}");
+        }
     }
 
     fn logout_mcp_oauth(&self, server_id: &QString) {

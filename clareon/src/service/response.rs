@@ -215,6 +215,9 @@ pub enum Response {
     /// MCP prompt was injected into a conversation
     McpPromptInjected { conv_id: ConversationId },
 
+    /// OAuth progress / status line for the settings UI
+    McpOAuthStatus { server_id: String, message: String },
+
     /// OAuth authorization URL ready — UI should open it in a browser
     McpOAuthUrl { server_id: String, url: String },
 

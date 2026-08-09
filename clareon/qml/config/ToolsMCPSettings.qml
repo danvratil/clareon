@@ -232,6 +232,14 @@ Kirigami.ScrollablePage {
                 visible: enableMcpCheckBox.checked
             }
 
+            Kirigami.InlineMessage {
+                id: oauthStatusMessage
+                Layout.fillWidth: true
+                visible: false
+                showCloseButton: true
+                type: Kirigami.MessageType.Information
+            }
+
             Controls.CheckBox {
                 id: enableMcpCheckBox
                 text: qsTr("Enable MCP servers")
@@ -356,10 +364,15 @@ Kirigami.ScrollablePage {
                             Accessible.name: qsTr("OAuth login")
                             onClicked: {
                                 const live = root.liveStatus[serverId] || {}
-                                if (live.oauth_logged_in)
+                                if (live.oauth_logged_in) {
                                     ServiceController.logoutMcpOauth(serverId)
-                                else
+                                } else {
+                                    // Immediate feedback — discovery can take several seconds.
+                                    oauthStatusMessage.text = qsTr("Starting OAuth login for “%1”…").arg(serverId)
+                                    oauthStatusMessage.type = Kirigami.MessageType.Information
+                                    oauthStatusMessage.visible = true
                                     ServiceController.startMcpOauthLogin(serverId)
+                                }
                             }
                         }
 
@@ -844,8 +857,24 @@ Kirigami.ScrollablePage {
                 promptPreview.text = json
             }
         }
+        function onMcpOauthStatus(serverId, message) {
+            oauthStatusMessage.text = message
+            oauthStatusMessage.type = Kirigami.MessageType.Information
+            oauthStatusMessage.visible = true
+        }
         function onMcpOauthUrl(serverId, url) {
-            Qt.openUrlExternally(url)
+            console.log("MCP OAuth URL for", serverId, ":", url)
+            // Prefer Qt's portal-aware opener (works better under Flatpak / portals).
+            const ok = Qt.openUrlExternally(url)
+            if (!ok) {
+                console.warn("Qt.openUrlExternally failed for", url)
+            }
+            oauthAuthUrlDialog.authUrl = url
+            oauthAuthUrlDialog.serverId = serverId
+            oauthAuthUrlDialog.open()
+            oauthStatusMessage.text = qsTr("Browser should open for “%1”. If not, use the link dialog.").arg(serverId)
+            oauthStatusMessage.type = Kirigami.MessageType.Information
+            oauthStatusMessage.visible = true
         }
         function onMcpOauthFinished(serverId, success, message) {
             oauthStatusMessage.text = message
@@ -853,15 +882,55 @@ Kirigami.ScrollablePage {
                 ? Kirigami.MessageType.Positive
                 : Kirigami.MessageType.Error
             oauthStatusMessage.visible = true
+            if (success)
+                oauthAuthUrlDialog.close()
             ServiceController.refreshMcpServers()
         }
     }
 
-    Kirigami.InlineMessage {
-        id: oauthStatusMessage
-        Layout.fillWidth: true
-        visible: false
-        showCloseButton: true
+    Kirigami.Dialog {
+        id: oauthAuthUrlDialog
+        title: qsTr("OAuth Login")
+        standardButtons: Kirigami.Dialog.Close
+        preferredWidth: Kirigami.Units.gridUnit * 36
+        property string authUrl: ""
+        property string serverId: ""
+
+        ColumnLayout {
+            spacing: Kirigami.Units.smallSpacing
+
+            Controls.Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: qsTr("Complete sign-in in your browser. If no window opened, copy or open the URL below.")
+            }
+
+            Controls.TextField {
+                id: oauthUrlField
+                Layout.fillWidth: true
+                readOnly: true
+                text: oauthAuthUrlDialog.authUrl
+                Accessible.name: qsTr("Authorization URL")
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Controls.Button {
+                    text: qsTr("Open in browser")
+                    icon.name: "internet-web-browser"
+                    onClicked: Qt.openUrlExternally(oauthAuthUrlDialog.authUrl)
+                }
+                Controls.Button {
+                    text: qsTr("Copy URL")
+                    icon.name: "edit-copy"
+                    onClicked: {
+                        oauthUrlField.selectAll()
+                        oauthUrlField.copy()
+                    }
+                }
+                Item { Layout.fillWidth: true }
+            }
+        }
     }
 
     Kirigami.Dialog {
