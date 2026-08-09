@@ -28,7 +28,8 @@ pub use conversation::{ConversationManager, ConversationSession, StreamUpdate};
 pub use error::{Error, Result};
 pub use mcp::{
     McpManager, McpPromptMessage, McpPromptRef, McpPromptResult, McpResourceRef, McpServerStatus,
-    McpServerStatusInfo, PendingOAuthLogin, clear_oauth_tokens, oauth_logged_in, open_in_browser,
+    McpServerStatusInfo, OAUTH_CALLBACK_PORT, PendingOAuthLogin, clear_oauth_tokens,
+    oauth_logged_in, oauth_redirect_uri, open_in_browser,
 };
 pub use storage::Storage;
 pub use tools::{

@@ -152,6 +152,17 @@ pub async fn load_authorization_manager(
     }
 }
 
+/// Stable loopback port for OAuth redirects so pre-registered clients can
+/// list a fixed redirect URI with the authorization server.
+///
+/// Register: `http://127.0.0.1:38471/callback`
+pub const OAUTH_CALLBACK_PORT: u16 = 38471;
+
+/// Canonical redirect URI for pre-registered OAuth clients.
+pub fn oauth_redirect_uri() -> String {
+    format!("http://127.0.0.1:{OAUTH_CALLBACK_PORT}/callback")
+}
+
 /// Run interactive OAuth: open browser, wait for localhost redirect, persist tokens.
 ///
 /// Returns the authorization URL that the UI should open, then a future that
@@ -172,11 +183,11 @@ impl PendingOAuthLogin {
             .as_ref()
             .ok_or_else(|| "OAuth requires a remote server URL".to_string())?;
 
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|e| format!("failed to bind OAuth callback port: {e}"))?;
-        let port = listener.local_addr().map_err(|e| e.to_string())?.port();
-        let redirect_uri = format!("http://127.0.0.1:{port}/callback");
+        let (listener, redirect_uri) = bind_oauth_callback_listener().await?;
+        let has_client_id = cfg
+            .oauth_client_id
+            .as_ref()
+            .is_some_and(|s| !s.trim().is_empty());
 
         let store = FileCredentialStore::for_server(server_id)?;
         let mut state = OAuthState::new(url.as_str(), None)
@@ -193,21 +204,25 @@ impl PendingOAuthLogin {
         if !cfg.oauth_scopes.is_empty() {
             request = request.with_scopes(cfg.oauth_scopes.clone());
         }
-        if let Some(client_id) = &cfg.oauth_client_id
-            && !client_id.is_empty()
-        {
+        if has_client_id {
+            let client_id = cfg.oauth_client_id.as_ref().unwrap().trim();
             request = request.with_preregistered_client(client_id);
             if let Some(secret) = &cfg.oauth_client_secret
-                && !secret.is_empty()
+                && !secret.trim().is_empty()
             {
-                request = request.with_client_secret(secret);
+                request = request.with_client_secret(secret.trim());
             }
+            info!("OAuth for '{server_id}': using pre-registered client id (DCR skipped)");
+        } else {
+            info!(
+                "OAuth for '{server_id}': no client id set; will attempt dynamic client registration"
+            );
         }
 
         state
             .start_authorization(request)
             .await
-            .map_err(|e| format!("OAuth start failed: {e}"))?;
+            .map_err(|e| map_oauth_start_error(&e.to_string(), &redirect_uri, has_client_id))?;
 
         let auth_url = state
             .get_authorization_url()
@@ -270,6 +285,66 @@ impl PendingOAuthLogin {
 
         Ok(())
     }
+}
+
+/// Bind the fixed loopback port used for OAuth callbacks (falls back to an
+/// ephemeral port only if the preferred port is busy — pre-registered clients
+/// may then reject the redirect URI).
+async fn bind_oauth_callback_listener() -> Result<(TcpListener, String), String> {
+    match TcpListener::bind(("127.0.0.1", OAUTH_CALLBACK_PORT)).await {
+        Ok(listener) => {
+            let uri = oauth_redirect_uri();
+            info!("OAuth callback listening on {uri}");
+            Ok((listener, uri))
+        }
+        Err(e) => {
+            warn!(
+                "Preferred OAuth port {OAUTH_CALLBACK_PORT} unavailable ({e}); using ephemeral port. \
+                 Pre-registered redirect URIs may not match."
+            );
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .map_err(|e| format!("failed to bind OAuth callback port: {e}"))?;
+            let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+            let uri = format!("http://127.0.0.1:{port}/callback");
+            Ok((listener, uri))
+        }
+    }
+}
+
+/// Turn rmcp auth errors into actionable guidance for the settings UI.
+fn map_oauth_start_error(err: &str, redirect_uri: &str, had_client_id: bool) -> String {
+    let lower = err.to_ascii_lowercase();
+    if lower.contains("dynamic client registration not supported")
+        || lower.contains("dynamic registration failed")
+        || lower.contains("registration_endpoint")
+    {
+        if had_client_id {
+            return format!(
+                "OAuth client registration/authorization failed even with a Client ID set.\n\
+                 Check that the Client ID (and secret, if required) are correct, and that this \
+                 redirect URI is registered with the provider:\n  {redirect_uri}\n\n\
+                 Details: {err}"
+            );
+        }
+        return format!(
+            "This authorization server does not allow automatic (dynamic) client registration.\n\n\
+             Fix:\n\
+             1. Register a native/public OAuth client with the provider.\n\
+             2. Set the redirect URI to:\n     {redirect_uri}\n\
+             3. Edit this MCP server and fill in OAuth Client ID (and secret if they gave you one).\n\
+             4. Save settings, then click Log in again.\n\n\
+             Details: {err}"
+        );
+    }
+    if lower.contains("client_id") && lower.contains("required") {
+        return format!(
+            "An OAuth Client ID is required for this server.\n\
+             Edit the server, set OAuth Client ID, register redirect URI:\n  {redirect_uri}\n\n\
+             Details: {err}"
+        );
+    }
+    format!("OAuth start failed: {err}")
 }
 
 async fn wait_for_oauth_callback(

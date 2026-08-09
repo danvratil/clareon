@@ -59,6 +59,20 @@ MCP settings live under the top-level `mcp` key in `~/.config/clareon/config.jso
 
 After enabling `oauth` and saving, use **Log in** on the server row. Tokens are stored under `~/.local/share/clareon/mcp_oauth/<server_id>.json` (mode `0600`).
 
+#### Pre-registered clients (most hosts)
+
+Many authorization servers **do not** support OAuth Dynamic Client Registration. In that case Clareon cannot invent a client id for you:
+
+1. Register a **native / public** OAuth application with the provider.
+2. Set the redirect URI exactly to:
+   ```
+   http://127.0.0.1:38471/callback
+   ```
+3. Put the issued **Client ID** (and secret only if they gave you one) in the MCP server settings.
+4. Save, then **Log in**.
+
+If Client ID is left empty, Clareon tries dynamic registration and will fail with a clear error when the server rejects it.
+
 ### Import
 
 The settings page accepts Claude Desktop / Cursor-style snippets:

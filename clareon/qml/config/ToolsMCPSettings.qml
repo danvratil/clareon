@@ -1041,17 +1041,18 @@ Kirigami.ScrollablePage {
 
                 Controls.Label {
                     visible: serverDialog.isRemote && oauthCheckBox.checked
-                    text: qsTr("After saving, use Log in on the server row. A browser window opens; tokens are stored under ~/.local/share/clareon/mcp_oauth/.")
+                    text: qsTr("Most MCP hosts do not support automatic client registration. Register a native OAuth client with redirect URI:\nhttp://127.0.0.1:38471/callback\nthen paste the Client ID below. Save settings, then use Log in on the server row.")
                     font.pointSize: Kirigami.Theme.smallFont.pointSize
                     color: Kirigami.Theme.disabledTextColor
                     wrapMode: Text.WordWrap
                     Layout.fillWidth: true
+                    Layout.maximumWidth: Kirigami.Units.gridUnit * 28
                 }
 
                 Controls.TextField {
                     id: oauthClientIdField
                     Kirigami.FormData.label: qsTr("OAuth client id:")
-                    placeholderText: qsTr("Optional pre-registered client (else dynamic registration)")
+                    placeholderText: qsTr("Required unless the server supports dynamic registration")
                     visible: serverDialog.isRemote && oauthCheckBox.checked
                     Accessible.name: qsTr("OAuth client id")
                 }
@@ -1059,7 +1060,7 @@ Kirigami.ScrollablePage {
                 Controls.TextField {
                     id: oauthClientSecretField
                     Kirigami.FormData.label: qsTr("OAuth client secret:")
-                    placeholderText: qsTr("Optional")
+                    placeholderText: qsTr("Only if the provider issued a secret (public clients leave empty)")
                     visible: serverDialog.isRemote && oauthCheckBox.checked
                     echoMode: TextInput.Password
                     Accessible.name: qsTr("OAuth client secret")
@@ -1071,6 +1072,15 @@ Kirigami.ScrollablePage {
                     placeholderText: qsTr("space-separated; empty = server default")
                     visible: serverDialog.isRemote && oauthCheckBox.checked
                     Accessible.name: qsTr("OAuth scopes")
+                }
+
+                Controls.TextField {
+                    id: oauthRedirectUriField
+                    Kirigami.FormData.label: qsTr("Redirect URI:")
+                    text: "http://127.0.0.1:38471/callback"
+                    readOnly: true
+                    visible: serverDialog.isRemote && oauthCheckBox.checked
+                    Accessible.name: qsTr("OAuth redirect URI")
                 }
             }
         }

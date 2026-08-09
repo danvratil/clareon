@@ -16,4 +16,7 @@ pub use manager::{
     McpServerStatus, McpServerStatusInfo,
 };
 pub use names::prefixed_tool_name;
-pub use oauth::{PendingOAuthLogin, clear_oauth_tokens, oauth_logged_in, open_in_browser};
+pub use oauth::{
+    OAUTH_CALLBACK_PORT, PendingOAuthLogin, clear_oauth_tokens, oauth_logged_in,
+    oauth_redirect_uri, open_in_browser,
+};
