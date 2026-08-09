@@ -47,6 +47,18 @@ MCP settings live under the top-level `mcp` key in `~/.config/clareon/config.jso
 | `http`  | Streamable HTTP remote endpoint |
 | `sse`   | Treated like streamable HTTP (legacy label) |
 
+### Remote auth
+
+| Field | Purpose |
+|-------|---------|
+| `headers` | Map of extra HTTP headers (e.g. `X-Api-Key`) |
+| `bearer_token` | Static bearer token (without the `Bearer ` prefix) |
+| `oauth` | When `true`, use browser OAuth (authorization code + localhost callback) |
+| `oauth_client_id` / `oauth_client_secret` | Optional pre-registered client; empty → dynamic registration |
+| `oauth_scopes` | Optional space-separated scopes |
+
+After enabling `oauth` and saving, use **Log in** on the server row. Tokens are stored under `~/.local/share/clareon/mcp_oauth/<server_id>.json` (mode `0600`).
+
 ### Import
 
 The settings page accepts Claude Desktop / Cursor-style snippets:

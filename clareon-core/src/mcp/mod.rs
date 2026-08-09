@@ -7,6 +7,7 @@
 mod content;
 mod manager;
 mod names;
+mod oauth;
 mod tool_adapter;
 
 pub use content::{flatten_content_blocks, flatten_prompt_messages, flatten_resource_contents};
@@ -15,3 +16,4 @@ pub use manager::{
     McpServerStatus, McpServerStatusInfo,
 };
 pub use names::prefixed_tool_name;
+pub use oauth::{PendingOAuthLogin, clear_oauth_tokens, oauth_logged_in, open_in_browser};

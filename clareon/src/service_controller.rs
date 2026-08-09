@@ -108,6 +108,19 @@ mod ffi {
         #[qsignal]
         fn mcp_prompt_injected(self: Pin<&mut ServiceController>, conversation_id: QString);
 
+        /// OAuth authorization URL for the UI to open (also opened server-side via xdg-open)
+        #[qsignal]
+        fn mcp_oauth_url(self: Pin<&mut ServiceController>, server_id: QString, url: QString);
+
+        /// OAuth login finished
+        #[qsignal]
+        fn mcp_oauth_finished(
+            self: Pin<&mut ServiceController>,
+            server_id: QString,
+            success: bool,
+            message: QString,
+        );
+
         // Actions (invokable from QML)
         #[qinvokable]
         fn new_conversation(self: &ServiceController);
@@ -182,6 +195,12 @@ mod ffi {
 
         #[qinvokable]
         fn restart_mcp_servers(self: &ServiceController);
+
+        #[qinvokable]
+        fn start_mcp_oauth_login(self: &ServiceController, server_id: &QString);
+
+        #[qinvokable]
+        fn logout_mcp_oauth(self: &ServiceController, server_id: &QString);
     }
 
     impl cxx_qt::Threading for ServiceController {}
@@ -299,6 +318,21 @@ impl ffi::ServiceController {
             Response::McpPromptInjected { conv_id } => {
                 self.as_mut()
                     .mcp_prompt_injected(QString::from(&conv_id.to_string()));
+            }
+            Response::McpOAuthUrl { server_id, url } => {
+                self.as_mut()
+                    .mcp_oauth_url(QString::from(&server_id), QString::from(&url));
+            }
+            Response::McpOAuthFinished {
+                server_id,
+                success,
+                message,
+            } => {
+                self.as_mut().mcp_oauth_finished(
+                    QString::from(&server_id),
+                    success,
+                    QString::from(&message),
+                );
             }
 
             _ => {}
@@ -544,5 +578,19 @@ X-LXQt-Need-Tray=true"#,
     fn restart_mcp_servers(&self) {
         let handle = get_service_handle();
         let _ = handle.send(Command::RestartMcpServers);
+    }
+
+    fn start_mcp_oauth_login(&self, server_id: &QString) {
+        let handle = get_service_handle();
+        let _ = handle.send(Command::StartMcpOAuthLogin {
+            server_id: server_id.to_string(),
+        });
+    }
+
+    fn logout_mcp_oauth(&self, server_id: &QString) {
+        let handle = get_service_handle();
+        let _ = handle.send(Command::LogoutMcpOAuth {
+            server_id: server_id.to_string(),
+        });
     }
 }

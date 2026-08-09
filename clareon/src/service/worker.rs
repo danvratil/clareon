@@ -161,6 +161,12 @@ impl ServiceWorker {
             Command::RestartMcpServers => {
                 self.handle_restart_mcp_servers().await;
             }
+            Command::StartMcpOAuthLogin { server_id } => {
+                self.handle_start_mcp_oauth_login(server_id).await;
+            }
+            Command::LogoutMcpOAuth { server_id } => {
+                self.handle_logout_mcp_oauth(server_id).await;
+            }
         }
     }
 
@@ -983,6 +989,86 @@ impl ServiceWorker {
                 let _ = self.response_tx.send(Response::Error {
                     command: "RestartMcpServers".to_string(),
                     error: e.to_string(),
+                });
+            }
+        }
+    }
+
+    async fn handle_start_mcp_oauth_login(&mut self, server_id: String) {
+        // Always use the latest saved config so OAuth flags/URLs match Settings.
+        let config = clareon_core::ConfigManager::get().config();
+        let Some(cfg) = config.mcp.servers.get(&server_id) else {
+            let _ = self.response_tx.send(Response::McpOAuthFinished {
+                server_id,
+                success: false,
+                message: "Unknown MCP server (save settings first)".into(),
+            });
+            return;
+        };
+        if !cfg.oauth {
+            let _ = self.response_tx.send(Response::McpOAuthFinished {
+                server_id,
+                success: false,
+                message: "OAuth is not enabled for this server (edit the server and enable OAuth)"
+                    .into(),
+            });
+            return;
+        }
+
+        let begin = match clareon_core::PendingOAuthLogin::begin(&server_id, cfg).await {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = self.response_tx.send(Response::McpOAuthFinished {
+                    server_id,
+                    success: false,
+                    message: e,
+                });
+                return;
+            }
+        };
+
+        let (url, pending) = begin;
+        let _ = self.response_tx.send(Response::McpOAuthUrl {
+            server_id: server_id.clone(),
+            url: url.clone(),
+        });
+        clareon_core::open_in_browser(&url);
+
+        match pending.complete().await {
+            Ok(()) => {
+                let _ = self.response_tx.send(Response::McpOAuthFinished {
+                    server_id: server_id.clone(),
+                    success: true,
+                    message: "OAuth login successful".into(),
+                });
+                // Rebuild tools so the server reconnects with tokens
+                self.handle_restart_mcp_servers().await;
+            }
+            Err(e) => {
+                let _ = self.response_tx.send(Response::McpOAuthFinished {
+                    server_id,
+                    success: false,
+                    message: e,
+                });
+            }
+        }
+    }
+
+    async fn handle_logout_mcp_oauth(&mut self, server_id: String) {
+        match self.mcp_manager.logout_oauth(&server_id).await {
+            Ok(()) => {
+                let _ = self.response_tx.send(Response::McpOAuthFinished {
+                    server_id: server_id.clone(),
+                    success: true,
+                    message: "Logged out".into(),
+                });
+                self.handle_restart_mcp_servers().await;
+            }
+            Err(e) => {
+                let _ = self.response_tx.send(Response::McpOAuthFinished {
+                    server_id,
+                    success: false,
+                    message: e,
                 });
             }
         }

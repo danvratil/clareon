@@ -14,6 +14,7 @@ use rmcp::model::{
     ReadResourceRequestParams, Resource, Tool as McpTool,
 };
 use rmcp::service::{Peer, RoleClient, RunningService};
+use rmcp::transport::auth::AuthClient;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use rmcp::transport::{ConfigureCommandExt, StreamableHttpClientTransport, TokioChildProcess};
 use serde::{Deserialize, Serialize};
@@ -26,6 +27,7 @@ use crate::tools::{Tool, ToolRegistry};
 
 use super::content::{flatten_content_blocks, flatten_prompt_messages, flatten_resource_contents};
 use super::names::{prefixed_tool_name, unique_name};
+use super::oauth::{self, PendingOAuthLogin};
 use super::tool_adapter::{McpListResourcesTool, McpReadResourceTool, McpToolAdapter};
 
 /// Connection status of a single MCP server.
@@ -50,6 +52,10 @@ pub struct McpServerStatusInfo {
     pub tool_count: usize,
     pub resource_count: usize,
     pub prompt_count: usize,
+    /// True when OAuth is enabled and a token cache exists for this server
+    pub oauth_logged_in: bool,
+    /// True when the server config has OAuth enabled
+    pub oauth_enabled: bool,
 }
 
 /// Resource reference for UI / meta-tools.
@@ -280,6 +286,8 @@ impl McpManager {
                     tool_count,
                     resource_count,
                     prompt_count,
+                    oauth_logged_in: oauth::oauth_logged_in(id),
+                    oauth_enabled: e.config.oauth,
                 }
             })
             .collect();
@@ -434,6 +442,43 @@ impl McpManager {
         let result = peer.call_tool(params).await.map_err(|e| e.to_string())?;
         Ok(flatten_content_blocks(&result.content))
     }
+
+    /// Get a snapshot of a server's config (for OAuth login).
+    pub async fn server_config(&self, server_id: &str) -> Option<McpServerConfig> {
+        self.entries
+            .read()
+            .await
+            .get(server_id)
+            .map(|e| e.config.clone())
+    }
+
+    /// Begin interactive OAuth for a server. Returns the authorization URL and a pending login.
+    pub async fn begin_oauth_login(
+        &self,
+        server_id: &str,
+    ) -> Result<(String, PendingOAuthLogin), String> {
+        let cfg = self
+            .server_config(server_id)
+            .await
+            .ok_or_else(|| format!("Unknown MCP server '{server_id}'"))?;
+        if !cfg.oauth {
+            return Err(format!(
+                "Server '{server_id}' does not have OAuth enabled in config"
+            ));
+        }
+        match cfg.transport {
+            McpTransportConfig::Http | McpTransportConfig::Sse => {}
+            McpTransportConfig::Stdio => {
+                return Err("OAuth is only supported for HTTP/SSE MCP servers".into());
+            }
+        }
+        PendingOAuthLogin::begin(server_id, &cfg).await
+    }
+
+    /// Clear OAuth tokens for a server.
+    pub async fn logout_oauth(&self, server_id: &str) -> Result<(), String> {
+        oauth::clear_oauth_tokens(server_id).await
+    }
 }
 
 fn transport_label(t: &McpTransportConfig) -> &'static str {
@@ -503,11 +548,39 @@ async fn connect_http(id: &str, cfg: &McpServerConfig) -> Result<LiveSession, St
         headers.insert(name, value);
     }
 
-    let config =
+    let mut transport_config =
         StreamableHttpClientTransportConfig::with_uri(url.as_str()).custom_headers(headers);
-    let transport = StreamableHttpClientTransport::from_config(config);
 
-    let service = ().serve(transport).await.map_err(|e| format!("initialize failed: {e}"))?;
+    // Static bearer token (without "Bearer " prefix) when OAuth is not used
+    if !cfg.oauth
+        && let Some(token) = cfg.bearer_token.as_ref().filter(|t| !t.is_empty())
+    {
+        transport_config = transport_config.auth_header(token.clone());
+    }
+
+    let service = if cfg.oauth {
+        let manager = oauth::load_authorization_manager(id, url)
+            .await?
+            .ok_or_else(|| {
+                format!(
+                    "OAuth login required for MCP server '{id}'. Use Log in on the Tools & MCP page."
+                )
+            })?;
+        let http_client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .map_err(|e| format!("http client: {e}"))?;
+        let auth_client = AuthClient::new(http_client, manager);
+        let transport = StreamableHttpClientTransport::with_client(auth_client, transport_config);
+        ().serve(transport)
+            .await
+            .map_err(|e| format!("initialize failed: {e}"))?
+    } else {
+        let transport = StreamableHttpClientTransport::from_config(transport_config);
+        ().serve(transport)
+            .await
+            .map_err(|e| format!("initialize failed: {e}"))?
+    };
 
     finish_session(service).await
 }

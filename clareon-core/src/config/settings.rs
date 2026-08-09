@@ -386,9 +386,29 @@ pub struct McpServerConfig {
     #[serde(default)]
     pub url: Option<String>,
 
-    /// HTTP headers for remote transport
+    /// HTTP headers for remote transport (`Header-Name` → value)
     #[serde(default)]
     pub headers: HashMap<String, String>,
+
+    /// Optional static bearer token for remote transport (without the `Bearer ` prefix)
+    #[serde(default)]
+    pub bearer_token: Option<String>,
+
+    /// Use OAuth (authorization code + browser) for this remote server
+    #[serde(default)]
+    pub oauth: bool,
+
+    /// Optional pre-registered OAuth client id (otherwise dynamic registration is used)
+    #[serde(default)]
+    pub oauth_client_id: Option<String>,
+
+    /// Optional OAuth client secret for confidential clients
+    #[serde(default)]
+    pub oauth_client_secret: Option<String>,
+
+    /// OAuth scopes to request (empty = server default / discovery)
+    #[serde(default)]
+    pub oauth_scopes: Vec<String>,
 
     /// Optional per-server tool-call timeout override (seconds)
     #[serde(default)]
@@ -407,6 +427,11 @@ impl Default for McpServerConfig {
             cwd: None,
             url: None,
             headers: HashMap::new(),
+            bearer_token: None,
+            oauth: false,
+            oauth_client_id: None,
+            oauth_client_secret: None,
+            oauth_scopes: Vec::new(),
             timeout_secs: None,
         }
     }
@@ -574,12 +599,17 @@ impl Config {
         Ok(dirs.config_dir().join("config.json"))
     }
 
-    /// Get the default database file path
-    pub fn database_path() -> Result<PathBuf> {
+    /// Get the XDG data directory (`~/.local/share/clareon` on Linux)
+    pub fn data_dir() -> Result<PathBuf> {
         let dirs = Self::project_dirs()?;
         let data_dir = dirs.data_dir();
         std::fs::create_dir_all(data_dir).map_err(ConfigError::Io)?;
-        Ok(data_dir.join("clareon.db"))
+        Ok(data_dir.to_path_buf())
+    }
+
+    /// Get the default database file path
+    pub fn database_path() -> Result<PathBuf> {
+        Ok(Self::data_dir()?.join("clareon.db"))
     }
 
     /// Get the database URL for SQLite

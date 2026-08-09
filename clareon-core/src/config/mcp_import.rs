@@ -68,6 +68,11 @@ impl ExternalServerEntry {
             cwd: self.cwd,
             url: self.url,
             headers: self.headers,
+            bearer_token: None,
+            oauth: false,
+            oauth_client_id: None,
+            oauth_client_secret: None,
+            oauth_scopes: Vec::new(),
             timeout_secs: self.timeout_secs.or(self.timeout),
         }
     }

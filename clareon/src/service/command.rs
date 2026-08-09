@@ -108,4 +108,10 @@ pub enum Command {
 
     /// Restart a single MCP server (reload all for simplicity)
     RestartMcpServers,
+
+    /// Start interactive OAuth login for an MCP server (opens browser + localhost callback)
+    StartMcpOAuthLogin { server_id: String },
+
+    /// Clear stored OAuth tokens for an MCP server
+    LogoutMcpOAuth { server_id: String },
 }

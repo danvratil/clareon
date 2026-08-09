@@ -336,6 +336,34 @@ Kirigami.ScrollablePage {
                         }
 
                         Controls.Button {
+                            icon.name: "document-edit"
+                            flat: true
+                            Accessible.name: qsTr("Edit server")
+                            onClicked: root.openEditServer(serverId)
+                        }
+
+                        Controls.Button {
+                            visible: {
+                                const live = root.liveStatus[serverId] || {}
+                                return !!live.oauth_enabled
+                            }
+                            text: {
+                                const live = root.liveStatus[serverId] || {}
+                                return live.oauth_logged_in ? qsTr("Log out") : qsTr("Log in")
+                            }
+                            icon.name: "network-wireless"
+                            flat: true
+                            Accessible.name: qsTr("OAuth login")
+                            onClicked: {
+                                const live = root.liveStatus[serverId] || {}
+                                if (live.oauth_logged_in)
+                                    ServiceController.logoutMcpOauth(serverId)
+                                else
+                                    ServiceController.startMcpOauthLogin(serverId)
+                            }
+                        }
+
+                        Controls.Button {
                             icon.name: "edit-delete"
                             flat: true
                             Accessible.name: qsTr("Remove server")
@@ -360,7 +388,7 @@ Kirigami.ScrollablePage {
                     text: qsTr("Add Server")
                     icon.name: "list-add"
                     enabled: enableMcpCheckBox.checked
-                    onClicked: addServerDialog.open()
+                    onClicked: root.openAddServer()
                 }
 
                 Controls.Button {
@@ -654,6 +682,145 @@ Kirigami.ScrollablePage {
         refreshServerList()
     }
 
+    /// Parse "Header-Name: value" lines into a map
+    function parseHeadersText(text) {
+        const headers = {}
+        const lines = (text || "").split(/\r?\n/)
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim()
+            if (!line)
+                continue
+            const idx = line.indexOf(":")
+            if (idx <= 0)
+                continue
+            const key = line.slice(0, idx).trim()
+            const val = line.slice(idx + 1).trim()
+            if (key)
+                headers[key] = val
+        }
+        return headers
+    }
+
+    function headersToText(headers) {
+        if (!headers || typeof headers !== "object")
+            return ""
+        const keys = Object.keys(headers).sort()
+        return keys.map(k => k + ": " + headers[k]).join("\n")
+    }
+
+    function envToText(env) {
+        if (!env || typeof env !== "object")
+            return ""
+        const keys = Object.keys(env).sort()
+        return keys.map(k => k + "=" + env[k]).join("\n")
+    }
+
+    function parseEnvText(text) {
+        const env = {}
+        const lines = (text || "").split(/\r?\n/)
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim()
+            if (!line)
+                continue
+            const idx = line.indexOf("=")
+            if (idx <= 0)
+                continue
+            env[line.slice(0, idx).trim()] = line.slice(idx + 1)
+        }
+        return env
+    }
+
+    property string editingServerId: ""
+    property bool editingExisting: false
+
+    function openAddServer() {
+        editingExisting = false
+        editingServerId = ""
+        serverIdField.text = ""
+        serverIdField.enabled = true
+        displayNameField.text = ""
+        transportCombo.currentIndex = 0
+        commandField.text = ""
+        argsField.text = ""
+        cwdField.text = ""
+        urlField.text = ""
+        headersField.text = ""
+        bearerTokenField.text = ""
+        envField.text = ""
+        oauthCheckBox.checked = false
+        oauthClientIdField.text = ""
+        oauthClientSecretField.text = ""
+        oauthScopesField.text = ""
+        serverDialog.title = qsTr("Add MCP Server")
+        serverDialog.open()
+    }
+
+    function openEditServer(id) {
+        ensureMcp()
+        const s = (root.config.mcp.servers || {})[id]
+        if (!s)
+            return
+        editingExisting = true
+        editingServerId = id
+        serverIdField.text = id
+        serverIdField.enabled = false
+        displayNameField.text = s.name || ""
+        const transport = (s.transport || "stdio").toString()
+        transportCombo.currentIndex = transport === "http" ? 1 : (transport === "sse" ? 2 : 0)
+        commandField.text = s.command || ""
+        const args = s.args || []
+        argsField.text = Array.isArray(args) ? args.join(" ") : String(args)
+        cwdField.text = s.cwd || ""
+        urlField.text = s.url || ""
+        headersField.text = headersToText(s.headers)
+        bearerTokenField.text = s.bearer_token || s.bearerToken || ""
+        envField.text = envToText(s.env)
+        oauthCheckBox.checked = !!(s.oauth)
+        oauthClientIdField.text = s.oauth_client_id || s.oauthClientId || ""
+        oauthClientSecretField.text = s.oauth_client_secret || s.oauthClientSecret || ""
+        const scopes = s.oauth_scopes || s.oauthScopes || []
+        oauthScopesField.text = Array.isArray(scopes) ? scopes.join(" ") : String(scopes)
+        serverDialog.title = qsTr("Edit MCP Server")
+        serverDialog.open()
+    }
+
+    function saveServerDialog() {
+        const id = serverIdField.text.trim()
+        if (!id)
+            return
+        const transport = ["stdio", "http", "sse"][transportCombo.currentIndex] || "stdio"
+        const isRemote = transport !== "stdio"
+        const scopesRaw = oauthScopesField.text.trim()
+        const entry = {
+            enabled: true,
+            name: displayNameField.text.trim() || id,
+            transport: transport,
+            command: !isRemote ? commandField.text.trim() : "",
+            args: !isRemote
+                  ? argsField.text.trim().split(/\s+/).filter(a => a.length > 0)
+                  : [],
+            env: parseEnvText(envField.text),
+            cwd: !isRemote ? (cwdField.text.trim() || "") : "",
+            url: isRemote ? urlField.text.trim() : "",
+            headers: isRemote ? parseHeadersText(headersField.text) : {},
+            bearer_token: isRemote ? (bearerTokenField.text.trim() || "") : "",
+            oauth: isRemote && oauthCheckBox.checked,
+            oauth_client_id: isRemote ? (oauthClientIdField.text.trim() || "") : "",
+            oauth_client_secret: isRemote ? (oauthClientSecretField.text.trim() || "") : "",
+            oauth_scopes: isRemote && scopesRaw
+                          ? scopesRaw.split(/\s+/).filter(s => s.length > 0)
+                          : [],
+            timeout_secs: null
+        }
+        // Preserve enabled flag when editing
+        if (editingExisting) {
+            const prev = (root.config.mcp.servers || {})[id]
+            if (prev && prev.enabled === false)
+                entry.enabled = false
+        }
+        root.upsertServer(id, entry)
+    }
+
     Component.onCompleted: {
         refreshServerList()
         ServiceController.refreshMcpServers()
@@ -677,40 +844,36 @@ Kirigami.ScrollablePage {
                 promptPreview.text = json
             }
         }
+        function onMcpOauthUrl(serverId, url) {
+            Qt.openUrlExternally(url)
+        }
+        function onMcpOauthFinished(serverId, success, message) {
+            oauthStatusMessage.text = message
+            oauthStatusMessage.type = success
+                ? Kirigami.MessageType.Positive
+                : Kirigami.MessageType.Error
+            oauthStatusMessage.visible = true
+            ServiceController.refreshMcpServers()
+        }
+    }
+
+    Kirigami.InlineMessage {
+        id: oauthStatusMessage
+        Layout.fillWidth: true
+        visible: false
+        showCloseButton: true
     }
 
     Kirigami.Dialog {
-        id: addServerDialog
+        id: serverDialog
         title: qsTr("Add MCP Server")
         standardButtons: Kirigami.Dialog.Ok | Kirigami.Dialog.Cancel
-        preferredWidth: Kirigami.Units.gridUnit * 28
+        preferredWidth: Kirigami.Units.gridUnit * 32
+        preferredHeight: Kirigami.Units.gridUnit * 36
 
         property bool isRemote: transportCombo.currentIndex > 0
 
-        onAccepted: {
-            const id = serverIdField.text.trim()
-            if (!id)
-                return
-            const transport = ["stdio", "http", "sse"][transportCombo.currentIndex] || "stdio"
-            const entry = {
-                enabled: true,
-                name: displayNameField.text.trim() || id,
-                transport: transport,
-                command: transport === "stdio" ? commandField.text.trim() : "",
-                args: transport === "stdio"
-                      ? argsField.text.trim().split(/\s+/).filter(a => a.length > 0)
-                      : [],
-                env: {},
-                cwd: transport === "stdio" ? (cwdField.text.trim() || null) : null,
-                url: transport !== "stdio" ? urlField.text.trim() : "",
-                headers: {},
-                timeout_secs: null
-            }
-            // Prefer null/empty optional fields omitted as empty string for QVariantMap round-trip
-            if (!entry.cwd)
-                entry.cwd = ""
-            root.upsertServer(id, entry)
-        }
+        onAccepted: root.saveServerDialog()
 
         ColumnLayout {
             spacing: Kirigami.Units.smallSpacing
@@ -743,7 +906,7 @@ Kirigami.ScrollablePage {
                     id: commandField
                     Kirigami.FormData.label: qsTr("Command:")
                     placeholderText: qsTr("npx")
-                    visible: !addServerDialog.isRemote
+                    visible: !serverDialog.isRemote
                     Accessible.name: qsTr("Command")
                 }
 
@@ -751,7 +914,7 @@ Kirigami.ScrollablePage {
                     id: argsField
                     Kirigami.FormData.label: qsTr("Arguments:")
                     placeholderText: qsTr("-y @modelcontextprotocol/server-filesystem /path")
-                    visible: !addServerDialog.isRemote
+                    visible: !serverDialog.isRemote
                     Accessible.name: qsTr("Arguments")
                 }
 
@@ -759,16 +922,86 @@ Kirigami.ScrollablePage {
                     id: cwdField
                     Kirigami.FormData.label: qsTr("Working directory:")
                     placeholderText: qsTr("Optional")
-                    visible: !addServerDialog.isRemote
+                    visible: !serverDialog.isRemote
                     Accessible.name: qsTr("Working directory")
+                }
+
+                Controls.TextArea {
+                    id: envField
+                    Kirigami.FormData.label: qsTr("Environment:")
+                    placeholderText: qsTr("KEY=value (one per line)")
+                    visible: !serverDialog.isRemote
+                    Layout.preferredHeight: Kirigami.Units.gridUnit * 4
+                    Layout.fillWidth: true
+                    Accessible.name: qsTr("Environment variables")
                 }
 
                 Controls.TextField {
                     id: urlField
                     Kirigami.FormData.label: qsTr("URL:")
                     placeholderText: qsTr("https://example.com/mcp")
-                    visible: addServerDialog.isRemote
+                    visible: serverDialog.isRemote
                     Accessible.name: qsTr("URL")
+                }
+
+                Controls.TextArea {
+                    id: headersField
+                    Kirigami.FormData.label: qsTr("HTTP headers:")
+                    placeholderText: qsTr("Header-Name: value\nX-Api-Key: secret")
+                    visible: serverDialog.isRemote
+                    Layout.preferredHeight: Kirigami.Units.gridUnit * 5
+                    Layout.fillWidth: true
+                    Accessible.name: qsTr("HTTP headers")
+                }
+
+                Controls.TextField {
+                    id: bearerTokenField
+                    Kirigami.FormData.label: qsTr("Bearer token:")
+                    placeholderText: qsTr("Optional static token (without “Bearer ” prefix)")
+                    visible: serverDialog.isRemote && !oauthCheckBox.checked
+                    echoMode: TextInput.Password
+                    Accessible.name: qsTr("Bearer token")
+                }
+
+                Controls.CheckBox {
+                    id: oauthCheckBox
+                    Kirigami.FormData.label: qsTr("OAuth:")
+                    text: qsTr("Use browser OAuth login")
+                    visible: serverDialog.isRemote
+                }
+
+                Controls.Label {
+                    visible: serverDialog.isRemote && oauthCheckBox.checked
+                    text: qsTr("After saving, use Log in on the server row. A browser window opens; tokens are stored under ~/.local/share/clareon/mcp_oauth/.")
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    color: Kirigami.Theme.disabledTextColor
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+
+                Controls.TextField {
+                    id: oauthClientIdField
+                    Kirigami.FormData.label: qsTr("OAuth client id:")
+                    placeholderText: qsTr("Optional pre-registered client (else dynamic registration)")
+                    visible: serverDialog.isRemote && oauthCheckBox.checked
+                    Accessible.name: qsTr("OAuth client id")
+                }
+
+                Controls.TextField {
+                    id: oauthClientSecretField
+                    Kirigami.FormData.label: qsTr("OAuth client secret:")
+                    placeholderText: qsTr("Optional")
+                    visible: serverDialog.isRemote && oauthCheckBox.checked
+                    echoMode: TextInput.Password
+                    Accessible.name: qsTr("OAuth client secret")
+                }
+
+                Controls.TextField {
+                    id: oauthScopesField
+                    Kirigami.FormData.label: qsTr("OAuth scopes:")
+                    placeholderText: qsTr("space-separated; empty = server default")
+                    visible: serverDialog.isRemote && oauthCheckBox.checked
+                    Accessible.name: qsTr("OAuth scopes")
                 }
             }
         }
@@ -828,6 +1061,13 @@ Kirigami.ScrollablePage {
                         cwd: src.cwd || "",
                         url: src.url || "",
                         headers: src.headers && typeof src.headers === "object" ? src.headers : {},
+                        bearer_token: src.bearer_token || src.bearerToken || "",
+                        oauth: !!(src.oauth),
+                        oauth_client_id: src.oauth_client_id || src.oauthClientId || "",
+                        oauth_client_secret: src.oauth_client_secret || src.oauthClientSecret || "",
+                        oauth_scopes: Array.isArray(src.oauth_scopes)
+                            ? src.oauth_scopes
+                            : (Array.isArray(src.oauthScopes) ? src.oauthScopes : []),
                         timeout_secs: src.timeout_secs || src.timeout || null
                     }
                 }
