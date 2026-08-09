@@ -1041,7 +1041,12 @@ Kirigami.ScrollablePage {
 
                 Controls.Label {
                     visible: serverDialog.isRemote && oauthCheckBox.checked
-                    text: qsTr("Most MCP hosts do not support automatic client registration. Register a native OAuth client with redirect URI:\nhttp://127.0.0.1:38471/callback\nthen paste the Client ID below. Save settings, then use Log in on the server row.")
+                    text: {
+                        const u = (urlField.text || "").toLowerCase()
+                        if (u.indexOf("githubcopilot.com") >= 0 || u.indexOf("api.github.com") >= 0)
+                            return qsTr("GitHub remote MCP does not support Dynamic Client Registration. Prefer a Personal Access Token: turn OAuth off and set Bearer token. Or create your own GitHub App/OAuth App with callback http://127.0.0.1:38471/callback and paste the Client ID below.")
+                        return qsTr("Many hosts (including GitHub) do not support automatic client registration. Register a native OAuth client with redirect URI:\nhttp://127.0.0.1:38471/callback\nthen paste the Client ID below. Save, then Log in.")
+                    }
                     font.pointSize: Kirigami.Theme.smallFont.pointSize
                     color: Kirigami.Theme.disabledTextColor
                     wrapMode: Text.WordWrap

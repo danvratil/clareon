@@ -219,10 +219,9 @@ impl PendingOAuthLogin {
             );
         }
 
-        state
-            .start_authorization(request)
-            .await
-            .map_err(|e| map_oauth_start_error(&e.to_string(), &redirect_uri, has_client_id))?;
+        state.start_authorization(request).await.map_err(|e| {
+            map_oauth_start_error(&e.to_string(), &redirect_uri, has_client_id, url.as_str())
+        })?;
 
         let auth_url = state
             .get_authorization_url()
@@ -313,12 +312,38 @@ async fn bind_oauth_callback_listener() -> Result<(TcpListener, String), String>
 }
 
 /// Turn rmcp auth errors into actionable guidance for the settings UI.
-fn map_oauth_start_error(err: &str, redirect_uri: &str, had_client_id: bool) -> String {
+fn map_oauth_start_error(
+    err: &str,
+    redirect_uri: &str,
+    had_client_id: bool,
+    server_url: &str,
+) -> String {
     let lower = err.to_ascii_lowercase();
+    let is_github = server_url.contains("githubcopilot.com")
+        || server_url.contains("api.github.com")
+        || server_url.contains("github.com/login");
+
     if lower.contains("dynamic client registration not supported")
         || lower.contains("dynamic registration failed")
         || lower.contains("registration_endpoint")
     {
+        if is_github {
+            // GitHub documents this explicitly: remote MCP does not support DCR.
+            // VS Code works because it ships a pre-registered GitHub OAuth client, not DCR.
+            return format!(
+                "GitHub’s remote MCP does not support Dynamic Client Registration (by design).\n\n\
+                 Easiest option — Personal Access Token:\n\
+                 1. Create a classic or fine-grained PAT at https://github.com/settings/tokens\n\
+                 2. Edit this server, turn OAuth off, set Bearer token to the PAT (or header \
+                 Authorization: Bearer <token>)\n\
+                 3. Save and Reconnect\n\n\
+                 OAuth option — your own GitHub App / OAuth App:\n\
+                 1. Create a GitHub App or OAuth App for Clareon\n\
+                 2. Callback URL: {redirect_uri}\n\
+                 3. Put Client ID (+ secret) in this server’s OAuth fields, Save, Log in\n\n\
+                 Details: {err}"
+            );
+        }
         if had_client_id {
             return format!(
                 "OAuth client registration/authorization failed even with a Client ID set.\n\

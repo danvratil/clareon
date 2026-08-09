@@ -73,6 +73,41 @@ Many authorization servers **do not** support OAuth Dynamic Client Registration.
 
 If Client ID is left empty, Clareon tries dynamic registration and will fail with a clear error when the server rejects it.
 
+#### GitHub remote MCP (`https://api.githubcopilot.com/mcp/`)
+
+GitHub **explicitly does not support Dynamic Client Registration** for the remote MCP
+([host integration guide](https://github.com/github/github-mcp-server/blob/main/docs/host-integration.md),
+[issue #1404](https://github.com/github/github-mcp-server/issues/1404)). That is a GitHub product
+choice, not a Clareon bug. VS Code “just works” because it ships a **pre-registered** GitHub OAuth
+client inside the editor — third-party hosts do not get to reuse that client.
+
+**Recommended for Clareon: PAT**
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "github": {
+        "enabled": true,
+        "transport": "http",
+        "url": "https://api.githubcopilot.com/mcp/",
+        "oauth": false,
+        "bearer_token": "github_pat_…"
+      }
+    }
+  }
+}
+```
+
+Or via the UI: HTTP transport, OAuth **off**, Bearer token = your PAT, then Reconnect.
+
+**OAuth path:** create your own [GitHub App](https://docs.github.com/en/apps/creating-github-apps) or
+[OAuth App](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app),
+callback `http://127.0.0.1:38471/callback`, put client id/secret on the server, Log in.
+
+**Local stdio alternative:** run `github-mcp-server` / Docker with GitHub’s baked-in OAuth app
+(see their [oauth-login.md](https://github.com/github/github-mcp-server/blob/main/docs/oauth-login.md)).
+
 ### Import
 
 The settings page accepts Claude Desktop / Cursor-style snippets:
