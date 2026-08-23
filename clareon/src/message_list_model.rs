@@ -47,6 +47,8 @@ mod ffi {
         #[qproperty(QString, conversation_id, READ, WRITE = set_conversation_id, NOTIFY)]
         #[qproperty(i64, total_input_tokens, READ, NOTIFY)]
         #[qproperty(i64, total_output_tokens, READ, NOTIFY)]
+        #[qproperty(bool, streaming, READ, NOTIFY)]
+        #[qproperty(QString, pending_approval_json, READ, NOTIFY)]
         type MessageListModel = super::MessageListModelRust;
 
         fn set_conversation_id(self: Pin<&mut MessageListModel>, id: QString);
@@ -210,6 +212,8 @@ pub struct MessageListModelRust {
     subscription: Subscription,
     total_input_tokens: i64,
     total_output_tokens: i64,
+    streaming: bool,
+    pending_approval_json: QString,
 }
 
 /// Computes `is_grouped_with_previous` for every message in the slice.
@@ -379,6 +383,42 @@ impl ffi::MessageListModel {
                 "Loading messages for new conversation in MessageListModel"
             );
             let _ = handle.send(Command::LoadMessages { conv_id });
+        }
+    }
+
+    fn set_streaming_state(mut self: Pin<&mut Self>, streaming: bool) {
+        if self.rust().streaming == streaming {
+            return;
+        }
+        self.as_mut().rust_mut().streaming = streaming;
+        self.as_mut().streaming_changed();
+    }
+
+    fn set_pending_approval(mut self: Pin<&mut Self>, tools_json: String) {
+        self.as_mut().rust_mut().pending_approval_json = QString::from(&tools_json);
+        self.as_mut().pending_approval_json_changed();
+    }
+
+    fn clear_pending_approval(mut self: Pin<&mut Self>) {
+        if self.rust().pending_approval_json.is_empty() {
+            return;
+        }
+        self.as_mut().rust_mut().pending_approval_json = QString::default();
+        self.as_mut().pending_approval_json_changed();
+    }
+
+    fn remove_streaming_placeholder(mut self: Pin<&mut Self>) {
+        if let Some(last) = self.rust().messages.last()
+            && last.id == -1
+        {
+            let count = self.rust().messages.len();
+            self.as_mut().begin_remove_rows(
+                &QModelIndex::default(),
+                (count - 1) as i32,
+                (count - 1) as i32,
+            );
+            self.as_mut().rust_mut().messages.pop();
+            self.as_mut().end_remove_rows();
         }
     }
 
@@ -631,6 +671,8 @@ impl ffi::MessageListModel {
                     Response::StreamingStarted { conv_id: id } => *id == conv_id,
                     Response::StreamingChunk { conv_id: id, .. } => *id == conv_id,
                     Response::StreamingComplete { conv_id: id, .. } => *id == conv_id,
+                    Response::StreamingStopped { conv_id: id, .. } => *id == conv_id,
+                    Response::ToolApprovalRequired { conv_id: id, .. } => *id == conv_id,
                     Response::SendMessageError { conv_id: id, .. } => *id == conv_id,
                     Response::StreamingError { conv_id: id, .. } => *id == conv_id,
                     _ => false,
@@ -671,6 +713,8 @@ impl ffi::MessageListModel {
                 self.as_mut().add_message_internal(message);
             }
             Response::StreamingStarted { conv_id: _ } => {
+                self.as_mut().set_streaming_state(true);
+                self.as_mut().clear_pending_approval();
                 self.as_mut().start_streaming_message();
             }
             Response::StreamingChunk {
@@ -681,22 +725,31 @@ impl ffi::MessageListModel {
                 self.as_mut().update_streaming_message(delta);
             }
             Response::StreamingComplete { message, .. } => {
+                self.as_mut().set_streaming_state(false);
+                self.as_mut().clear_pending_approval();
                 self.as_mut().complete_streaming_message(message);
             }
-            Response::SendMessageError { error_info, .. } => {
-                // Remove "thinking" placeholder if present
-                if let Some(last) = self.rust().messages.last()
-                    && last.id == -1
-                {
-                    let count = self.rust().messages.len();
-                    self.as_mut().begin_remove_rows(
-                        &QModelIndex::default(),
-                        (count - 1) as i32,
-                        (count - 1) as i32,
-                    );
-                    self.as_mut().rust_mut().messages.pop();
-                    self.as_mut().end_remove_rows();
+            Response::StreamingStopped { message, .. } => {
+                self.as_mut().set_streaming_state(false);
+                self.as_mut().clear_pending_approval();
+                if let Some(message) = message {
+                    self.as_mut().complete_streaming_message(message);
+                } else {
+                    self.as_mut().remove_streaming_placeholder();
                 }
+            }
+            Response::ToolApprovalRequired { tools_json, .. } => {
+                if tools_json.is_empty() || tools_json == "[]" {
+                    self.as_mut().clear_pending_approval();
+                } else {
+                    self.as_mut().set_pending_approval(tools_json);
+                }
+            }
+            Response::SendMessageError { error_info, .. } => {
+                self.as_mut().set_streaming_state(false);
+                self.as_mut().clear_pending_approval();
+                // Remove "thinking" placeholder if present
+                self.as_mut().remove_streaming_placeholder();
                 // Add error message
                 self.as_mut().add_error_message(error_info, None);
             }
@@ -705,6 +758,8 @@ impl ffi::MessageListModel {
                 partial_text,
                 ..
             } => {
+                self.as_mut().set_streaming_state(false);
+                self.as_mut().clear_pending_approval();
                 // Replace streaming message with error showing partial content
                 self.as_mut()
                     .replace_streaming_with_error(error_info, Some(partial_text));

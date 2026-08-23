@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+mod approval;
 mod artifacts;
 mod builtin;
 mod executor;
@@ -10,6 +11,7 @@ mod sandbox;
 mod traits;
 mod workspace;
 
+pub use approval::{AlwaysAllowRule, is_denied, tools_need_approval};
 pub use artifacts::ArtifactManager;
 pub use builtin::{ListDirectoryTool, ReadFileTool, WriteFileTool, register_builtin_tools};
 pub use executor::ToolExecutor;

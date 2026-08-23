@@ -262,6 +262,18 @@ pub struct ToolsConfig {
     #[serde(default = "default_true")]
     pub auto_execute: bool,
 
+    /// Always-allow rules, stored as strings (see `AlwaysAllowRule`).
+    ///
+    /// - `path:<tool>:<abs-path>` — file tools; that path and descendants
+    /// - `tool:<name>` — whole tool, any arguments (MCP)
+    /// - `exec:<argv…>` — exec argv prefix
+    #[serde(default)]
+    pub always_allow: Vec<String>,
+
+    /// Always-deny rules, same spec format as `always_allow`. Deny wins over allow.
+    #[serde(default)]
+    pub always_deny: Vec<String>,
+
     /// Workspace retention policy (days to keep inactive workspaces)
     #[serde(default = "default_workspace_retention_days")]
     pub workspace_retention_days: u64,
@@ -310,6 +322,8 @@ impl Default for ToolsConfig {
             sandbox_mode: SandboxModeConfig::default(),
             default_timeout: default_tool_timeout(),
             auto_execute: true,
+            always_allow: Vec::new(),
+            always_deny: Vec::new(),
             workspace_retention_days: default_workspace_retention_days(),
             max_workspace_size_mb: default_max_workspace_size_mb(),
             max_upload_size_mb: default_max_upload_size_mb(),

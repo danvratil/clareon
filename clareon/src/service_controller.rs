@@ -209,6 +209,16 @@ mod ffi {
 
         #[qinvokable]
         fn logout_mcp_oauth(self: &ServiceController, server_id: &QString);
+
+        #[qinvokable]
+        fn stop_generation(self: &ServiceController, conversation_id: &QString);
+
+        #[qinvokable]
+        fn resolve_tool_approval(
+            self: &ServiceController,
+            conversation_id: &QString,
+            decision: &QString,
+        );
     }
 
     impl cxx_qt::Threading for ServiceController {}
@@ -613,6 +623,27 @@ X-LXQt-Need-Tray=true"#,
         let handle = get_service_handle();
         let _ = handle.send(Command::LogoutMcpOAuth {
             server_id: server_id.to_string(),
+        });
+    }
+
+    fn stop_generation(&self, conversation_id: &QString) {
+        let handle = get_service_handle();
+        let _ = handle.send(Command::StopGeneration {
+            conv_id: ConversationId::from(conversation_id.to_string()),
+        });
+    }
+
+    fn resolve_tool_approval(&self, conversation_id: &QString, decision: &QString) {
+        let decision = match decision.to_string().as_str() {
+            "always" => clareon_core::ToolApprovalDecision::AlwaysAllow,
+            "always_deny" => clareon_core::ToolApprovalDecision::AlwaysDeny,
+            "deny" => clareon_core::ToolApprovalDecision::Deny,
+            _ => clareon_core::ToolApprovalDecision::AllowOnce,
+        };
+        let handle = get_service_handle();
+        let _ = handle.send(Command::ResolveToolApproval {
+            conv_id: ConversationId::from(conversation_id.to_string()),
+            decision,
         });
     }
 }

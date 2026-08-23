@@ -81,6 +81,15 @@ Kirigami.ApplicationWindow {
                 }
             },
             Kirigami.PagePoolAction {
+                text: qsTr("Allow & Deny")
+                icon.name: "security-high"
+                page: Qt.resolvedUrl("ToolPoliciesSettings.qml")
+                pagePool: pagePool
+                initialProperties: {
+                    return { config: root._config }
+                }
+            },
+            Kirigami.PagePoolAction {
                 text: qsTr("Advanced")
                 icon.name: "preferences-system"
                 page: Qt.resolvedUrl("AdvancedSettings.qml")

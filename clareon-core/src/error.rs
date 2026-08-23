@@ -39,6 +39,9 @@ pub enum Error {
     #[error("Tool error: {0}")]
     Tool(#[from] crate::tools::ToolError),
 
+    #[error("A response is already being generated for this conversation")]
+    GenerationInProgress,
+
     // Serialization errors
     #[error("JSON serialization error: {0}")]
     Json(#[from] serde_json::Error),

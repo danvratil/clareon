@@ -14,6 +14,7 @@ import cz.dvratil.clareon 1.0
     spacing: 0
 
     required property string conversationId
+    property bool streaming: false
 
     signal messageSent(string text)
 
@@ -49,6 +50,10 @@ import cz.dvratil.clareon 1.0
 
     // Function to send the message
     function sendMessage() {
+        if (root.streaming) {
+            return
+        }
+
         const messageText = messageInput.text.trim()
         const hasText = messageText.length > 0
         const hasFiles = attachedFiles.length > 0
@@ -187,11 +192,17 @@ import cz.dvratil.clareon 1.0
 
         Controls.Button {
             id: sendButton
-            text: "Send"
-            icon.name: "document-send"
-            enabled: messageInput.text.trim().length > 0 || attachedFiles.length > 0
+            text: root.streaming ? qsTr("Stop") : qsTr("Send")
+            icon.name: root.streaming ? "process-stop" : "document-send"
+            enabled: root.streaming || messageInput.text.trim().length > 0 || attachedFiles.length > 0
 
-            onClicked: root.sendMessage()
+            onClicked: {
+                if (root.streaming) {
+                    ServiceController.stopGeneration(root.conversationId)
+                } else {
+                    root.sendMessage()
+                }
+            }
         }
     }
 

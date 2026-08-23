@@ -33,7 +33,7 @@ Kirigami.ScrollablePage {
                 id: enableToolsCheckBox
                 Kirigami.FormData.label: qsTr("Enable tools:")
                 text: qsTr("Allow the assistant to use tools")
-                checked: root.config.tools?.enabled || true
+                checked: root.config.tools?.enabled ?? true
                 onToggled: {
                     root.config.tools.enabled = checked
                 }
@@ -43,7 +43,7 @@ Kirigami.ScrollablePage {
                 id: autoExecuteCheckBox
                 Kirigami.FormData.label: qsTr("Auto-execute:")
                 text: qsTr("Automatically execute tools without approval")
-                checked: root.config.tools?.autoExecute || true
+                checked: root.config.tools?.autoExecute ?? true
                 enabled: enableToolsCheckBox.checked
                 onToggled: {
                     root.config.tools.autoExecute = checked
@@ -51,7 +51,7 @@ Kirigami.ScrollablePage {
             }
 
             Controls.Label {
-                text: qsTr("When disabled, you'll be prompted to approve each tool use")
+                text: qsTr("When disabled, you'll be prompted to allow or deny each tool use. Manage remembered rules in Settings → Allow & Deny.")
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
                 color: Kirigami.Theme.disabledTextColor
                 Layout.fillWidth: true

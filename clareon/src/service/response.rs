@@ -131,6 +131,19 @@ pub enum Response {
         message: MessageData,
     },
 
+    /// User stopped generation
+    StreamingStopped {
+        conv_id: ConversationId,
+        /// Partial assistant message if any tokens were saved
+        message: Option<MessageData>,
+    },
+
+    /// The model wants to run tools and is waiting for approval
+    ToolApprovalRequired {
+        conv_id: ConversationId,
+        tools_json: String,
+    },
+
     // Search responses
     /// Search results from FTS query
     SearchResults { results: Vec<SearchResult> },

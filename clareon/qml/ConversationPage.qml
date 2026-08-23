@@ -116,15 +116,28 @@ Kirigami.Page {
 
             Controls.ScrollBar.vertical.policy: Controls.ScrollBar.AsNeeded
 
-            // I tried listening to various Model signals (rowsInserted, dataChanged, etc.), but
-            // it seems that when those signals are triggered, the contentHeight is not yet updated
-            // (probably because the delegate is not yet instantiated or updated), so in the end
-            // scrolling to bottom when contentHeight changes seems to be the only reliable way.
-            // FIXME: This makes it impossible for the user to scroll up while a response is being
-            // streamed in, as contentHeight keeps changing. We need to make sure this does't
-            // trigger when the user scrolls up manually.
+            // Follow new content only while the user is already at the bottom.
+            // Content height changes during streaming would otherwise yank the
+            // viewport back down whenever the user tries to scroll up.
+            property bool stickToBottom: root.highlightMessageId < 0
+
+            function isNearBottom() {
+                const flick = contentItem
+                if (!flick || contentHeight <= height)
+                    return true
+                return (contentHeight - height - flick.contentY) <= Kirigami.Units.gridUnit * 2
+            }
+
             onContentHeightChanged: {
-                scrollToBottom()
+                if (stickToBottom)
+                    scrollToBottom()
+            }
+
+            Connections {
+                target: messageView.contentItem
+                function onMovementEnded() {
+                    messageView.stickToBottom = messageView.isNearBottom()
+                }
             }
 
             Column {
@@ -197,10 +210,22 @@ Kirigami.Page {
             }
         }
 
+        ToolApprovalBanner {
+            Layout.fillWidth: true
+            Layout.margins: Kirigami.Units.largeSpacing
+            conversationId: root.conversationId
+            pendingApprovalJson: messageListModel.pendingApprovalJson
+        }
+
         // Message composer
         MessageComposer {
             Layout.fillWidth: true
             conversationId: root.conversationId
+            streaming: messageListModel.streaming
+            onMessageSent: {
+                messageView.stickToBottom = true
+                messageView.scrollToBottom()
+            }
         }
 
         // Token usage display

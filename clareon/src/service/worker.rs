@@ -11,7 +11,10 @@ use tracing::{debug, error, info, warn};
 use std::sync::Arc;
 
 use clareon_core::types::{ContentBlock, ConversationId, ConversationSummary, Message};
-use clareon_core::{ConversationManager, ConversationSession, McpManager, Storage, StreamUpdate};
+use clareon_core::{
+    ConversationManager, ConversationSession, McpManager, Storage, StreamUpdate,
+    ToolApprovalDecision, ToolExecutionStatus,
+};
 
 use super::{
     command::Command,
@@ -98,6 +101,12 @@ impl ServiceWorker {
             }
             Command::RetryLastMessage { conv_id } => {
                 self.handle_retry_last_message(conv_id).await;
+            }
+            Command::StopGeneration { conv_id } => {
+                self.handle_stop_generation(conv_id).await;
+            }
+            Command::ResolveToolApproval { conv_id, decision } => {
+                self.handle_resolve_tool_approval(conv_id, decision).await;
             }
             Command::Search { query } => {
                 self.handle_search(query).await;
@@ -335,6 +344,15 @@ impl ServiceWorker {
             }
         };
 
+        if session.is_generating() {
+            let _ = self.response_tx.send(Response::SendMessageError {
+                conv_id,
+                error_info: error_to_info(&clareon_core::Error::GenerationInProgress),
+                user_message_id: None,
+            });
+            return;
+        }
+
         let user_msg_id = match session.append_user_message(&text).await {
             Ok(msg) => {
                 let msg_id = msg.id;
@@ -382,6 +400,15 @@ impl ServiceWorker {
                 return;
             }
         };
+
+        if session.is_generating() {
+            let _ = self.response_tx.send(Response::SendMessageError {
+                conv_id,
+                error_info: error_to_info(&clareon_core::Error::GenerationInProgress),
+                user_message_id: None,
+            });
+            return;
+        }
 
         let user_msg_id = match session.append_user_message_with_content(content).await {
             Ok(msg) => {
@@ -434,6 +461,15 @@ impl ServiceWorker {
                 return;
             }
         };
+
+        if session.is_generating() {
+            let _ = self.response_tx.send(Response::SendMessageError {
+                conv_id,
+                error_info: error_to_info(&clareon_core::Error::GenerationInProgress),
+                user_message_id: None,
+            });
+            return;
+        }
 
         // First, store the user message
         let user_msg_id = match session.append_user_message(&text).await {
@@ -538,6 +574,24 @@ impl ServiceWorker {
         });
     }
 
+    async fn handle_stop_generation(&self, conv_id: ConversationId) {
+        if let Some(session) = self.manager.get_session_if_exists(&conv_id).await {
+            info!("Stopping generation for conversation {conv_id}");
+            session.cancel();
+        }
+    }
+
+    async fn handle_resolve_tool_approval(
+        &self,
+        conv_id: ConversationId,
+        decision: ToolApprovalDecision,
+    ) {
+        if let Some(session) = self.manager.get_session_if_exists(&conv_id).await {
+            info!("Tool approval {decision:?} for conversation {conv_id}");
+            session.submit_tool_approval(decision).await;
+        }
+    }
+
     async fn handle_retry_last_message(&self, conv_id: ConversationId) {
         // The last user message is already in storage/cache — just stream from current state
         let session = match self.manager.get_or_create_session(&conv_id).await {
@@ -555,6 +609,15 @@ impl ServiceWorker {
                 return;
             }
         };
+
+        if session.is_generating() {
+            let _ = self.response_tx.send(Response::SendMessageError {
+                conv_id,
+                error_info: error_to_info(&clareon_core::Error::GenerationInProgress),
+                user_message_id: None,
+            });
+            return;
+        }
 
         let response_tx = self.response_tx.clone();
         let storage = self.manager.storage();
@@ -738,10 +801,34 @@ impl ServiceWorker {
         match session.send_message_stream().await {
             Ok(mut stream) => {
                 let mut accumulated = String::new();
+                let mut cancelled = false;
+                let started_at = chrono::Utc::now().timestamp();
 
                 while let Some(result) = stream.next().await {
                     match result {
                         Ok(update) => {
+                            if update.cancelled {
+                                cancelled = true;
+                            }
+                            match &update.tool_execution_status {
+                                Some(ToolExecutionStatus::PendingApproval { tools }) => {
+                                    let tools_json = serde_json::to_string(tools)
+                                        .unwrap_or_else(|_| "[]".into());
+                                    let _ = response_tx.send(Response::ToolApprovalRequired {
+                                        conv_id: conv_id.clone(),
+                                        tools_json,
+                                    });
+                                }
+                                Some(ToolExecutionStatus::ExecutingTools { .. })
+                                | Some(ToolExecutionStatus::ToolsComplete { .. })
+                                | Some(ToolExecutionStatus::ToolError { .. }) => {
+                                    let _ = response_tx.send(Response::ToolApprovalRequired {
+                                        conv_id: conv_id.clone(),
+                                        tools_json: "[]".into(),
+                                    });
+                                }
+                                None => {}
+                            }
                             if let Some(text_delta) = extract_text_delta(&update) {
                                 accumulated.push_str(&text_delta);
                                 let _ = response_tx.send(Response::StreamingChunk {
@@ -763,9 +850,22 @@ impl ServiceWorker {
                     }
                 }
 
-                // Get final message from session cache - no extra DB query needed
                 let messages = session.get_messages().await;
-                if let Some(last_message) = messages.last() {
+                if cancelled || session.is_cancelled() {
+                    let message = messages
+                        .iter()
+                        .rev()
+                        .find(|m| {
+                            m.role == clareon_core::types::Role::Assistant
+                                && m.created_at >= started_at
+                        })
+                        .cloned()
+                        .map(message_to_data);
+                    let _ = response_tx.send(Response::StreamingStopped {
+                        conv_id: conv_id.clone(),
+                        message,
+                    });
+                } else if let Some(last_message) = messages.last() {
                     let _ = response_tx.send(Response::StreamingComplete {
                         conv_id: conv_id.clone(),
                         message: message_to_data(last_message.clone()),
@@ -1197,6 +1297,13 @@ fn extract_text_delta(update: &StreamUpdate) -> Option<String> {
 fn error_to_info(error: &clareon_core::Error) -> ErrorInfo {
     match error {
         clareon_core::Error::Backend(backend_err) => backend_error_to_info(backend_err),
+        clareon_core::Error::GenerationInProgress => ErrorInfo {
+            message: "A response is already being generated".to_string(),
+            details: error.to_string(),
+            category: ErrorCategory::ClientError,
+            is_retryable: false,
+            retry_after_secs: None,
+        },
         _ => ErrorInfo {
             message: "An unexpected error occurred".to_string(),
             details: error.to_string(),

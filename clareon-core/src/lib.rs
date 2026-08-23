@@ -24,7 +24,10 @@ pub use config::{
     Config, ConfigManager, McpConfig, McpServerConfig, McpTransportConfig, SandboxModeConfig,
     SecretStore, import_mcp_servers_json, merge_imported_servers,
 };
-pub use conversation::{ConversationManager, ConversationSession, StreamUpdate};
+pub use conversation::{
+    ConversationManager, ConversationSession, PendingToolUse, StreamUpdate, ToolApprovalDecision,
+    ToolExecutionStatus,
+};
 pub use error::{Error, Result};
 pub use mcp::{
     McpManager, McpPromptMessage, McpPromptRef, McpPromptResult, McpResourceRef, McpServerStatus,
@@ -33,7 +36,7 @@ pub use mcp::{
 };
 pub use storage::Storage;
 pub use tools::{
-    ArtifactManager, BubblewrapSandbox, ExecutionContext, NoneSandbox, PersistentWorkspace,
-    Sandbox, SandboxMode, Tool, ToolError, ToolExecutor, ToolRegistry, ToolResult,
-    WorkspaceManager, register_builtin_tools,
+    AlwaysAllowRule, ArtifactManager, BubblewrapSandbox, ExecutionContext, NoneSandbox,
+    PersistentWorkspace, Sandbox, SandboxMode, Tool, ToolError, ToolExecutor, ToolRegistry,
+    ToolResult, WorkspaceManager, is_denied, register_builtin_tools, tools_need_approval,
 };

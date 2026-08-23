@@ -7,21 +7,22 @@
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use futures::{Stream, StreamExt};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex as TokioMutex, RwLock, oneshot, watch};
 use tracing::{debug, info, warn};
 
 use crate::backend::{ChatRequest, ContentDelta, LlmBackend, StopReason, StreamEvent, Usage};
-use crate::config::Config;
+use crate::config::{Config, ConfigManager};
 use crate::conversation::title::TitleGenerator;
 use crate::error::Result;
 use crate::storage::Storage;
-use crate::tools::ToolExecutor;
-use crate::types::{ContentBlock, Conversation, ConversationId, Message, Role};
+use crate::tools::{AlwaysAllowRule, ToolExecutor};
+use crate::types::{ContentBlock, Conversation, ConversationId, Message, Role, ToolResultContent};
 
-use super::manager::{StreamUpdate, ToolExecutionStatus};
+use super::manager::{PendingToolUse, StreamUpdate, ToolApprovalDecision, ToolExecutionStatus};
 
 /// Per-conversation session with a cached message history and its own backend instance.
 ///
@@ -38,6 +39,10 @@ pub struct ConversationSession {
     config: Config,
     title_generator: Arc<TitleGenerator>,
     tool_executor: Option<Arc<ToolExecutor>>,
+    cancel_tx: watch::Sender<bool>,
+    approval_tx: TokioMutex<Option<oneshot::Sender<ToolApprovalDecision>>>,
+    pending_tools: TokioMutex<Vec<PendingToolUse>>,
+    generating: AtomicBool,
 }
 
 impl ConversationSession {
@@ -51,6 +56,7 @@ impl ConversationSession {
         tool_executor: Option<Arc<ToolExecutor>>,
     ) -> Self {
         let conv_id = conversation.id.clone();
+        let (cancel_tx, _) = watch::channel(false);
         Self {
             conv_id,
             conversation: RwLock::new(conversation),
@@ -60,7 +66,78 @@ impl ConversationSession {
             config,
             title_generator,
             tool_executor,
+            cancel_tx,
+            approval_tx: TokioMutex::new(None),
+            pending_tools: TokioMutex::new(Vec::new()),
+            generating: AtomicBool::new(false),
         }
+    }
+
+    pub fn is_generating(&self) -> bool {
+        self.generating.load(Ordering::SeqCst)
+    }
+
+    /// Stop an in-flight generation, including a pending tool-approval prompt.
+    pub fn cancel(&self) {
+        self.cancel_tx.send_replace(true);
+        if let Ok(mut slot) = self.approval_tx.try_lock()
+            && let Some(tx) = slot.take()
+        {
+            let _ = tx.send(ToolApprovalDecision::Cancelled);
+        }
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        *self.cancel_tx.borrow()
+    }
+
+    /// Resolve the current tool-approval prompt. No-op if none is pending.
+    pub async fn submit_tool_approval(&self, decision: ToolApprovalDecision) {
+        if let Some(tx) = self.approval_tx.lock().await.take() {
+            let _ = tx.send(decision);
+        }
+    }
+
+    fn reset_generation_control(&self) {
+        self.cancel_tx.send_replace(false);
+    }
+
+    async fn wait_if_cancelled<T>(&self, fut: impl std::future::Future<Output = T>) -> Option<T> {
+        let mut rx = self.cancel_tx.subscribe();
+        if *rx.borrow() {
+            return None;
+        }
+        tokio::select! {
+            () = async {
+                while rx.changed().await.is_ok() {
+                    if *rx.borrow() {
+                        return;
+                    }
+                }
+            } => None,
+            result = fut => Some(result),
+        }
+    }
+
+    async fn wait_for_approval(&self) -> ToolApprovalDecision {
+        let (tx, rx) = oneshot::channel();
+        *self.approval_tx.lock().await = Some(tx);
+        let decision = tokio::select! {
+            result = rx => result.unwrap_or(ToolApprovalDecision::Cancelled),
+            () = async {
+                let mut cancel_rx = self.cancel_tx.subscribe();
+                if *cancel_rx.borrow() {
+                    return;
+                }
+                while cancel_rx.changed().await.is_ok() {
+                    if *cancel_rx.borrow() {
+                        return;
+                    }
+                }
+            } => ToolApprovalDecision::Cancelled,
+        };
+        *self.approval_tx.lock().await = None;
+        decision
     }
 
     pub fn conversation_id(&self) -> &ConversationId {
@@ -120,10 +197,28 @@ impl ConversationSession {
         let session = Arc::clone(self);
 
         let stream = async_stream::stream! {
+            if session.generating.swap(true, Ordering::SeqCst) {
+                yield Err(crate::error::Error::GenerationInProgress);
+                return;
+            }
+            session.reset_generation_control();
+            struct GeneratingGuard<'a>(&'a AtomicBool);
+            impl Drop for GeneratingGuard<'_> {
+                fn drop(&mut self) {
+                    self.0.store(false, Ordering::SeqCst);
+                }
+            }
+            let _generating = GeneratingGuard(&session.generating);
+
             let mut iteration = 0;
 
             loop {
                 iteration += 1;
+
+                if session.is_cancelled() {
+                    yield cancelled_update(iteration);
+                    return;
+                }
 
                 if iteration > MAX_TOOL_ITERATIONS {
                     yield Err(crate::error::Error::Tool(
@@ -192,7 +287,31 @@ impl ConversationSession {
                 let mut tool_input_accumulators: HashMap<usize, String> = HashMap::new();
 
                 let mut backend_stream = Box::pin(backend_stream);
-                while let Some(result) = backend_stream.next().await {
+                loop {
+                    let next = session.wait_if_cancelled(backend_stream.next()).await;
+                    let Some(result) = next else {
+                        if let Some(msg) = save_partial_assistant(
+                            &session,
+                            &content_blocks,
+                            &model,
+                            usage,
+                        )
+                        .await
+                        {
+                            match msg {
+                                Ok(()) => {}
+                                Err(e) => {
+                                    yield Err(e);
+                                    return;
+                                }
+                            }
+                        }
+                        yield cancelled_update(iteration);
+                        return;
+                    };
+                    let Some(result) = result else {
+                        break;
+                    };
                     match result {
                         Ok(event) => {
                             match &event {
@@ -265,6 +384,7 @@ impl ConversationSession {
                                 usage,
                                 tool_execution_status: None,
                                 iteration,
+                                cancelled: false,
                             });
                         }
                         Err(e) => {
@@ -318,61 +438,190 @@ impl ConversationSession {
                             return;
                         };
 
-                        yield Ok(StreamUpdate {
-                            event: StreamEvent::MessageStop {
-                                stop_reason: StopReason::ToolUse,
-                            },
-                            partial_content: content_blocks.clone(),
-                            stop_reason: Some(StopReason::ToolUse),
-                            usage,
-                            tool_execution_status: Some(ToolExecutionStatus::ExecutingTools {
-                                count: tool_count,
-                            }),
-                            iteration,
-                        });
+                        let pending = pending_from_blocks(&content_blocks);
+                        let tools_cfg = ConfigManager::get().config().tools;
+                        let (pre_denied, remaining) =
+                            split_denied(&tools_cfg.always_deny, &pending);
+                        let mut tool_results = rejection_results(
+                            &pre_denied,
+                            "Blocked by always-deny policy",
+                        );
 
-                        info!("Executing {} tools (iteration {})", tool_count, iteration);
-                        let tool_results = match Self::execute_tools_static(
-                            &assistant_msg,
-                            executor,
-                            &session.conv_id,
-                            assistant_msg_id,
-                            &session.config,
-                        )
-                        .await
-                        {
-                            Ok(results) => results,
-                            Err(e) => {
-                                yield Ok(StreamUpdate {
-                                    event: StreamEvent::MessageStop {
-                                        stop_reason: StopReason::ToolUse,
+                        let skipped_results = if remaining.is_empty() {
+                            Some(Vec::new())
+                        } else if pending_needs_approval(
+                            tools_cfg.auto_execute,
+                            &tools_cfg.always_allow,
+                            &tools_cfg.always_deny,
+                            &remaining,
+                        ) {
+                            *session.pending_tools.lock().await = remaining.clone();
+                            yield Ok(StreamUpdate {
+                                event: StreamEvent::MessageStop {
+                                    stop_reason: StopReason::ToolUse,
+                                },
+                                partial_content: content_blocks.clone(),
+                                stop_reason: Some(StopReason::ToolUse),
+                                usage,
+                                tool_execution_status: Some(
+                                    ToolExecutionStatus::PendingApproval {
+                                        tools: remaining.clone(),
                                     },
-                                    partial_content: content_blocks.clone(),
-                                    stop_reason: Some(StopReason::ToolUse),
-                                    usage,
-                                    tool_execution_status: Some(ToolExecutionStatus::ToolError {
-                                        error: e.to_string(),
-                                    }),
-                                    iteration,
-                                });
+                                ),
+                                iteration,
+                                cancelled: false,
+                            });
 
-                                let error_message =
-                                    Self::create_tool_error_message(&session.conv_id, &e);
-                                match session.storage.add_message(&error_message).await {
-                                    Ok(err_msg_id) => {
-                                        let mut cached = session.messages.write().await;
-                                        let mut stored = error_message;
-                                        stored.id = err_msg_id;
-                                        cached.push(stored);
-                                    }
-                                    Err(store_err) => {
-                                        yield Err(store_err);
-                                        return;
-                                    }
+                            match session.wait_for_approval().await {
+                                ToolApprovalDecision::AllowOnce => {
+                                    session.pending_tools.lock().await.clear();
+                                    None
                                 }
-                                continue;
+                                ToolApprovalDecision::AlwaysAllow => {
+                                    persist_policy_rules(&remaining, true);
+                                    session.pending_tools.lock().await.clear();
+                                    None
+                                }
+                                ToolApprovalDecision::AlwaysDeny => {
+                                    persist_policy_rules(&remaining, false);
+                                    session.pending_tools.lock().await.clear();
+                                    Some(rejection_results(
+                                        &remaining,
+                                        "Blocked by always-deny policy",
+                                    ))
+                                }
+                                ToolApprovalDecision::Deny => {
+                                    session.pending_tools.lock().await.clear();
+                                    Some(rejection_results(
+                                        &remaining,
+                                        "User denied tool execution",
+                                    ))
+                                }
+                                ToolApprovalDecision::Cancelled => {
+                                    session.pending_tools.lock().await.clear();
+                                    if let Err(e) = store_tool_results(
+                                        &session,
+                                        {
+                                            let mut cancelled = tool_results.clone();
+                                            cancelled.extend(rejection_results(
+                                                &remaining,
+                                                "Generation stopped by user",
+                                            ));
+                                            cancelled
+                                        },
+                                    )
+                                    .await
+                                    {
+                                        yield Err(e);
+                                    } else {
+                                        yield cancelled_update(iteration);
+                                    }
+                                    return;
+                                }
+                            }
+                        } else {
+                            None
+                        };
+
+                        let executed = if let Some(denied) = skipped_results {
+                            denied
+                        } else {
+                            if session.is_cancelled() {
+                                if let Err(e) = store_tool_results(
+                                    &session,
+                                    rejection_results(&remaining, "Generation stopped by user"),
+                                )
+                                .await
+                                {
+                                    yield Err(e);
+                                } else {
+                                    yield cancelled_update(iteration);
+                                }
+                                return;
+                            }
+
+                            yield Ok(StreamUpdate {
+                                event: StreamEvent::MessageStop {
+                                    stop_reason: StopReason::ToolUse,
+                                },
+                                partial_content: content_blocks.clone(),
+                                stop_reason: Some(StopReason::ToolUse),
+                                usage,
+                                tool_execution_status: Some(
+                                    ToolExecutionStatus::ExecutingTools { count: tool_count },
+                                ),
+                                iteration,
+                                cancelled: false,
+                            });
+
+                            info!(
+                                "Executing {} tools (iteration {})",
+                                remaining.len(),
+                                iteration
+                            );
+                            match session
+                                .wait_if_cancelled(Self::execute_pending_tools(
+                                    &remaining,
+                                    executor,
+                                    &session.conv_id,
+                                    assistant_msg_id,
+                                    &session.config,
+                                ))
+                                .await
+                            {
+                                None => {
+                                    if let Err(e) = store_tool_results(
+                                        &session,
+                                        rejection_results(
+                                            &remaining,
+                                            "Generation stopped by user",
+                                        ),
+                                    )
+                                    .await
+                                    {
+                                        yield Err(e);
+                                    } else {
+                                        yield cancelled_update(iteration);
+                                    }
+                                    return;
+                                }
+                                Some(Err(e)) => {
+                                    yield Ok(StreamUpdate {
+                                        event: StreamEvent::MessageStop {
+                                            stop_reason: StopReason::ToolUse,
+                                        },
+                                        partial_content: content_blocks.clone(),
+                                        stop_reason: Some(StopReason::ToolUse),
+                                        usage,
+                                        tool_execution_status: Some(
+                                            ToolExecutionStatus::ToolError {
+                                                error: e.to_string(),
+                                            },
+                                        ),
+                                        iteration,
+                                        cancelled: false,
+                                    });
+
+                                    let error_message =
+                                        Self::create_tool_error_message(&session.conv_id, &e);
+                                    match session.storage.add_message(&error_message).await {
+                                        Ok(err_msg_id) => {
+                                            let mut cached = session.messages.write().await;
+                                            let mut stored = error_message;
+                                            stored.id = err_msg_id;
+                                            cached.push(stored);
+                                        }
+                                        Err(store_err) => {
+                                            yield Err(store_err);
+                                            return;
+                                        }
+                                    }
+                                    continue;
+                                }
+                                Some(Ok(results)) => results,
                             }
                         };
+                        tool_results.extend(executed);
 
                         let result_summaries: Vec<String> = tool_results
                             .iter()
@@ -399,6 +648,7 @@ impl ConversationSession {
                                 results: result_summaries,
                             }),
                             iteration,
+                            cancelled: false,
                         });
 
                         // Store tool results and update the cache
@@ -447,7 +697,9 @@ impl ConversationSession {
             }
 
             // Generate title if this is the first turn and no title exists yet
-            if needs_title && iteration == 1
+            if !session.is_cancelled()
+                && needs_title
+                && iteration == 1
                 && let Some(ref user_input_str) = user_input
             {
                 let last_msg_text = {
@@ -499,27 +751,20 @@ impl ConversationSession {
         }
     }
 
-    async fn execute_tools_static(
-        message: &Message,
+    async fn execute_pending_tools(
+        pending: &[PendingToolUse],
         executor: &ToolExecutor,
         conversation_id: &ConversationId,
         message_id: i64,
         config: &Config,
     ) -> Result<Vec<ContentBlock>> {
-        let mut tool_uses = Vec::new();
-
-        for block in &message.content {
-            if let ContentBlock::ToolUse { id, name, input } = block {
-                tool_uses.push((id.as_str(), name.as_str(), input));
-            }
-        }
-
-        if tool_uses.is_empty() {
+        if pending.is_empty() {
             return Ok(Vec::new());
         }
-
-        info!("Executing {} tools", tool_uses.len());
-
+        let tool_uses: Vec<(&str, &str, &serde_json::Value)> = pending
+            .iter()
+            .map(|tool| (tool.id.as_str(), tool.name.as_str(), &tool.input))
+            .collect();
         let timeout = Duration::from_secs(config.tools.default_timeout);
         tokio::select! {
             results = executor.execute_multiple(tool_uses, conversation_id, message_id) => {
@@ -547,5 +792,248 @@ impl ConversationSession {
             output_tokens: None,
             model: None,
         }
+    }
+}
+
+fn cancelled_update(iteration: usize) -> Result<StreamUpdate> {
+    Ok(StreamUpdate {
+        event: StreamEvent::MessageStop {
+            stop_reason: StopReason::EndTurn,
+        },
+        partial_content: Vec::new(),
+        stop_reason: Some(StopReason::EndTurn),
+        usage: Usage::default(),
+        tool_execution_status: None,
+        iteration,
+        cancelled: true,
+    })
+}
+
+fn has_meaningful_content(blocks: &[ContentBlock]) -> bool {
+    blocks.iter().any(|block| match block {
+        ContentBlock::Text { text } => !text.trim().is_empty(),
+        ContentBlock::ToolUse { .. } => true,
+        ContentBlock::Image { .. } => true,
+        ContentBlock::ToolResult { .. } => true,
+    })
+}
+
+async fn save_partial_assistant(
+    session: &ConversationSession,
+    content_blocks: &[ContentBlock],
+    model: &str,
+    usage: Usage,
+) -> Option<Result<()>> {
+    if !has_meaningful_content(content_blocks) {
+        return None;
+    }
+    let assistant_msg = Message::assistant(
+        session.conv_id.clone(),
+        content_blocks.to_vec(),
+        model,
+        usage.input_tokens,
+        usage.output_tokens,
+    );
+    Some(
+        async {
+            let id = session.storage.add_message(&assistant_msg).await?;
+            let mut cached = session.messages.write().await;
+            let mut stored = assistant_msg;
+            stored.id = id;
+            cached.push(stored);
+            Ok(())
+        }
+        .await,
+    )
+}
+
+async fn store_tool_results(
+    session: &ConversationSession,
+    tool_results: Vec<ContentBlock>,
+) -> Result<()> {
+    if tool_results.is_empty() {
+        return Ok(());
+    }
+    let tool_result_message = Message {
+        id: 0,
+        conversation_id: session.conv_id.clone(),
+        created_at: chrono::Utc::now().timestamp(),
+        role: Role::User,
+        text_content: None,
+        content: tool_results,
+        input_tokens: None,
+        output_tokens: None,
+        model: None,
+    };
+    let tool_msg_id = session.storage.add_message(&tool_result_message).await?;
+    let mut cached = session.messages.write().await;
+    let mut stored = tool_result_message;
+    stored.id = tool_msg_id;
+    cached.push(stored);
+    Ok(())
+}
+
+fn pending_from_blocks(blocks: &[ContentBlock]) -> Vec<PendingToolUse> {
+    blocks
+        .iter()
+        .filter_map(|block| {
+            if let ContentBlock::ToolUse { id, name, input } = block {
+                let always_label = AlwaysAllowRule::from_invocation(name, input).map(|r| r.label());
+                Some(PendingToolUse {
+                    id: id.clone(),
+                    name: name.clone(),
+                    input: input.clone(),
+                    always_label,
+                })
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn pending_needs_approval(
+    auto_execute: bool,
+    always_allow: &[String],
+    always_deny: &[String],
+    pending: &[PendingToolUse],
+) -> bool {
+    let calls: Vec<(String, serde_json::Value)> = pending
+        .iter()
+        .map(|tool| (tool.name.clone(), tool.input.clone()))
+        .collect();
+    crate::tools::tools_need_approval(auto_execute, always_allow, always_deny, &calls)
+}
+
+fn split_denied(
+    always_deny: &[String],
+    pending: &[PendingToolUse],
+) -> (Vec<PendingToolUse>, Vec<PendingToolUse>) {
+    let mut denied = Vec::new();
+    let mut remaining = Vec::new();
+    for tool in pending {
+        if crate::tools::is_denied(always_deny, &tool.name, &tool.input) {
+            denied.push(tool.clone());
+        } else {
+            remaining.push(tool.clone());
+        }
+    }
+    (denied, remaining)
+}
+
+fn rejection_results(pending: &[PendingToolUse], reason: &str) -> Vec<ContentBlock> {
+    pending
+        .iter()
+        .map(|tool| {
+            ContentBlock::tool_result(tool.id.clone(), vec![ToolResultContent::text(reason)], true)
+        })
+        .collect()
+}
+
+fn persist_policy_rules(pending: &[PendingToolUse], allow: bool) {
+    let specs: Vec<String> = pending
+        .iter()
+        .filter_map(|tool| AlwaysAllowRule::from_invocation(&tool.name, &tool.input))
+        .map(|rule| rule.to_spec())
+        .collect();
+    if specs.is_empty() {
+        return;
+    }
+    if let Err(e) = ConfigManager::get().update_config(|config| {
+        let list = if allow {
+            &mut config.tools.always_allow
+        } else {
+            &mut config.tools.always_deny
+        };
+        for spec in &specs {
+            if !list.iter().any(|existing| existing == spec) {
+                list.push(spec.clone());
+            }
+        }
+    }) {
+        warn!("Failed to update tool policy list: {e}");
+        return;
+    }
+    if let Err(e) = ConfigManager::get().save() {
+        warn!("Failed to persist tool policy list: {e}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pending(name: &str) -> PendingToolUse {
+        PendingToolUse {
+            id: format!("id_{name}"),
+            name: name.to_string(),
+            input: serde_json::json!({"arg": 1}),
+            always_label: None,
+        }
+    }
+
+    #[test]
+    fn approval_skipped_when_auto_execute() {
+        assert!(!pending_needs_approval(
+            true,
+            &[],
+            &[],
+            &[pending("read_file"), pending("write_file")]
+        ));
+    }
+
+    #[test]
+    fn approval_required_when_auto_execute_off() {
+        assert!(pending_needs_approval(
+            false,
+            &[],
+            &[],
+            &[pending("read_file")]
+        ));
+    }
+
+    #[test]
+    fn bare_tool_name_does_not_allow_path_tools() {
+        let read = PendingToolUse {
+            id: "1".into(),
+            name: "read_file".into(),
+            input: serde_json::json!({"path": "/tmp/a"}),
+            always_label: None,
+        };
+        assert!(pending_needs_approval(
+            false,
+            &["read_file".into()],
+            &[],
+            &[read]
+        ));
+    }
+
+    #[test]
+    fn rejection_results_mark_error() {
+        let results = rejection_results(&[pending("read_file")], "denied");
+        assert_eq!(results.len(), 1);
+        match &results[0] {
+            ContentBlock::ToolResult {
+                tool_use_id,
+                is_error,
+                content,
+            } => {
+                assert_eq!(tool_use_id, "id_read_file");
+                assert_eq!(*is_error, Some(true));
+                assert_eq!(content, &vec![ToolResultContent::text("denied")]);
+            }
+            other => panic!("unexpected block: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn empty_text_is_not_meaningful() {
+        assert!(!has_meaningful_content(&[ContentBlock::text("   ")]));
+        assert!(has_meaningful_content(&[ContentBlock::text("hi")]));
+        assert!(has_meaningful_content(&[ContentBlock::tool_use(
+            "1",
+            "read_file",
+            serde_json::json!({})
+        )]));
     }
 }

@@ -26,9 +26,38 @@ use crate::types::{
     ContentBlock, Conversation, ConversationId, ConversationSummary, Message, Role, SearchResult,
 };
 
+/// A tool the model wants to run, shown in the approval prompt.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PendingToolUse {
+    pub id: String,
+    pub name: String,
+    pub input: serde_json::Value,
+    /// What “Always allow” would remember for this call, if anything.
+    #[serde(default)]
+    pub always_label: Option<String>,
+}
+
+/// User decision for a pending tool-approval prompt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolApprovalDecision {
+    /// Run this batch of tools once
+    AllowOnce,
+    /// Persist these tool names on the always-allow list and run them
+    AlwaysAllow,
+    /// Persist these as always-deny and reject them
+    AlwaysDeny,
+    /// Reject this batch; the model receives an error result
+    Deny,
+    /// Generation was stopped while waiting for a decision
+    Cancelled,
+}
+
 /// Status of tool execution during streaming
 #[derive(Debug, Clone)]
 pub enum ToolExecutionStatus {
+    /// Waiting for the user to allow or deny tool use
+    PendingApproval { tools: Vec<PendingToolUse> },
+
     /// Tools are currently being executed
     ExecutingTools {
         /// Number of tools being executed
@@ -68,6 +97,9 @@ pub struct StreamUpdate {
 
     /// Current tool execution iteration (starts at 1)
     pub iteration: usize,
+
+    /// True when the user stopped generation
+    pub cancelled: bool,
 }
 
 /// Manages conversations, orchestrating storage, LLM backends, and title generation
@@ -591,6 +623,7 @@ impl ConversationManager {
                                 usage,
                                 tool_execution_status: None,
                                 iteration,
+                                cancelled: false,
                             });
                         }
                         Err(e) => {
@@ -646,6 +679,7 @@ impl ConversationManager {
                             usage,
                             tool_execution_status: Some(ToolExecutionStatus::ExecutingTools { count: tool_count }),
                             iteration,
+                            cancelled: false,
                         });
 
                         // Execute tools
@@ -669,6 +703,7 @@ impl ConversationManager {
                                         error: e.to_string(),
                                     }),
                                     iteration,
+                                    cancelled: false,
                                 });
 
                                 // Create tool error message to send back to model
@@ -708,6 +743,7 @@ impl ConversationManager {
                                 results: result_summaries,
                             }),
                             iteration,
+                            cancelled: false,
                         });
 
                         // Store tool results as user message

@@ -47,6 +47,15 @@ pub enum Command {
     /// Retry the last failed message in a conversation
     RetryLastMessage { conv_id: ConversationId },
 
+    /// Stop in-flight generation for a conversation
+    StopGeneration { conv_id: ConversationId },
+
+    /// Resolve a pending tool-approval prompt
+    ResolveToolApproval {
+        conv_id: ConversationId,
+        decision: clareon_core::ToolApprovalDecision,
+    },
+
     /// Search across all conversations
     Search { query: String },
 
